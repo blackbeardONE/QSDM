@@ -44,6 +44,19 @@
         { slug: "node-roles",         title: "Node roles",                       repoPath: DOCS_PREFIX_REPO + "/NODE_ROLES.md" },
         { slug: "feature-summary",    title: "Feature summary",                  repoPath: DOCS_PREFIX_REPO + "/Feature Summary.md" },
         { slug: "capability-snapshot", title: "Capability snapshot",             repoPath: DOCS_PREFIX_REPO + "/CAPABILITY_SNAPSHOT.md" },
+        { slug: "overview",           title: "What is QSDM",                     repoPath: DOCS_PREFIX_REPO + "/OVERVIEW.md" },
+      ],
+    },
+    {
+      title: "Network today",
+      items: [
+        { slug: "network-status",     title: "Network status",                   repoPath: DOCS_PREFIX_REPO + "/NETWORK_STATUS.md" },
+        { slug: "network-upgrades",   title: "Network upgrades",                 repoPath: DOCS_PREFIX_REPO + "/NETWORK_UPGRADES.md" },
+        { slug: "mining-today",       title: "Mining today (Hive)",              repoPath: DOCS_PREFIX_REPO + "/MINING_TODAY.md" },
+        { slug: "run-a-full-node",    title: "Run a full node",                  repoPath: DOCS_PREFIX_REPO + "/RUN_A_FULL_NODE.md" },
+        { slug: "downloads",          title: "Downloads & verification",         repoPath: DOCS_PREFIX_REPO + "/DOWNLOADS_AND_VERIFICATION.md" },
+        { slug: "security-model",     title: "Security model",                   repoPath: DOCS_PREFIX_REPO + "/SECURITY_MODEL.md" },
+        { slug: "glossary",           title: "Glossary",                         repoPath: DOCS_PREFIX_REPO + "/GLOSSARY.md" },
       ],
     },
     {
@@ -148,12 +161,16 @@
         { slug: "ubuntu-deploy",        title: "Ubuntu deployment",              repoPath: DOCS_PREFIX_REPO + "/UBUNTU_DEPLOYMENT.md" },
         { slug: "stage-b-blr1",         title: "Stage B deploy (BLR1)",          repoPath: DOCS_PREFIX_REPO + "/STAGE_B_DEPLOY_BLR1.md" },
         { slug: "dashboard-access",     title: "Dashboard access",               repoPath: DOCS_PREFIX_REPO + "/DASHBOARD_ACCESS.md" },
+        { slug: "signed-consensus",     title: "Signed consensus rollout",       repoPath: DOCS_PREFIX_REPO + "/SIGNED_CONSENSUS_ROLLOUT.md" },
       ],
     },
     {
       title: "Protocol & design",
       items: [
+        { slug: "consensus-rules",       title: "Consensus rules",               repoPath: DOCS_PREFIX_REPO + "/CONSENSUS_RULES.md" },
+        { slug: "proof-of-entanglement", title: "Proof-of-Entanglement",         repoPath: DOCS_PREFIX_REPO + "/PROOF_OF_ENTANGLEMENT.md" },
         { slug: "cell-tokenomics",       title: "CELL tokenomics",               repoPath: DOCS_PREFIX_REPO + "/CELL_TOKENOMICS.md" },
+        { slug: "genesis-policy",        title: "Genesis policy v1.1",           repoPath: DOCS_PREFIX_REPO + "/GENESIS_POLICY_v1.1.md" },
         { slug: "treasury-policy",       title: "Treasury policy",               repoPath: DOCS_PREFIX_REPO + "/TREASURY_POLICY.md" },
         { slug: "cryptography",          title: "Cryptography comparison",       repoPath: DOCS_PREFIX_REPO + "/CRYPTOGRAPHY_COMPARISON.md" },
         { slug: "attestation-sidecars",  title: "Attestation sidecars",          repoPath: DOCS_PREFIX_REPO + "/ATTESTATION_SIDECARS.md" },
@@ -233,6 +250,8 @@
       title: "Project",
       items: [
         { slug: "contributing",  title: "Contributing",   repoPath: DOCS_PREFIX_REPO + "/CONTRIBUTING.md" },
+        { slug: "community-review", title: "Community review", repoPath: DOCS_PREFIX_REPO + "/COMMUNITY_REVIEW.md" },
+        { slug: "bug-bounty",    title: "Bug bounty",     repoPath: DOCS_PREFIX_REPO + "/BUG_BOUNTY.md" },
         { slug: "rebrand",       title: "Rebrand notes",  repoPath: DOCS_PREFIX_REPO + "/REBRAND_NOTES.md" },
       ],
     },
