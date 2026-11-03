@@ -863,7 +863,7 @@ Stateless mempool admission:
 Stateful chain-side applier:
 [`pkg/chain/enrollment_apply.go`](../../source/pkg/chain/enrollment_apply.go)
 (`EnrollmentApplier`), composed via
-[`pkg/chain/applier.go`](../../source/pkg/chain/applier.go)
+[`pkg/chain/enrollment_aware_applier.go`](../../source/pkg/chain/enrollment_aware_applier.go)
 (`EnrollmentAwareApplier`) into the block producer's state
 transition pipeline.
 
@@ -1889,7 +1889,7 @@ existing activation plan.
     (`types.go`, `registry.go`, `admit.go`, `stats_test.go`,
     `revoke_underbonded_test.go`).
   - Chain-side applier: [`pkg/chain/enrollment_apply.go`](../../source/pkg/chain/enrollment_apply.go),
-    [`pkg/chain/applier.go`](../../source/pkg/chain/applier.go).
+    [`pkg/chain/enrollment_aware_applier.go`](../../source/pkg/chain/enrollment_aware_applier.go).
 - Slashing:
   - Data model: [`pkg/mining/slashing/types.go`](../../source/pkg/mining/slashing/types.go).
   - Concrete verifiers:
@@ -1904,7 +1904,7 @@ existing activation plan.
     [`pkg/chain/slash_receipts.go`](../../source/pkg/chain/slash_receipts.go).
 - HTTP:
   - [`pkg/api/handlers.go`](../../source/pkg/api/handlers.go),
-    [`pkg/api/handlers_enroll.go`](../../source/pkg/api/handlers_enroll.go),
+    [`pkg/api/handlers_enrollment.go`](../../source/pkg/api/handlers_enrollment.go),
     [`pkg/api/handlers_slashing.go`](../../source/pkg/api/handlers_slashing.go),
     [`pkg/api/handlers_slash_query.go`](../../source/pkg/api/handlers_slash_query.go),
     [`pkg/api/handlers_enrollment_query.go`](../../source/pkg/api/handlers_enrollment_query.go),
