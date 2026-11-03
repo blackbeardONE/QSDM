@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math/bits"
 
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 )
@@ -132,9 +133,23 @@ func VerifyProof(proof *MerkleProof, expectedRoot string) bool {
 //
 // TestVerifyTxInBlock_RefusesADigestShapedID covers exactly that case, because
 // neutering the check passed every other test in the package.
+//
+// The proof must also be exactly as long as the block's tree is deep, which
+// header.TxCount fixes. A leaf is sha256(txID) and an inner node is
+// sha256(left+right) over the 64-character hex of its children, so an "ID"
+// that is two child hashes joined (128 hex characters) hashes to an inner node,
+// and with the path above that node -- one or more levels shorter than a real
+// proof -- it verified as included. The mirror image works too: if a real ID
+// begins with the hex of sha256(fake), a path one level longer proves fake.
+// With the length pinned, the claimed leaf must be a real leaf. Only this
+// check is new: the tree, tx root and block hash are computed as before. A
+// header without a transaction count (TxCount 0) proves no inclusion.
 func VerifyTxInBlock(txID string, proof *MerkleProof, header BlockHeader) bool {
 	if txContentRootActiveAt(header.Height) {
 		// The caller holds only an ID, so the correct leaf cannot be built.
+		return false
+	}
+	if header.TxCount < 1 || len(proof.Siblings) != merkleDepth(header.TxCount) {
 		return false
 	}
 	expectedLeaf := hashLeaf(txID)
@@ -160,6 +175,14 @@ func VerifyTxContentInBlock(tx *mempool.Tx, proof *MerkleProof, header BlockHead
 		return false
 	}
 	return VerifyProof(proof, header.TxRoot)
+}
+
+// merkleDepth is the number of levels BuildMerkleTree puts above n leaves (n >=
+// 1), which is also the number of siblings in every proof GenerateProof makes:
+// 0 for one leaf, otherwise ceil(log2 n), since each level halves the row and
+// rounds up.
+func merkleDepth(n int) int {
+	return bits.Len(uint(n - 1))
 }
 
 func hashLeaf(data string) string {
