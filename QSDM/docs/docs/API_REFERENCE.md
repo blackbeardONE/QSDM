@@ -381,8 +381,10 @@ Request body:
 | `signature` | string | Hex ML-DSA-87 signature |
 
 What is signed: the JSON encoding of the envelope with `signature` set to `""`
-and `public_key` removed, fields in the order of the table above (Go
-`encoding/json` output). Third-party signers must reproduce it byte for byte;
+and `public_key` removed, as Go `encoding/json` writes it, with the fields in
+this order: `id`, `sender`, `recipient`, `amount`, `fee`, `geotag`,
+`parent_cells`, `nonce` (left out when 0), `signature`, `timestamp`.
+Third-party signers must reproduce it byte for byte;
 see [Signed transfers](V040_WALLET_SEND_DESIGN.md) and
 [Replay protection](V041_REPLAY_PROTECTION_DESIGN.md).
 
@@ -541,5 +543,13 @@ the pilot. They are listed so nobody builds on them by mistake:
 
 ## Machine-readable spec
 
-[`openapi.yaml`](openapi.yaml) is being brought in line with this page. Where
-they differ, this page and the live responses are correct.
+[`openapi.yaml`](openapi.yaml) describes every route the node in this
+repository registers under `/api/v1`, with parameters and request and
+response schemas taken from the handler code. Each operation carries
+`x-qsdm-access` (`public`, `authenticated` for routes that need a login,
+`operator` or `closed`), and `x-qsdm-follower: refused` marks the writes a
+read-only follower node answers with 503. The operator-only admin API under
+`/api/admin/` is left out. The test `TestOpenAPIMatchesRegisteredRoutes` in
+`QSDM/source/pkg/api` fails when the file and the registered routes drift
+apart. The file describes the code; for what the live pilot network accepts
+during recovery, this page is right.
