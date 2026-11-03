@@ -1,10 +1,12 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -227,6 +229,30 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Hijack hands the connection to a handler behind AuditLogMiddleware, which
+// the WebSocket upgrade on /api/v1/contracts/traces/ws needs. Embedding
+// http.ResponseWriter promotes only its own three methods, so without this
+// every upgrade failed with "response does not implement http.Hijacker".
+// The audit log records a hijacked request as 101 Switching Protocols.
+func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := rw.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("api: %T does not support hijacking", rw.ResponseWriter)
+	}
+	conn, buf, err := hijacker.Hijack()
+	if err == nil {
+		rw.statusCode = http.StatusSwitchingProtocols
+	}
+	return conn, buf, err
+}
+
+// Flush passes a flush through to the underlying writer when it supports one.
+func (rw *responseWriter) Flush() {
+	if flusher, ok := rw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 // Helper functions
