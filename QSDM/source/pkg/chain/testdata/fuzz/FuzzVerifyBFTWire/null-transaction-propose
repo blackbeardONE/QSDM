@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("{\"kind\":\"bft_propose\",\"payload\":{\"height\":3,\"block_hash\":\"r\",\"block\":{\"height\":3,\"state_root\":\"r\",\"transactions\":[null]}}}")
+bool(false)
+uint64(0)
