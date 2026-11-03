@@ -1,0 +1,75 @@
+name: Go fuzz (nightly)
+
+# Fuzzes the network-facing decoder and verifier targets for five minutes each.
+#
+# Not run on pull requests: each target's seed corpus, including any
+# regression inputs committed under testdata/fuzz/, already runs as an
+# ordinary test on every push and PR inside the full suite (qsdm-go.yml,
+# go-test-all). This job looks for NEW failing inputs.
+#
+# A failing input is NOT uploaded. This repository is public and the network's
+# nodes run builds of this code, so a new crashing input can be a working
+# attack on them; it must not be downloadable before the nodes are fixed. The
+# job fails and its log names the target and the failure. To reproduce, run
+# the same command locally for longer (see the "Fuzz" step), commit the input
+# go test writes under <package>/testdata/fuzz/<target>/ as a regression seed
+# once the fix is released, and fix the code (or the harness).
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "37 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: go-fuzz-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { pkg: pkg/chain, target: FuzzDecodeStreamActionTx }
+          - { pkg: pkg/chain, target: FuzzVerifyStreamActionTx }
+          - { pkg: pkg/chain, target: FuzzDecodeRecoveryCapsuleTx }
+          - { pkg: pkg/chain, target: FuzzVerifyRecoveryCapsuleTx }
+          - { pkg: pkg/chain, target: FuzzDecodeTaskActionTx }
+          - { pkg: pkg/chain, target: FuzzVerifyTaskActionSignature }
+          - { pkg: pkg/chain, target: FuzzMerkleProof }
+          - { pkg: pkg/edgepool, target: FuzzDecodeFederationContext }
+          - { pkg: pkg/edgepool, target: FuzzDecodeMotherContext }
+          - { pkg: pkg/edgepool, target: FuzzVerifyRequestSignature }
+          - { pkg: pkg/edgepool, target: FuzzVerifyJob }
+          - { pkg: pkg/edgepool, target: FuzzValidateIDs }
+          - { pkg: pkg/api, target: FuzzValidateAddressAndTxID }
+          - { pkg: pkg/api, target: FuzzValidateHexAndSignature }
+          - { pkg: pkg/api, target: FuzzValidateAmountAndTimestamp }
+          - { pkg: pkg/consensus, target: FuzzValidateSignedTransaction }
+          - { pkg: pkg/poe, target: FuzzCheckShape }
+          - { pkg: pkg/poe, target: FuzzPickParents }
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: QSDM/source/go.mod
+
+      # Same build as the full suite: pure-Go ML-DSA-87 backend, CGO on for
+      # SQLite.
+      - name: Fuzz for 5 minutes
+        working-directory: QSDM/source
+        env:
+          CGO_ENABLED: "1"
+          FUZZ_PKG: ${{ matrix.pkg }}
+          FUZZ_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          go test -tags dilithium_circl -run '^$' -fuzz "^${FUZZ_TARGET}\$" -fuzztime 5m "./${FUZZ_PKG}"
