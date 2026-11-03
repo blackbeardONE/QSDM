@@ -45,7 +45,7 @@ QSDM_TASK_ACTION_LOG_PATH=./data/task-actions.jsonl
 - `GET /api/v1/tasks/actions`
 - `GET /api/v1/tasks/actions/{action_id}`
 
-The catalog read endpoints are public and read-only. The action submit endpoint is public but requires an ML-DSA signed self-custody envelope where `sender == hex(sha256(public_key))`. QSDM Core records accepted actions in the configured JSONL log, rejects duplicate IDs, and rejects opted-in nonce replays where `nonce <= last_nonce(sender)`. When the node has live v2 wiring, accepted envelopes are also submitted to the mempool as `qsdm/tasks/v1` transactions for deterministic block replay.
+The catalog read endpoints are public and read-only. The action submit endpoint is public but requires an ML-DSA signed self-custody envelope where `sender == hex(sha256(public_key))`. QSDM Core rejects an action whose ID is already in the configured JSONL log, submits the verified envelope to the mempool as a `qsdm/tasks/v1` transaction for deterministic block replay, and only then records it in the log. Nonce replays are refused when the action is applied in a block, where it consumes the sender's live AccountStore nonce; the log itself does not check nonces.
 
 `/tasks/state` and `/tasks/{task_id}/state` expose deterministic task state. On a live validator they read the chain-backed task state store. In standalone/API-only mode they fall back to the JSONL action log projection. The normal `/tasks` and `/tasks/{task_id}` registry responses are also overlaid with task state when a chain store or action log is configured.
 
@@ -149,7 +149,7 @@ Task actions use the same self-custody identity rule as `/wallet/submit-signed`.
 
 Supported action names are `start`, `stop`, `stake`, `fund`, `unstake`, `submit`, `claim`, `withdraw`, `migrate`, `catalog-register`, `catalog-update`, `catalog-pause`, and `catalog-resume`.
 
-Successful submissions return `mempool_status`. `submitted` means the action was added to the live mempool, `duplicate` means the tx was already pending, and `not_configured` means the action was persisted to the JSONL log but no live mempool submitter is installed in this process.
+Successful submissions return `mempool_status`. `submitted` means the action was added to the live mempool and `duplicate` means the tx was already pending. A node without a live mempool submitter answers HTTP 503 with `status: "rejected"` and `mempool_status: "not_configured"`, and a mempool rejection answers HTTP 422 with `mempool_status: "rejected"` or `"encode_failed"`; in both cases nothing is written to the JSONL log.
 
 When `qsdm/tasks/v1` actions are included in a block, they consume the sender's live AccountStore nonce.
 
