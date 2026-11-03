@@ -42,6 +42,11 @@ jobs:
           - { pkg: pkg/chain, target: FuzzVerifyRecoveryCapsuleTx }
           - { pkg: pkg/chain, target: FuzzDecodeTaskActionTx }
           - { pkg: pkg/chain, target: FuzzVerifyTaskActionSignature }
+          - { pkg: pkg/chain, target: FuzzValidateUntrustedEvidence }
+          - { pkg: pkg/chain, target: FuzzVerifyPrevoteLockProof }
+          - { pkg: pkg/chain, target: FuzzVerifyRoundCertificate }
+          - { pkg: pkg/chain, target: FuzzVerifyBFTWire }
+          - { pkg: pkg/chain, target: FuzzVerifyBlockSignature }
           - { pkg: pkg/chain, target: FuzzMerkleProof }
           - { pkg: pkg/edgepool, target: FuzzDecodeFederationContext }
           - { pkg: pkg/edgepool, target: FuzzDecodeMotherContext }
