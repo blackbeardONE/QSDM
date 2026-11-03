@@ -1902,6 +1902,21 @@ type MintTokenRequest struct {
 	Amount      float64 `json:"amount"`
 }
 
+// mintRecord is the transaction-log record POST /api/v1/tokens/mint stores.
+//
+// It is encoded with encoding/json. The record used to be built by
+// formatting the request fields into a JSON template, so a token_symbol or
+// recipient containing a quote could add its own fields -- "sender",
+// "recipient", "amount" or "id" -- and StoreTransaction applies exactly those
+// fields to the balances table.
+type mintRecord struct {
+	Type      string  `json:"type"`
+	Token     string  `json:"token"`
+	Amount    float64 `json:"amount"`
+	Recipient string  `json:"recipient"`
+	TxID      string  `json:"tx_id"`
+}
+
 // MintTokenResponse represents a token minting response
 type MintTokenResponse struct {
 	TransactionID string  `json:"transaction_id"`
@@ -1952,7 +1967,17 @@ func (h *Handlers) MintToken(w http.ResponseWriter, r *http.Request) {
 	// Generate transaction ID
 	txID := fmt.Sprintf("mint_%s_%d", req.TokenSymbol, time.Now().UnixNano())
 
-	mintPayload := []byte(fmt.Sprintf(`{"type":"mint","token":"%s","amount":%f,"recipient":"%s","tx_id":"%s"}`, req.TokenSymbol, req.Amount, req.Recipient, txID))
+	mintPayload, err := json.Marshal(mintRecord{
+		Type:      "mint",
+		Token:     req.TokenSymbol,
+		Amount:    req.Amount,
+		Recipient: req.Recipient,
+		TxID:      txID,
+	})
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid mint request")
+		return
+	}
 	if !h.enforceSubmeshPrivilegedPayload(w, mintPayload) {
 		return
 	}
@@ -2060,6 +2085,20 @@ type CreateTokenRequest struct {
 	Description string  `json:"description,omitempty"`
 }
 
+// tokenCreationRecord is the transaction-log record POST /api/v1/tokens/create
+// stores. Like mintRecord it is encoded with encoding/json, so a quote in the
+// name, symbol or description stays inside its own string instead of adding
+// fields that StoreTransaction would apply to the balances table.
+type tokenCreationRecord struct {
+	Type        string  `json:"type"`
+	TokenID     string  `json:"token_id"`
+	Name        string  `json:"name"`
+	Symbol      string  `json:"symbol"`
+	Decimals    int     `json:"decimals"`
+	TotalSupply float64 `json:"total_supply"`
+	Description string  `json:"description"`
+}
+
 // CreateTokenResponse represents a token creation response
 type CreateTokenResponse struct {
 	TokenID     string  `json:"token_id"`
@@ -2117,8 +2156,19 @@ func (h *Handlers) CreateToken(w http.ResponseWriter, r *http.Request) {
 	)
 
 	// Store token metadata
-	tokenData := fmt.Sprintf(`{"type":"token_creation","token_id":"%s","name":"%s","symbol":"%s","decimals":%d,"total_supply":%f,"description":"%s"}`, tokenID, req.Name, req.Symbol, req.Decimals, req.TotalSupply, req.Description)
-	tokenPayload := []byte(tokenData)
+	tokenPayload, err := json.Marshal(tokenCreationRecord{
+		Type:        "token_creation",
+		TokenID:     tokenID,
+		Name:        req.Name,
+		Symbol:      req.Symbol,
+		Decimals:    req.Decimals,
+		TotalSupply: req.TotalSupply,
+		Description: req.Description,
+	})
+	if err != nil {
+		writeErrorResponse(w, http.StatusBadRequest, "invalid token request")
+		return
+	}
 	if !h.enforceSubmeshPrivilegedPayload(w, tokenPayload) {
 		return
 	}
