@@ -20,6 +20,7 @@ import startLocalTunnel from '../helpers/setTunneling';
 import signPayload from '../helpers/signPayloadHelper';
 
 import app from './app';
+import listenOnLoopback from './listenOnLoopback';
 
 // Specify the log file path
 const logFilePath = path.join(getAppDataPath(), 'logs', 'uPnP.log');
@@ -56,8 +57,8 @@ const initExpressApp = async (): Promise<Express | undefined> => {
   });
 
   const port = config.node.SERVER_PORT;
-  const server = expressApp.listen(port, () => {
-    log(`Express server started @ http://localhost:${port}`);
+  const server = listenOnLoopback(expressApp, port, () => {
+    log(`Express server started @ http://${config.node.SERVER_HOST}:${port}`);
   });
 
   const { networkingFeaturesEnabled } = await getUserConfig();

@@ -26,6 +26,23 @@ import { QsdmMiningAccountResponse } from 'models/api/qsdm';
 const SIGNED_ENROLLMENT_CONTRACT = 'qsdm/enroll/v2';
 const ENROLLMENT_FEE_CELL = 0.001;
 
+// Chain constant enrollment.UnbondWindow (QSDM/source/pkg/mining/enrollment/types.go).
+// The stake stays locked for this many blocks after an unenroll.
+export const QSDM_MINER_UNBOND_WINDOW_BLOCKS = 201_600;
+// Target block time of the live QSDM chain, used only to turn the
+// block count into an approximate duration for UI text.
+export const QSDM_TARGET_BLOCK_TIME_SECONDS = 10;
+
+export const describeQsdmMinerUnbondWindow = (
+  blocks = QSDM_MINER_UNBOND_WINDOW_BLOCKS,
+  blockTimeSeconds = QSDM_TARGET_BLOCK_TIME_SECONDS
+) => {
+  const days = Math.round((blocks * blockTimeSeconds) / 86_400);
+  return `${blocks.toLocaleString('en-US')} blocks (about ${days} ${
+    days === 1 ? 'day' : 'days'
+  })`;
+};
+
 export const resolveQsdmMinerEnrollmentSubmitApiUrl = ({
   runtimeApiUrl = getQsdmRuntimeCoreApiUrl(),
   gatewayApiUrl = QSDM_GATEWAY_API_URL,
@@ -659,7 +676,7 @@ export const enrollQsdmMiner = async (
   }
   if (before.phase === 'pending_unbond') {
     throw new Error(
-      'This miner identity is still in its unbonding period and cannot be re-enrolled yet.'
+      `This miner identity is still in its unbonding period (${describeQsdmMinerUnbondWindow()} after unenrollment) and cannot be re-enrolled yet.`
     );
   }
   if (before.enrolledOwner && !before.enrollmentMatchesSigner) {

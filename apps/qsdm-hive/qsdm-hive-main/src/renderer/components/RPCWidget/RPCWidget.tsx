@@ -16,6 +16,8 @@ import { Icon, InformationCircleLine } from 'vendor/qsdm-styleguide';
 
 import { Popover } from '../ui/Popover/Popover';
 
+import { isQsdmProofButtonVisible } from './proofButton';
+
 import type { QsdmCoreStatusResponse } from 'models/api/qsdm';
 
 const QSDM_CORE_REFETCH_INTERVAL = 30 * 1000;
@@ -256,7 +258,7 @@ export function RPCWidget() {
       >
         {qsdmSignerLabel}
       </button>
-      {qsdmCoreStatus?.taskSigner && (
+      {isQsdmProofButtonVisible(qsdmCoreStatus) && (
         <button
           className="text-xs font-semibold px-2 py-1 rounded-full border border-white/20 text-white/90 hover:border-[#5ED9D1] hover:text-[#5ED9D1] disabled:opacity-40 disabled:hover:text-white/90 disabled:hover:border-white/20"
           disabled={!canRunSignedLoop}

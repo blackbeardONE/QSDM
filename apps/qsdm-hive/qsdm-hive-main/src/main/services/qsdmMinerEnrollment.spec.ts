@@ -1,11 +1,23 @@
 import {
+  QSDM_MINER_UNBOND_WINDOW_BLOCKS,
   buildQsdmMinerNodeId,
+  describeQsdmMinerUnbondWindow,
   inferQsdmNvidiaArchitecture,
   parseQsdmNvidiaSmiCsv,
   resolveQsdmMinerEnrollmentSubmitApiUrl,
 } from './qsdmMinerEnrollment';
 
 describe('qsdmMinerEnrollment', () => {
+  it('describes the chain unbond window in blocks and approximate days', () => {
+    expect(QSDM_MINER_UNBOND_WINDOW_BLOCKS).toBe(201_600);
+    expect(describeQsdmMinerUnbondWindow()).toBe(
+      '201,600 blocks (about 23 days)'
+    );
+    expect(describeQsdmMinerUnbondWindow(8_640, 10)).toBe(
+      '8,640 blocks (about 1 day)'
+    );
+  });
+
   it.each([
     ['7.5', 'turing'],
     ['8.6', 'ampere'],

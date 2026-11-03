@@ -392,7 +392,7 @@ export async function handleClaudeFlow(browser: Browser) {
       // Store Claude API key
       try {
         const response = await axios.post(
-          'http://localhost:30017/api/task-variables',
+          'http://127.0.0.1:30017/api/task-variables',
           {
             label: 'ANTHROPIC_API_KEY',
             value: apiKey,

@@ -1,7 +1,6 @@
 // Build-time guard for the Hive release trust root (public key only).
-// Hive 1.4.21+ pins the v2 release-signing key. The repository ships a
-// placeholder until the operator drops in release-signing-public.json; a
-// production bundle must never be built from the placeholder.
+// Hive 1.4.21+ pins the v2 release-signing key (key_id 4081bf2c...). A
+// production bundle must never be built from a placeholder trust root.
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
