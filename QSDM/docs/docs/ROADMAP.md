@@ -9,17 +9,21 @@ ready and is announced on [Network status](NETWORK_STATUS.md) and in the
 > This page replaces the earlier phase-by-phase roadmap (2024 to September
 > 2026). That version is in the repository history.
 
-## Where we are (October 2026)
+## Where we are (November 2026)
 
-- Public **pilot network (pre-mainnet)**, single block producer during recovery.
+- Public **pilot network (pre-mainnet)**, single block producer during recovery,
+  running release rc1101 since 2026-11-01. Since 2026-11-02 the producer also
+  accepts peer-to-peer (libp2p) connections on port 4001, with connection limits.
 - Chain restarted on 2026-09-27; public NVIDIA mining reopened on 2026-10-02
   with hardened mining admission (durable proof and nonce de-duplication,
   persistent pending rewards, stop-on-storage-failure).
 - QSDM Hive 1.4.22 for Windows and Linux, signed with the rotated v2 release key,
   with automatic owner signatures on mining proofs and Proof-of-Entanglement
-  parents on every transfer. Enrolled miners mine in 7-day canary windows.
+  parents on every transfer.
 - Mining is open to every enrolled miner since 2026-10-19 (enrollment reopened on
-  2026-10-17); every proof carries the miner's operator signature.
+  2026-10-17); every proof carries the miner's operator signature. Mining runs
+  in 7-day windows that renew automatically (since 2026-11-01, after the pause
+  from 2026-10-22).
 - Anyone can run a full node that verifies every block: a signed full-node release,
   a verified chain snapshot and HTTP sync ([Run a full node](RUN_A_FULL_NODE.md)).
 - Wallet transactions signed with ML-DSA-87.

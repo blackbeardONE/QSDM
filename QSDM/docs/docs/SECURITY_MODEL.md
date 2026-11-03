@@ -69,13 +69,15 @@ network see [Network status](NETWORK_STATUS.md).
   consensus message must carry a valid ML-DSA signature, and unsigned
   consensus traffic is refused. This stops forged consensus messages; it does
   not add independent validators. Today the one producer signs them all.
-- Independent validators and BFT finality between them are the next step on
-  the [Roadmap](ROADMAP.md). The full list of rules in force is in
+- Block production by miners, in stages, is the next step on the
+  [Roadmap](ROADMAP.md) (decision of 19 October 2026). Multi-validator BFT is
+  in the code but no longer planned. The full list of rules in force is in
   [Consensus rules](CONSENSUS_RULES.md).
-- Mainnet needs the gates in [Treasury policy §9](TREASURY_POLICY.md#9-mainnet-release-gates):
-  independent validators, a published migration manifest
-  ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)) and an independent external
-  audit.
+- Mainnet needs the [mainnet gates](ROADMAP.md#mainnet-gates) and
+  [Treasury policy §9](TREASURY_POLICY.md#9-mainnet-release-gates):
+  decentralised block production, a published migration manifest
+  ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)) and a published security
+  review with its findings fixed. No independent audit has been completed.
 
 ## Mining
 

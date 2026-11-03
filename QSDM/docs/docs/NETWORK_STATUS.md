@@ -84,7 +84,7 @@ How to read the fields that matter most:
 |---|---|
 | `version`, `git_sha` | The release the public node runs. `git_sha` is the base commit; the release adds the recovery and mining patches listed in the changelog. |
 | `chain_tip` | Current block height. It should rise by about 6 per minute. |
-| `peers` | Connected peer nodes. `0` is expected while a single producer runs the chain. |
+| `peers` | Peer-to-peer (libp2p) nodes connected to this node. Since 2 November 2026 other nodes can connect to the producer on port 4001, so the value can be above `0`. A full node that follows the chain over HTTPS is not counted. |
 | `consensus_auth.signed_consensus_active`, `signed_message_activation_height` | `true` from block 827,000: every consensus message must carry a valid ML-DSA signature. |
 | `consensus_auth.unsigned_consensus_traffic_accepted` | `false`: unsigned consensus traffic is refused. |
 | `consensus_auth.poe_activation_height`, `poe_active` | The block from which transfers must name committed parents, and whether that height has been reached. |
