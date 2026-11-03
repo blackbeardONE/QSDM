@@ -50,6 +50,17 @@ func AuthMiddleware(authManager *AuthManager, logger *logging.Logger) func(http.
 				return
 			}
 
+			// Only access tokens authenticate a request. Login also issues a
+			// 7-day refresh token, and no route exchanges it, so accepting it
+			// here turned it into a 7-day bearer token beside the 15-minute
+			// access token.
+			if claims.TokenType != TokenTypeAccess {
+				monitoring.RecordAuthInvalidToken()
+				logger.Warn("Token validation failed", "error", "not an access token", "token_type", string(claims.TokenType), "path", SanitizeForLog(r.URL.Path))
+				writeErrorResponse(w, http.StatusUnauthorized, "invalid or expired token")
+				return
+			}
+
 			next.ServeHTTP(w, r.WithContext(ContextWithClaims(r.Context(), claims)))
 		})
 	}
