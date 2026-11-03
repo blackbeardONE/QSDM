@@ -4,6 +4,58 @@ All notable changes to the published `qsdm-sdk` npm package are recorded here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-11-03
+
+Public QSDM nodes accept a CELL transfer from a client only as an envelope
+signed with ML-DSA-87 (`POST /api/v1/wallet/submit-signed`), and since block
+816,600 the envelope must name Proof-of-Entanglement parents; without them the
+node answers HTTP 422. Earlier releases could not build or submit such a
+transfer.
+
+### Added
+
+- Signed CELL transfers: `prepareTransfer` (reads `next` from
+  `GET /api/v1/wallet/nonce` and the parents), `transferSigningBytes` (the
+  exact bytes the node verifies, pinned to vectors printed by the node's own
+  `pkg/wallet` code), `submitSignedTransfer`, and
+  `sendTransfer({ ..., signTransfer })`, which signs with a key the caller
+  holds and also accepts a full envelope from `qsdmcli wallet sign-tx` or the
+  web wallet's WASM signer.
+- `getChainParents` and `getPoEParents` (`GET /api/v1/chain/parents`, falling
+  back to successful receipts only when that route is missing, the rule
+  qsdmcli and QSDM Hive use), `getReceipt` and `getReceipts`.
+- `TransferError` (an `ApiError` with `reason`, `serverMessage` and
+  `transactionId`) and `isPoERejection`.
+- QSDM Wallet extension glue: `getWalletProvider`, `waitForWalletProvider`
+  and `sendTransferWithProvider`. The extension's `window.qsdm` cannot sign a
+  website's envelope; it asks QSDM Hive to build, sign and submit a transfer
+  after the user approves it.
+- TypeScript declarations for all of the above.
+
+### Changed
+
+- `sendTransaction()` now rejects with `code: 'QSDM_UNSIGNED_SEND_REMOVED'`
+  and sends no request. It posted an unsigned `{from, to, amount}` body to
+  `POST /api/v1/wallet/send`, an operator-only route (operator JWT plus a
+  request signature made with the node's own key) that spends from the
+  node's own wallet and reads `{recipient, amount, fee, geotag,
+  parent_cells}`; it never worked against a node.
+- `CellStreamWallet` confirms actions through `GET /api/v1/receipts/{tx_id}`
+  (public) instead of `GET /api/v1/transactions/{id}` (operator JWT), and
+  reports an action whose receipt failed on chain.
+
+### Deprecated
+
+- `getTransaction` (operator JWT; use `getReceipt`) and `getNetworkTopology`
+  (operator JWT).
+- `getPeers`, `getRecentTransactions`, `getMetricsJSON` and
+  `getMetricsPrometheus` stay deprecated with corrected reasons: the first
+  two call routes no node registers, the metrics calls exist only on the
+  operator dashboard. They were announced for removal in 0.4.0 and are kept
+  in this release for compatibility.
+- `setAPIKey` is documented as a no-op for QSDM nodes, which do not read
+  `X-API-Key`.
+
 ## [0.3.3] - 2026-07-28
 
 ### Fixed
