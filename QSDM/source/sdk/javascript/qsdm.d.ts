@@ -53,8 +53,165 @@ export interface ClientOptions {
 
 export interface WalletNonceResponse {
     sender: string;
+    /** Last nonce already used by the wallet. */
     nonce: number;
+    /** Nonce to sign the next transfer with (nonce + 1). */
     next: number;
+}
+
+/**
+ * A CELL transfer as `POST /api/v1/wallet/submit-signed` accepts it. Field
+ * names and order follow the node's pkg/wallet.TransactionData; see
+ * {@link transferSigningBytes} for the signed bytes.
+ */
+export interface TransferEnvelope {
+    /** Client-chosen ID; 16-128 characters of [0-9A-Za-z_-] keep it usable as a parent. */
+    id: string;
+    /** Must equal hex(sha256(public_key)). */
+    sender: string;
+    /** 64-character lowercase hex wallet address. */
+    recipient: string;
+    /** CELL, positive, at most 8 decimals. */
+    amount: number;
+    /** CELL, zero or more, at most 8 decimals. */
+    fee: number;
+    geotag: string;
+    /** Proof-of-Entanglement parents (2-10 committed transaction IDs). Signed. */
+    parent_cells: string[] | null;
+    /** `next` from GET /api/v1/wallet/nonce. Omitted from the signed bytes when 0. */
+    nonce?: number;
+    /** RFC 3339. */
+    timestamp: string;
+    /** Hex ML-DSA-87 signature (4,627 bytes). */
+    signature?: string;
+    /** Hex ML-DSA-87 public key (2,592 bytes). Not signed. */
+    public_key?: string;
+}
+
+export interface SignedTransferEnvelope extends TransferEnvelope {
+    signature: string;
+    public_key: string;
+}
+
+/** Body of a successful POST /api/v1/wallet/submit-signed. */
+export interface SubmitTransferResponse {
+    transaction_id: string;
+    /** "pending" (HTTP 202, queued for the next block) or "accepted" (HTTP 200, settled by the node). */
+    status: 'pending' | 'accepted' | string;
+    /** "block-pending", "p2p" or "local-only". */
+    broadcast?: string;
+}
+
+export interface ChainParent {
+    id: string;
+    height: number;
+}
+
+/** Body of GET /api/v1/chain/parents. */
+export interface ChainParentsResponse {
+    tip: number;
+    poe_activation_height: number;
+    poe_active: boolean;
+    min_parents: number;
+    max_parents: number;
+    window_blocks: number;
+    /** The value to copy into `parent_cells`. */
+    parents: string[];
+    recent: ChainParent[];
+}
+
+export interface ReceiptLog {
+    topic: string;
+    data?: Record<string, unknown>;
+    index: number;
+}
+
+/** Body of GET /api/v1/receipts/{tx_id}. */
+export interface Receipt {
+    tx_id: string;
+    block_height: number;
+    block_hash?: string;
+    /** 1 = applied, 0 = failed. */
+    status: number;
+    gas_used: number;
+    fee: number;
+    logs?: ReceiptLog[];
+    error?: string;
+    timestamp: string;
+    contract_id?: string;
+    index_in_block: number;
+}
+
+/** Body of GET /api/v1/receipts. */
+export interface ReceiptsResponse {
+    tip: number;
+    from: number;
+    to: number;
+    limit: number;
+    receipts: Receipt[];
+}
+
+export interface TransferRequest {
+    sender: string;
+    recipient: string;
+    amount: number;
+    fee?: number;
+    geotag?: string;
+    /** Generated when omitted. */
+    id?: string;
+    /** Current time when omitted. */
+    timestamp?: string;
+    /** Read from GET /api/v1/wallet/nonce when omitted. */
+    nonce?: number;
+    /** Read with getPoEParents() when omitted; an explicit [] is kept. */
+    parentCells?: string[];
+}
+
+export type TransferSignerResult =
+    | {
+        signature: string | Uint8Array;
+        public_key?: string | Uint8Array;
+        publicKey?: string | Uint8Array;
+    }
+    | SignedTransferEnvelope
+    | string;
+
+export interface SendTransferRequest extends TransferRequest {
+    /**
+     * Signs with a key the caller holds: an ML-DSA-87 (FIPS 204) signature
+     * over `signingBytes` with an empty context string.
+     */
+    signTransfer(
+        envelope: TransferEnvelope,
+        signingBytes: Uint8Array
+    ): TransferSignerResult | Promise<TransferSignerResult>;
+}
+
+export type TransferRejectionReason =
+    | 'invalid'
+    | 'unauthorized'
+    | 'insufficient_balance'
+    | 'duplicate'
+    | 'nonce'
+    | 'signature'
+    | 'poe_parents'
+    | 'policy'
+    | 'rate_limited'
+    | 'unavailable'
+    | 'other';
+
+/** The `window.qsdm` provider injected by the QSDM Wallet extension. */
+export interface QSDMWalletProvider {
+    readonly isQsdmHive: true;
+    readonly version?: string;
+    request(args: { method: string; params?: unknown }): Promise<unknown>;
+    on?(event: string, callback: (value: unknown) => void): QSDMWalletProvider;
+    removeListener?(event: string, callback: (value: unknown) => void): QSDMWalletProvider;
+}
+
+export interface ProviderTransferResult extends SubmitTransferResponse {
+    /** The connected wallet address, when the helper connected first. */
+    sender?: string;
 }
 
 export interface StreamUsageReceipt {
@@ -282,37 +439,110 @@ export class ApiError extends Error {
     constructor(status: number, url: string, bodyText: string);
 }
 
+/** A node's refusal of a signed transfer (POST /api/v1/wallet/submit-signed). */
+export class TransferError extends ApiError {
+    readonly reason: TransferRejectionReason;
+    /** The node's explanation. */
+    readonly serverMessage: string;
+    /** Set when the node reports a duplicate. */
+    readonly transactionId?: string;
+    constructor(status: number, url: string, bodyText: string);
+}
+
 export function isNotFound(err: unknown): boolean;
 export function isUnauthorized(err: unknown): boolean;
+/** True for a 422 refusal because of missing, malformed or stale Proof-of-Entanglement parents. */
+export function isPoERejection(err: unknown): boolean;
+
+/**
+ * The exact bytes an ML-DSA-87 transfer signature covers: the envelope with
+ * `signature` set to "" and `public_key` removed, encoded as the node's Go
+ * encoding/json encodes it.
+ */
+export function transferSigningBytes(envelope: TransferEnvelope): Uint8Array;
+
+/** `window.qsdm` from the QSDM Wallet extension, or null. */
+export function getWalletProvider(scope?: { qsdm?: unknown }): QSDMWalletProvider | null;
+
+/** Waits for the extension's `qsdm#initialized` event; resolves null after `timeoutMs` (default 3000). */
+export function waitForWalletProvider(options?: {
+    timeoutMs?: number;
+    scope?: {
+        qsdm?: unknown;
+        addEventListener?(type: string, listener: () => void): void;
+        removeEventListener?(type: string, listener: () => void): void;
+    };
+}): Promise<QSDMWalletProvider | null>;
+
+/**
+ * Sends CELL through the QSDM Wallet extension: QSDM Hive asks the user,
+ * builds the envelope (nonce, Proof-of-Entanglement parents, fee 0), signs
+ * it with the wallet's ML-DSA-87 key and submits it to the node Hive uses.
+ * Connects the site first (`qsdm_requestAccounts`) unless `connect` is false.
+ */
+export function sendTransferWithProvider(
+    provider: QSDMWalletProvider,
+    transfer: { recipient: string; amount: number },
+    options?: { connect?: boolean }
+): Promise<ProviderTransferResult>;
 
 export class QSDMClient {
     readonly baseURL: string;
     constructor(baseURL: string, opts?: ClientOptions);
 
+    /** Operator JWT, sent as Authorization: Bearer. Public routes do not need it. */
     setToken(token: string): void;
+    /** Sent as X-API-Key. QSDM nodes do not read this header; kept for gateways that do. */
     setAPIKey(apiKey: string): void;
 
     getBalance(address: string): Promise<number>;
     getWalletNonce(address: string): Promise<WalletNonceResponse>;
-    sendTransaction(from: string, to: string, amount: number): Promise<string>;
 
     /**
-     * Retrieve a transaction by ID.
+     * @deprecated Since 0.4.0. Always rejects without contacting the node.
+     * `POST /api/v1/wallet/send` is operator-only (operator JWT plus a
+     * request signature made with the node's own key), reads
+     * `{recipient, amount, fee, geotag, parent_cells}` rather than
+     * `{from, to, amount}`, and spends from the node's own wallet. Public
+     * nodes accept only ML-DSA-87 signed transfers with
+     * Proof-of-Entanglement parents: use {@link sendTransferWithProvider},
+     * {@link QSDMClient.sendTransfer} or {@link QSDMClient.submitSignedTransfer}.
+     */
+    sendTransaction(from: string, to: string, amount: number): Promise<never>;
+
+    /** GET /api/v1/chain/parents (public). `limit` sets the length of `recent`. */
+    getChainParents(options?: { limit?: number }): Promise<ChainParentsResponse>;
+    /**
+     * The two parents for a new transfer: GET /api/v1/chain/parents, falling
+     * back to successful receipts only if that route is missing (404/405/501).
+     */
+    getPoEParents(): Promise<string[]>;
+    /** GET /api/v1/receipts/{tx_id} (public); 404 until the transaction is in a block. */
+    getReceipt(txID: string): Promise<Receipt>;
+    /** GET /api/v1/receipts (public), newest first. */
+    getReceipts(query?: { from?: number; to?: number; limit?: number }): Promise<ReceiptsResponse>;
+    /** Builds an unsigned envelope, reading the nonce and parents from the node unless given. */
+    prepareTransfer(request: TransferRequest): Promise<TransferEnvelope>;
+    /** POST /api/v1/wallet/submit-signed (public). Throws {@link TransferError} on refusal. */
+    submitSignedTransfer(envelope: SignedTransferEnvelope): Promise<SubmitTransferResponse>;
+    /** prepareTransfer + request.signTransfer + submitSignedTransfer, one attempt. */
+    sendTransfer(request: SendTransferRequest): Promise<SubmitTransferResponse>;
+
+    /**
+     * Retrieve a transaction by ID from `GET /api/v1/transactions/{tx_id}`
+     * (plural; fixed in 0.3.1).
      *
-     * Endpoint: `GET /api/v1/transactions/{tx_id}` (plural; fixed in
-     * 0.3.1). Earlier SDK builds (≤0.3.0) called the singular form
-     * which returns 404 in production.
+     * @deprecated Since 0.4.0. The route is not public: a public node
+     * answers 401 without an operator JWT. Use
+     * {@link QSDMClient.getReceipt} to follow a transaction.
      */
     getTransaction(txID: string): Promise<Record<string, unknown>>;
 
     /**
-     * @deprecated Since 0.3.1. `/api/v1/wallet/transactions` is not
-     * registered on the public `pkg/api` server. There is no
-     * per-address recent-transactions endpoint on the public surface
-     * today; use `GET /api/v1/receipts` (paginated chain transparency
-     * feed) and filter client-side, or maintain an off-chain index.
-     * Production calls return `ApiError` with `status: 404`. Pending
-     * removal in 0.4.0.
+     * @deprecated Since 0.3.1. No QSDM node registers
+     * `/api/v1/wallet/transactions`, so the call always fails (401 without
+     * credentials, 404 with an operator JWT). Use
+     * {@link QSDMClient.getReceipts} and filter, or keep your own index.
      */
     getRecentTransactions(address: string, limit?: number): Promise<unknown[]>;
 
@@ -324,6 +554,10 @@ export class QSDMClient {
         serviceId?: string;
     }): Promise<StreamsResponse>;
     getStream(streamID: string): Promise<StreamResponse>;
+    /**
+     * Public route; a node that admits only signed wallet transfers answers
+     * 503 (the public pilot pauses stream actions during its recovery).
+     */
     submitStreamAction(envelope: StreamActionEnvelope): Promise<StreamActionSubmitResponse>;
 
     getLiveness(): Promise<HealthStatus>;
@@ -332,32 +566,31 @@ export class QSDMClient {
     getNodeStatus(): Promise<NodeStatus>;
 
     /**
-     * @deprecated Since 0.3.1. `/api/v1/network/peers` is not
-     * registered on the public `pkg/api` server. Closest analogues
-     * are `/api/admin/peers` (admin-only, mTLS-required) and the
-     * dashboard's `/api/topology`; neither is reachable from a
-     * JWT-bearer SDK client. Use {@link QSDMClient.getNetworkTopology}
-     * for the same data instead. Production calls return `ApiError`
-     * with `status: 404`. Pending removal in 0.4.0.
+     * @deprecated Since 0.3.1. No QSDM node registers
+     * `/api/v1/network/peers`, so the call always fails (401 without
+     * credentials, 404 with an operator JWT). Use
+     * `getNodeStatus().peers` for the number of connected peers.
      */
     getPeers(): Promise<unknown[]>;
 
+    /**
+     * @deprecated Since 0.4.0. `/api/v1/network/topology` is not on the
+     * node's public allowlist: a public node answers 401 without an
+     * operator JWT. Use `getNodeStatus().peers` for the peer count.
+     */
     getNetworkTopology(): Promise<Record<string, unknown>>;
 
     /**
-     * @deprecated Since 0.3.1. `/api/metrics` is registered only on
-     * the operator dashboard server (`requireAuth`-gated), not on
-     * the public `pkg/api` server the SDK targets. Production calls
-     * against a `pkg/api` node return `ApiError` with `status: 404`.
-     * Pending removal in 0.4.0.
+     * @deprecated Since 0.3.1. `/api/metrics` exists only on the operator
+     * dashboard server (login required), not on the node API, so the call
+     * always fails against a node. There is no public metrics endpoint.
      */
     getMetricsJSON(): Promise<Record<string, unknown>>;
 
     /**
-     * @deprecated Since 0.3.1. See {@link QSDMClient.getMetricsJSON}
-     * — same dashboard-vs-public-API mismatch. Production calls
-     * against a `pkg/api` node return `ApiError` with `status: 404`.
-     * Pending removal in 0.4.0.
+     * @deprecated Since 0.3.1. Like {@link QSDMClient.getMetricsJSON},
+     * `/api/metrics/prometheus` exists only on the operator dashboard
+     * server (scrape token or login required).
      */
     getMetricsPrometheus(): Promise<string>;
 }
