@@ -115,11 +115,15 @@ jobs:
         shell: pwsh
         run: ./QSDM/deploy/scripts/build_hive_windows_native.ps1 -SkipCudaRuntimeSelfTest
 
-      - name: Test Hive integration
+      # The whole jest suite, not a hand-picked list. bash, not the default
+      # pwsh: pwsh carries on after a failing native command and reports only
+      # the last exit code, so a tsc failure would not have failed this step.
+      - name: Test Hive (type check and full jest suite)
         working-directory: apps/qsdm-hive/qsdm-hive-main
+        shell: bash
         run: |
           npx tsc --noEmit
-          npm test -- --runInBand src/config/qsdm.spec.ts src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts src/main/services/qsdmTaskStake.spec.ts src/main/services/qsdmWalletProviderBroker.spec.ts src/main/services/qsdmWalletProviderNativeHost.spec.ts src/main/services/qsdmSignerSecretStore.spec.ts src/main/controllers/qsdm/unlockQsdmSignerWallet.spec.ts src/main/controllers/qsdm/enableQsdmSignerLegacyRecovery.spec.ts
+          npm test -- --runInBand
 
       - name: Test browser wallet extension
         working-directory: apps/qsdm-hive-wallet-extension

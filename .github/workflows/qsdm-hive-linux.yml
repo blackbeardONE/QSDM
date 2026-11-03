@@ -102,11 +102,13 @@ jobs:
           npm --prefix release/app ci --ignore-scripts
           npm exec electron-builder -- install-app-deps
 
-      - name: Test Hive task integration
+      # The whole jest suite, not a hand-picked list: a spec that is not listed
+      # here can no longer break unnoticed.
+      - name: Test Hive (type check and full jest suite)
         working-directory: apps/qsdm-hive/qsdm-hive-main
         run: |
           npx tsc --noEmit
-          npm test -- --runInBand src/config/qsdm.spec.ts src/main/services/qsdmSystemTasks.spec.ts src/main/services/qsdmTaskActions.spec.ts src/main/services/qsdmTaskStake.spec.ts src/main/services/qsdmWalletProviderBroker.spec.ts src/main/services/qsdmWalletProviderNativeHost.spec.ts src/main/controllers/qsdm/enableQsdmSignerLegacyRecovery.spec.ts
+          npm test -- --runInBand
 
       - name: Build Hive
         working-directory: apps/qsdm-hive/qsdm-hive-main
