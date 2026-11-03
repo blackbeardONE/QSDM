@@ -16,6 +16,8 @@ on:
       - "QSDM/Dockerfile"
       - "QSDM/config/**"
       - "QSDM/deploy/**"
+      # pkg/api's TestOpenAPIMatchesRegisteredRoutes reads the API description.
+      - "QSDM/docs/docs/openapi.yaml"
       - ".github/**"
   pull_request:
     paths:
@@ -24,6 +26,8 @@ on:
       - "QSDM/Dockerfile"
       - "QSDM/config/**"
       - "QSDM/deploy/**"
+      # pkg/api's TestOpenAPIMatchesRegisteredRoutes reads the API description.
+      - "QSDM/docs/docs/openapi.yaml"
       - ".github/**"
 
 jobs:
