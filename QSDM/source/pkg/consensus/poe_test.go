@@ -24,7 +24,7 @@ var (
 
 // signedBy builds a SignedTransaction signed by signer and carrying signer's
 // own public key and wallet address.
-func signedBy(t *testing.T, signer *ProofOfEntanglement, parents ...string) SignedTransaction {
+func signedBy(t testing.TB, signer *ProofOfEntanglement, parents ...string) SignedTransaction {
 	t.Helper()
 	msg := []byte("canonical envelope bytes")
 	sig, err := signer.Sign(msg)
@@ -42,7 +42,7 @@ func signedBy(t *testing.T, signer *ProofOfEntanglement, parents ...string) Sign
 	}
 }
 
-func newPoE(t *testing.T) *ProofOfEntanglement {
+func newPoE(t testing.TB) *ProofOfEntanglement {
 	t.Helper()
 	p := NewProofOfEntanglement()
 	if p == nil {
