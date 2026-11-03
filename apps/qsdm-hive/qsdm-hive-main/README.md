@@ -66,6 +66,10 @@ Hive's local and network data boundaries.
 
 - Documentation: https://qsdm.tech/docs
 - Website and support: https://qsdm.tech
+- Problem reports: open the menu of the Hive tray icon, choose **Save a
+  diagnostics report…** and attach the saved file. Hive keeps crash records on
+  your computer and sends nothing; see the
+  [privacy policy](../../../PRIVACY.md#crash-records-and-diagnostics-reports).
 
 ## License
 
