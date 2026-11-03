@@ -9,8 +9,9 @@ on:
   push:
     branches:
       - main
+    # Only a new or changed release request publishes. Editing this workflow
+    # must not re-run an old request whose build artifacts have expired.
     paths:
-      - ".github/workflows/qsdm-hive-publish-release.yml"
       - "QSDM/deploy/releases/hive-release-request.json"
 
 concurrency:
@@ -55,7 +56,10 @@ jobs:
           test "$tag_commit" = "$source_commit"
 
           for run_id in "$windows_run_id" "$linux_run_id"; do
-            run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")"
+            if ! run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")"; then
+              echo "::error file=${REQUEST_FILE}::Cannot publish Hive ${version}: workflow run ${run_id} named in the release request cannot be read. GitHub deletes old runs together with their artifacts. Point the request at current QSDM Hive Windows and Linux runs for ${tag}, then commit it again."
+              exit 1
+            fi
             test "$(jq -r '.status' <<<"$run_json")" = "completed"
             test "$(jq -r '.conclusion' <<<"$run_json")" = "success"
             test "$(jq -r '.head_sha' <<<"$run_json")" = "$source_commit"
@@ -69,6 +73,55 @@ jobs:
             echo "windows_run_id=$windows_run_id"
             echo "linux_run_id=$linux_run_id"
           } >> "$GITHUB_OUTPUT"
+
+      # GitHub deletes workflow artifacts after their retention period: 14 days
+      # for the Linux build, 30 days for the Windows build, its evidence and the
+      # wallet extension. Stop here with the reason instead of failing later
+      # inside gh run download.
+      - name: Require the requested artifacts to still exist
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST_FILE: QSDM/deploy/releases/hive-release-request.json
+          VERSION: ${{ steps.request.outputs.version }}
+          TAG: ${{ steps.request.outputs.tag }}
+          WINDOWS_RUN_ID: ${{ steps.request.outputs.windows_run_id }}
+          LINUX_RUN_ID: ${{ steps.request.outputs.linux_run_id }}
+        run: |
+          set -euo pipefail
+          gone=()
+          require_artifact() {
+            local run_id="$1" name="$2" state
+            state="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" |
+              jq -r --arg name "$name" '
+                [.artifacts[] | select(.name == $name)]
+                | if length == 0 then "not found"
+                  elif any(.[]; .expired | not) then "available"
+                  else "expired" end')"
+            echo "${name} (run ${run_id}): ${state}"
+            if [[ "$state" != "available" ]]; then
+              gone+=("${name} from run ${run_id} (${state})")
+            fi
+          }
+          require_artifact "$WINDOWS_RUN_ID" "$(jq -r '.windows.artifact' "$REQUEST_FILE")"
+          require_artifact "$WINDOWS_RUN_ID" "$(jq -r '.windows.evidence_artifact' "$REQUEST_FILE")"
+          require_artifact "$WINDOWS_RUN_ID" "$(jq -r '.wallet_extension.artifact' "$REQUEST_FILE")"
+          require_artifact "$LINUX_RUN_ID" "$(jq -r '.linux.artifact' "$REQUEST_FILE")"
+
+          if (( ${#gone[@]} > 0 )); then
+            {
+              echo "### Hive ${VERSION} was not published"
+              echo
+              echo "\`${REQUEST_FILE}\` asks for build artifacts that are no longer available:"
+              echo
+              printf -- '- %s\n' "${gone[@]}"
+              echo
+              echo "Artifacts are deleted after their retention period (14 days for the Linux build, 30 days for the Windows build, its evidence and the wallet extension). To publish ${TAG}, point the request at QSDM Hive Windows and Linux runs for ${TAG} whose artifacts still exist (run those workflows for the tag again if needed), then commit the updated request."
+            } >> "$GITHUB_STEP_SUMMARY"
+            printf -v gone_list '%s; ' "${gone[@]}"
+            echo "::error file=${REQUEST_FILE}::Cannot publish Hive ${VERSION}: requested build artifacts are no longer available: ${gone_list%; }. Point the request at QSDM Hive Windows and Linux runs for ${TAG} whose artifacts still exist, then commit it again."
+            exit 1
+          fi
 
       - name: Download verified workflow artifacts
         shell: bash
