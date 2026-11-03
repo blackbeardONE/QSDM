@@ -21,6 +21,12 @@ import (
 
 const qsdmTaskActionLogPathEnv = "QSDM_TASK_ACTION_LOG_PATH"
 
+// qsdmTaskActionLogSource is the "source" GET /api/v1/tasks/actions reports
+// when the log is configured. It is a label like the task routes' "chain",
+// "operator-overlay" and "operator-registry"; the route used to report the
+// log's file path on the node.
+const qsdmTaskActionLogSource = "operator-action-log"
+
 var qsdmTaskActionLogMu sync.Mutex
 
 type qsdmTaskActionSubmitterHolder struct {
@@ -475,12 +481,13 @@ func (h *Handlers) QSDMTaskActionsListHandler(w http.ResponseWriter, r *http.Req
 		limit,
 	)
 	if err != nil {
-		writeErrorResponse(w, http.StatusInternalServerError, "failed to read task action log: "+err.Error())
+		// The error names the log's file path; it goes to the node's log only.
+		WriteServerError(w, h.logger, "read_task_action_log", err)
 		return
 	}
 	writeJSONResponse(w, http.StatusOK, QSDMTaskActionsListResponse{
 		Configured: true,
-		Source:     path,
+		Source:     qsdmTaskActionLogSource,
 		Actions:    actions,
 	})
 }
@@ -507,7 +514,7 @@ func (h *Handlers) QSDMTaskActionRouteHandler(w http.ResponseWriter, r *http.Req
 
 	actions, err := readQSDMTaskActions(path, "", "", 500)
 	if err != nil {
-		writeErrorResponse(w, http.StatusInternalServerError, "failed to read task action log: "+err.Error())
+		WriteServerError(w, h.logger, "read_task_action_log", err)
 		return
 	}
 	for _, action := range actions {

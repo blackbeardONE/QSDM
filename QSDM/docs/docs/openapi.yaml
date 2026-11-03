@@ -10165,7 +10165,13 @@ components:
           description: True when QSDM_TASK_ACTION_LOG_PATH is set.
         source:
           type: string
-          description: File path of the log on the node (the QSDM_TASK_ACTION_LOG_PATH value).
+          enum:
+            - operator-action-log
+          description: |
+            Where the records come from: `operator-action-log` (the node's
+            signed task-action log) when `configured` is true; absent
+            otherwise. Nodes before November 2026 reported the log's file
+            path here.
         actions:
           type: array
           items:
