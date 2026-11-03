@@ -1,0 +1,52 @@
+name: Full-node installer
+
+# Tests QSDM/scripts/fullnode/install-full-node.sh, the one-command version of
+# QSDM/docs/docs/RUN_A_FULL_NODE.md. The test runs the installer end to end in a sandbox: a local
+# server with synthetic release files, a fake qsdm and stand-ins for sudo, useradd, install,
+# runuser and systemctl, with every file under --root. It never touches the internet: a curl
+# stand-in refuses every address other than 127.0.0.1. It also compares the installer with the
+# guide (the systemd unit, core.env and the install commands), so a change to the guide's steps
+# runs it too.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "QSDM/scripts/fullnode/**"
+      - "QSDM/docs/docs/RUN_A_FULL_NODE.md"
+      - ".github/workflows/fullnode-installer.yml"
+  pull_request:
+    paths:
+      - "QSDM/scripts/fullnode/**"
+      - "QSDM/docs/docs/RUN_A_FULL_NODE.md"
+      - ".github/workflows/fullnode-installer.yml"
+
+concurrency:
+  group: fullnode-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sandbox-test:
+    name: Installer end to end in a sandbox, and shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Shellcheck
+        run: |
+          set -euo pipefail
+          if ! command -v shellcheck >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
+          shellcheck --version
+          shellcheck --severity=warning \
+            QSDM/scripts/fullnode/install-full-node.sh \
+            QSDM/scripts/fullnode/test-install-full-node.sh
+
+      - name: Run the installer end to end in a sandbox
+        run: bash QSDM/scripts/fullnode/test-install-full-node.sh
