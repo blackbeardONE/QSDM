@@ -9,7 +9,7 @@ import (
 
 // newBFTKey returns an ML-DSA-87 signer and the self-certifying validator
 // address derived from its public key.
-func newBFTKey(t *testing.T) (*crypto.Dilithium, string) {
+func newBFTKey(t testing.TB) (*crypto.Dilithium, string) {
 	t.Helper()
 	d := crypto.NewDilithium()
 	if d == nil {

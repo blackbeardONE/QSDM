@@ -13,7 +13,7 @@ import (
 // would. The canonical-bytes test in pkg/api proves the two FORMS match; this
 // proves the two HALVES do -- a real key, a real signature, through the real
 // verify path.
-func signedTaskAction(t *testing.T) (TaskAction, string, string) {
+func signedTaskAction(t testing.TB) (TaskAction, string, string) {
 	t.Helper()
 	d := crypto.NewDilithium()
 	if d == nil {

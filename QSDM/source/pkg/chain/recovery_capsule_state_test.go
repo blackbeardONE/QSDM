@@ -19,7 +19,7 @@ type recoveryTestWallet struct {
 	address string
 }
 
-func newRecoveryTestWallet(t *testing.T) recoveryTestWallet {
+func newRecoveryTestWallet(t testing.TB) recoveryTestWallet {
 	t.Helper()
 	public, private, err := mldsa87.GenerateKey(rand.Reader)
 	if err != nil {
@@ -30,7 +30,7 @@ func newRecoveryTestWallet(t *testing.T) recoveryTestWallet {
 	return recoveryTestWallet{public: public, private: private, address: hex.EncodeToString(sum[:])}
 }
 
-func signedRecoveryCapsuleTx(t *testing.T, wallet recoveryTestWallet, id string, nonce uint64) *mempool.Tx {
+func signedRecoveryCapsuleTx(t testing.TB, wallet recoveryTestWallet, id string, nonce uint64) *mempool.Tx {
 	t.Helper()
 	publicBytes, _ := wallet.public.MarshalBinary()
 	privateBytes, _ := wallet.private.MarshalBinary()
