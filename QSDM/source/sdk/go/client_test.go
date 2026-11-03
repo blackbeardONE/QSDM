@@ -3,6 +3,7 @@ package qsdm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -59,28 +60,28 @@ func TestClient_GetWalletNonce(t *testing.T) {
 	}
 }
 
-func TestClient_SendTransaction_PostsBody(t *testing.T) {
+// The unsigned send is deprecated: it must fail with ErrUnsignedSendRemoved
+// and never reach the node (POST /api/v1/wallet/send is operator-only).
+func TestClient_SendTransaction_FailsWithoutRequest(t *testing.T) {
+	var requests int
 	srv, c := newTestServer(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("want POST, got %s", r.Method)
-		}
-		var body map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode body: %v", err)
-		}
-		if body["from"] != "a" || body["to"] != "b" || body["amount"].(float64) != 1.5 {
-			t.Fatalf("unexpected body: %+v", body)
-		}
+		requests++
 		_ = json.NewEncoder(w).Encode(map[string]string{"transaction_id": "tx-123"})
 	})
 	defer srv.Close()
 
 	id, err := c.SendTransaction("a", "b", 1.5)
-	if err != nil {
-		t.Fatalf("SendTransaction: %v", err)
+	if !errors.Is(err, ErrUnsignedSendRemoved) || id != "" {
+		t.Fatalf("SendTransaction = %q, %v; want ErrUnsignedSendRemoved", id, err)
 	}
-	if id != "tx-123" {
-		t.Fatalf("expected tx-123, got %s", id)
+	if _, err := c.SendTransactionContext(context.Background(), "a", "b", 1.5); !errors.Is(err, ErrUnsignedSendRemoved) {
+		t.Fatalf("SendTransactionContext error = %v", err)
+	}
+	if !strings.Contains(err.Error(), "SendTransfer") || !strings.Contains(err.Error(), "submit-signed") {
+		t.Fatalf("error %q does not point to the signed path", err)
+	}
+	if requests != 0 {
+		t.Fatalf("the deprecated send made %d request(s)", requests)
 	}
 }
 
@@ -195,7 +196,7 @@ func TestClient_GetTransaction_PinsPluralPath(t *testing.T) {
 		if r.URL.Path != wantURL {
 			t.Errorf("GetTransaction URL path: want %q, got %q "+
 				"(regression of the pre-0.3.1 singular typo? see "+
-				"pkg/api/handlers.go:269-270 for the canonical mux registration)",
+				"registerRoutes in pkg/api/handlers.go for the canonical mux registration)",
 				wantURL, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
