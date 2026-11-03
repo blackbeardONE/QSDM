@@ -30,6 +30,7 @@ import {
   storeUserConfig,
 } from './controllers';
 import db from './db';
+import { installCrashRecorder } from './diagnostics/crashRecorder';
 import { handleDeepLinks } from './handleDeepLinks';
 import initHandlers from './initHandlers';
 import { configureLogger } from './logger';
@@ -900,6 +901,10 @@ const createWindow = async () => {
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception ->', error);
 });
+
+// Also keep a scrubbed record of each crash, on this computer only:
+// <userData>/diagnostics/crash-*.json (see ./diagnostics/crashRecorder.ts).
+installCrashRecorder();
 
 dialog.showErrorBox = (title, content) => {
   console.log(`[Error Box]: ${title}\n${content}`);
