@@ -128,8 +128,8 @@ Each proof says which NVIDIA attestation it carries:
 | "Unlock your QSDM wallet in Hive to mine." | Unlock the wallet in **Settings → Wallet** and start the task again. |
 | "QSDM protocol mining requires NVIDIA Turing or newer (7.5+)." | The GPU is too old for protocol v2. |
 | Hive cannot read the GPU | Make sure `nvidia-smi` runs in a terminal; update the NVIDIA driver. |
-| Enrollment fails | New enrollments are paused during recovery. Check [Network status](NETWORK_STATUS.md). |
-| Miner reports `mining_unavailable` (HTTP 503) | The mining window is closed. Check [Network status](NETWORK_STATUS.md) for the next 7-day window. |
+| Enrollment fails | Enrollment has been open since 17 October 2026. **Lock CELL now** needs at least 10.001 CELL in the wallet; with less, choose **Use mining earnings**. Check [Network status](NETWORK_STATUS.md) for any change. |
+| Miner reports `mining_unavailable` (HTTP 503) | Mining is paused, for example while the producer restarts. Windows renew automatically, so mining reopens by itself; check [Network status](NETWORK_STATUS.md). |
 | Many `429` responses in the miner log | You hit the per-IP rate limit, for example with several rigs behind one internet address. Run fewer rigs per address. |
 | 1.4.20 / 1.4.17 does not offer 1.4.22 | Expected. Install 1.4.22 by hand once. |
 

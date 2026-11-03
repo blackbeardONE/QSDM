@@ -16,13 +16,13 @@ Terms are in alphabetical order. Links go to the page with the details.
 | **BFT** | Byzantine fault tolerant voting between validators to agree on the next block. Signed BFT messages are enforced, but multi-validator BFT is not active yet: there is one producer today. |
 | **Block reward** | New CELL paid for accepted mining proofs: 3.56490987 CELL per block in the current halving epoch. See [CELL tokenomics](CELL_TOKENOMICS.md). |
 | **Bond** | The 10 CELL (1,000,000,000 dust) stake behind each enrolled GPU. It can be locked up front or taken from the first mining rewards (deferred bond). Unenrolling starts an unbonding period of 201,600 blocks. |
-| **Canary window** | A limited mining period for enrolled QSDM Hive miners. Windows currently last 7 days (168 hours), with caps per owner per 24-hour epoch. See [Mining today](MINING_TODAY.md). |
+| **Canary window** | The limited mining periods used before mining opened to every enrolled miner on 19 October 2026. Mining now runs in 7-day (168-hour) windows that renew automatically, with caps per owner per 24-hour epoch. See [Mining today](MINING_TODAY.md). |
 | **CELL** | The coin of the QSDM network (name Cell, symbol CELL, 8 decimals). Max supply is 90,000,000 CELL, all from mining. |
 | **`consensus_auth`** | The block of `GET /api/v1/status` that reports which consensus rules are active and from which height. See [API reference](API_REFERENCE.md#the-consensus_auth-block). |
 | **Dust** | The smallest unit of CELL. 1 CELL = 100,000,000 dust. Fields named `*_dust` are integers in dust. |
 | **Ed25519** | A classical signature scheme. QSDM wallets, task actions and consensus use ML-DSA instead. The generic peer-to-peer gossip verifier code still accepts Ed25519, but it cannot be reached on the live chain; retirement is planned. |
 | **Edge Control** | The setup utility for Agents and Relays. It ships with Hive and is not another wallet client. |
-| **Enrollment** | Registering an NVIDIA GPU for mining with a signed enrollment (`qsdm/enroll/v2`) tied to your wallet and a 10 CELL bond. New enrollments are paused during the current recovery. |
+| **Enrollment** | Registering an NVIDIA GPU for mining with a signed enrollment (`qsdm/enroll/v2`) tied to your wallet and a 10 CELL bond. Enrollment is open; it reopened on 17 October 2026. |
 | **Epoch** | Three different periods share this word: the **halving epoch** of 12,623,040 blocks (about four years) in `/status`, the **mining epoch** of 60,480 blocks in `/mining/work`, and the 24-hour epoch used for per-owner mining caps. |
 | **Follower** | A node that replays and checks every block from the producer but does not produce blocks itself. |
 | **Halving** | The block reward halves at the end of each halving epoch. The next halving is at height 12,623,041. |

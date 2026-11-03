@@ -2,10 +2,10 @@
 
 > [!IMPORTANT]
 > **Using QSDM Hive?** Follow [Mining today (Hive 1.4.22)](MINING_TODAY.md)
-> instead of this page. **New mining enrollments are paused during the current
-> recovery:** only enrolled GPUs can mine, in 7-day canary windows. The enrollment
-> steps below will work again when enrollment reopens; check
-> [Network status](NETWORK_STATUS.md).
+> instead of this page. **Mining is open to every enrolled miner** (since
+> 19 October 2026), in 7-day windows that renew automatically; enrollment
+> reopened on 17 October 2026. Check [Network status](NETWORK_STATUS.md) for
+> the current state.
 
 > **Consumer path:** install QSDM Hive and run the QSDM Miner task there.
 > Hive manages the wallet, signed task loop, local status, and consumer mining

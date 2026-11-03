@@ -7,8 +7,8 @@ network (October 2026), trimmed for length.
 > [!NOTE]
 > QSDM is a pilot network (pre-mainnet) with a single block producer during
 > recovery. While the recovery lasts, the API accepts reads, signed wallet
-> transfers, signed task actions and mining submissions; other writes are paused. See
-> [Network status](NETWORK_STATUS.md).
+> transfers, signed task actions, miner enrollments and mining submissions;
+> other writes are paused. See [Network status](NETWORK_STATUS.md).
 
 ## Base URL
 
@@ -92,6 +92,7 @@ Some endpoints answer differently, so check the HTTP status first:
 | GET | `/mining/challenge` | Fresh signed challenge for attestation |
 | POST | `/mining/submit` | Submit a mining proof (`api.qsdm.tech` only) |
 | GET | `/mining/enrollments`, `/mining/enrollment/{node_id}` | Miner enrollment registry |
+| POST | `/mining/enroll`, `/mining/unenroll` | Submit a signed miner enrollment or unenrollment (QSDM Hive does this for you) |
 | GET | `/tasks`, `/tasks/state`, `/tasks/{task_id}`, `/tasks/actions` | Task registry (read) |
 | POST | `/tasks/actions/submit-signed` | Submit an ML-DSA signed task action (open since 2026-10-15) |
 | GET | `/streams`, `/streams/{stream_id}`, `/streams/nonce` | CELL Streams (read) |
@@ -419,7 +420,7 @@ format is defined in [Mining protocol v2](MINING_PROTOCOL_V2.md). Base URL:
 | GET | `/mining/challenge` | Live |
 | POST | `/mining/submit` | Live on `api.qsdm.tech` for enrolled miners |
 | GET | `/mining/enrollments`, `/mining/enrollment/{node_id}` | Live |
-| POST | `/mining/enroll`, `/mining/unenroll` | **Paused** during recovery |
+| POST | `/mining/enroll`, `/mining/unenroll` | Live: enrollment reopened on 2026-10-17 (QSDM Hive builds and submits both) |
 
 ### `GET /mining/work`
 

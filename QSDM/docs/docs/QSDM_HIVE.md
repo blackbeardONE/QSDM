@@ -26,10 +26,10 @@ do not hold a user wallet.
 - Hive 1.4.22 signs mining proofs automatically with your wallet (the miner
   operator signature). The wallet must be unlocked in Hive to mine; a locked
   wallet shows "Unlock your QSDM wallet in Hive to mine."
-- Mining is open to enrolled QSDM Hive miners in 7-day (168-hour) canary
-  windows, with caps per owner per 24-hour epoch. New mining enrollments are
-  still paused during the current recovery. See [Mining today](MINING_TODAY.md)
-  for the step-by-step mining guide.
+- Mining is open to every enrolled QSDM Hive miner (since 19 October 2026) in
+  7-day (168-hour) windows that renew automatically, with caps per owner per
+  24-hour epoch. Enrollment is open (since 17 October 2026). See
+  [Mining today](MINING_TODAY.md) for the step-by-step mining guide.
 
 ## Install path
 
@@ -177,7 +177,7 @@ the Hive wallet only; email and Telegram sign-in are turned off.
 
 ## Tasks in Hive
 
-- **QSDM Miner** requires an NVIDIA Turing-or-newer GPU (CUDA compute capability 7.5+); GPU mining is NVIDIA today. Hive runs the GPU proof of work (see [Mining protocol v2](MINING_PROTOCOL_V2.md)) through the packaged CUDA solver and refuses to start the task if that solver, a compatible driver, or the GPU is unavailable. Hive 1.4.22 signs each proof with the unlocked Hive wallet (the miner operator signature) and does not start the miner while the wallet is locked. Enrolled miners mine in 7-day canary windows; new enrollments are paused during the current recovery; see [Mining today](MINING_TODAY.md). Windows and Linux release builds fail before publication if either mining executable is missing. Concurrent restore and startup requests share one launch operation, so one Hive task supervises one CUDA miner. On Linux it recognizes the same packaged miner across AppImage mount changes and adopts that process after an unclean Hive restart instead of launching a conflicting duplicate. It also ignores obsolete protected Windows miner services instead of adopting them as the current task. A zero-balance signer may choose **Use mining earnings**: accepted mining rewards fill the 10 CELL slashable bond first, then subsequent rewards become spendable. Operators who already hold CELL may still lock the bond immediately.
+- **QSDM Miner** requires an NVIDIA Turing-or-newer GPU (CUDA compute capability 7.5+); GPU mining is NVIDIA today. Hive runs the GPU proof of work (see [Mining protocol v2](MINING_PROTOCOL_V2.md)) through the packaged CUDA solver and refuses to start the task if that solver, a compatible driver, or the GPU is unavailable. Hive 1.4.22 signs each proof with the unlocked Hive wallet (the miner operator signature) and does not start the miner while the wallet is locked. Mining is open to every enrolled miner in 7-day windows that renew automatically; see [Mining today](MINING_TODAY.md). Windows and Linux release builds fail before publication if either mining executable is missing. Concurrent restore and startup requests share one launch operation, so one Hive task supervises one CUDA miner. On Linux it recognizes the same packaged miner across AppImage mount changes and adopts that process after an unclean Hive restart instead of launching a conflicting duplicate. It also ignores obsolete protected Windows miner services instead of adopting them as the current task. A zero-balance signer may choose **Use mining earnings**: accepted mining rewards fill the 10 CELL slashable bond first, then subsequent rewards become spendable. Operators who already hold CELL may still lock the bond immediately.
 - **QSDM Edge Worker CPU** shares bounded CPU capacity locally or through an authenticated QSDM Relay.
 - **QSDM Edge Worker GPU** shares bounded NVIDIA CUDA capacity. This is pooled compute, not protocol mining.
 - **QSDM Edge Worker RAM** shares a configured memory allowance for fixed memory-backed jobs.
