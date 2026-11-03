@@ -281,7 +281,7 @@ func isPublicEndpoint(path string) bool {
 		// has no side-effect beyond cookie issuance, so the same
 		// threat model that lets /status be public applies here.
 		CSRFTokenEndpoint,
-		"/api/v1/wallet/create",  // Public for game server integration
+		"/api/v1/wallet/create",  // Removed: always returns 410 Gone (see handlers.go::CreateWallet). Kept in publicPaths, like /wallet/mint, so callers that still hit the path receive the structured 410 instead of a 401.
 		"/api/v1/wallet/balance", // Public for game server to check balances (address required in query)
 		"/api/v1/wallet/mint",    // Removed in v0.3.3 (Session 91): always returns 410 Gone with a migration message. Kept in publicPaths so external callers that still hit the path receive a structured 410 instead of a confusing 401 redirect to /api/auth/login.
 		// /api/v1/faucet/claim is only active for a local solo

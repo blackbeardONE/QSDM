@@ -105,10 +105,11 @@ is enforced against.
 What the wallet **does** protect against:
 
 1. **Server-side custody risk.** No QSDM operator, validator, or
-   third-party service ever holds the private key. The validator's
-   `POST /api/v1/wallet/create` endpoint is intentionally **not** used by
-   this page — that route returns a "ghost" address with no recoverable
-   key, useful only as a write-only sink. The web wallet replaces it.
+   third-party service ever holds the private key. The validator's old
+   `POST /api/v1/wallet/create` endpoint was never used by this page: it
+   returned a "ghost" address whose private key the node discarded, so
+   CELL sent there was lost. It now answers 410 Gone and generates no
+   key. The web wallet replaces it.
 2. **Network observers** (passive and active). The page never sends the
    passphrase or private key. Generate, Open and Sign make no network
    requests beyond loading the static files; Balance reads public data and

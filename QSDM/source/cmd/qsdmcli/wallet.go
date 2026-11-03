@@ -1,12 +1,13 @@
 // qsdmcli wallet — self-custody keystore operations.
 //
 // This subcommand creates and inspects QSDM wallet keystores
-// (pkg/keystore format v1). Unlike `POST /api/v1/wallet/create` — which
-// generates a server-side keypair and discards the private key, leaving
-// you with a permanently-unrecoverable address — the keystore generated
-// here is fully self-custody: the ML-DSA-87 keypair is created locally,
-// the private key never leaves this process, and the only artefact that
-// touches disk is an encrypted JSON file you protect with a passphrase.
+// (pkg/keystore format v1). Unlike the removed `POST /api/v1/wallet/create`
+// — which generated a server-side keypair and discarded the private key,
+// leaving a permanently-unrecoverable address, and now answers 410 Gone —
+// the keystore generated here is fully self-custody: the ML-DSA-87
+// keypair is created locally, the private key never leaves this process,
+// and the only artefact that touches disk is an encrypted JSON file you
+// protect with a passphrase.
 //
 // The same keystore format is produced by the browser wallet at
 // qsdm.tech/wallet/ (deploy/landing/wallet.{html,js,wasm}); a keystore

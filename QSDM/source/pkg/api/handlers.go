@@ -909,44 +909,50 @@ func (h *Handlers) Register(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CreateWalletRequest represents a wallet creation request
+// CreateWalletRequest is the historical request shape for POST
+// /api/v1/wallet/create. RETAINED on the symbol surface for SDK /
+// generator compatibility; the endpoint now returns 410 Gone. See
+// CreateWallet.
 type CreateWalletRequest struct {
 	InitialBalance float64 `json:"initial_balance,omitempty"`
 }
 
-// CreateWalletResponse represents a wallet creation response
+// CreateWalletResponse is the historical success shape of POST
+// /api/v1/wallet/create, retained for the same reason as
+// CreateWalletRequest.
 type CreateWalletResponse struct {
 	Address string  `json:"address"`
 	Balance float64 `json:"balance"`
 }
 
-// CreateWallet creates a new wallet
+// CreateWallet is the handler for /api/v1/wallet/create.
+//
+// HISTORY. The handler generated a fresh ML-DSA-87 key pair on the node
+// (wallet.NewWalletService), answered 201 with its address and a zero
+// balance, and dropped the key pair when the request returned. The
+// private key was never returned or stored, so nobody could ever sign
+// for that address: CELL sent to it was lost for good.
+//
+// REMOVED. It now answers 410 Gone with a JSON body that explains the
+// migration, the same shape as POST /api/v1/wallet/mint, and generates
+// no key. A wallet is created where its private key stays (QSDM Hive,
+// or `qsdmcli wallet new`), and its transfers are signed there and
+// submitted to POST /api/v1/wallet/submit-signed. Every method gets the
+// 410, GET included, so a caller probing the path learns it is gone
+// rather than that it wants a POST.
+//
+// Calls are counted in qsdm_wallet_create_total{result="gone"}, so
+// operators can find the callers that still need migrating. The path
+// stays in publicPaths so those callers get the 410 instead of a 401.
 func (h *Handlers) CreateWallet(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeErrorResponse(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	// Create a new wallet instance for each request (generates unique address)
-	// This works even without CGO (uses fallback implementation)
-	newWallet, err := wallet.NewWalletService()
-	if err != nil {
-		monitoring.RecordWalletCreate(monitoring.WalletCreateResultFailed)
-		// MED-1: log full details server-side, return correlation id only.
-		// Pre-fix this leaked the raw wallet/crypto error string (which
-		// can identify the storage backend or surface a CGO/liboqs build
-		// state) to the unauthenticated POST /api/v1/wallet caller.
-		WriteServerError(w, h.logger, "create_wallet", err)
-		return
-	}
-
-	address := newWallet.GetAddress()
-	balance := float64(newWallet.GetBalance())
-
-	monitoring.RecordWalletCreate(monitoring.WalletCreateResultSuccess)
-	writeJSONResponse(w, http.StatusCreated, CreateWalletResponse{
-		Address: address,
-		Balance: balance,
+	monitoring.RecordWalletCreate(monitoring.WalletCreateResultGone)
+	writeJSONResponse(w, http.StatusGone, map[string]interface{}{
+		"status": "gone",
+		"reason": "/api/v1/wallet/create generated a key pair on the node and discarded the private key, so CELL sent to the address it returned could never be spent. Removed.",
+		"migration": map[string]string{
+			"create_wallet":   "Create the wallet on your own device, where its private key stays: QSDM Hive, or `qsdmcli wallet new` (an encrypted keystore). The address is hex(sha256(public_key)).",
+			"signed_transfer": "Sign each transfer with that wallet and submit it to POST /api/v1/wallet/submit-signed.",
+		},
 	})
 }
 
