@@ -35,13 +35,14 @@ sometimes with a `Retry-After` header; wait and retry with backoff.
 
 | Group | Limit |
 |---|---|
-| `/status`, `/versions`, `/chain/blocks`, `/tasks*` | 600 requests per minute |
-| Most other read endpoints | 100 requests per minute |
+| `/status`, `/versions`, `/chain/blocks`, `/chain/parents`, `/tasks*` | 600 requests per minute |
+| Most other read endpoints | 30 requests per minute (the node's limit for callers without a login; the 100-per-minute default applies too) |
 | `POST /wallet/submit-signed` | 10 requests per minute |
 | Mining endpoints on `api.qsdm.tech` | Limited per IP at the edge (bursts allowed); `POST /mining/submit` about 60 per minute |
 
-Health endpoints are not rate-limited. Do not poll faster than you need: a new
-block arrives about every 10 seconds.
+Health endpoints and reads of `/trust/*` and `/audit/*` are not rate-limited by
+the node. Do not poll faster than you need: a new block arrives about every
+10 seconds.
 
 ### Errors
 
