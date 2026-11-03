@@ -667,8 +667,9 @@ Enrollment lifecycle:
    [`pkg/chain.EnrollmentApplier`](../../source/pkg/chain/enrollment_apply.go).
 3. From then on, every proof the miner emits carries a
    `nvidia-hmac-v1` bundle signed with that key.
-4. Operators or governance can revoke a `node_id` via
-   `qsdm/unenroll/v1`. Stake bonds for `UnbondWindow`
+4. Operators or governance can revoke a `node_id` with a signed
+   `qsdm/enroll/v2` transaction carrying an `unenroll` payload. Stake
+   bonds for `UnbondWindow`
    (201,600 blocks (about 23 days at 10-second blocks)); `BlockProducer.OnSealedBlock` auto-
    sweeps matured records and releases the `gpu_uuid` so the
    physical card can be re-enrolled by a fresh `node_id`.
@@ -950,9 +951,9 @@ End-to-end coverage:
 
 | Endpoint | Method | Purpose | Source |
 |---|---|---|---|
-| `/api/v1/mining/challenge` | GET | Issue a fresh nonce challenge for §3.3 / §6. | `pkg/api/handlers.go` |
-| `/api/v1/mining/enroll` | POST | Submit `qsdm/enroll/v1` transaction. | `pkg/api/handlers_enroll.go` |
-| `/api/v1/mining/unenroll` | POST | Submit `qsdm/unenroll/v1` transaction. | `pkg/api/handlers_enroll.go` |
+| `/api/v1/mining/challenge` | GET | Issue a fresh nonce challenge for §3.3 / §6. | `pkg/api/handlers_challenge.go` |
+| `/api/v1/mining/enroll` | POST | Submit a signed `qsdm/enroll/v2` transaction with an `enroll` payload (202 when admitted). | `pkg/api/handlers_enrollment.go` |
+| `/api/v1/mining/unenroll` | POST | Submit a signed `qsdm/enroll/v2` transaction with an `unenroll` payload (202 when admitted). | `pkg/api/handlers_enrollment.go` |
 | `/api/v1/mining/slash` | POST | Submit `qsdm/slash/v1` transaction. | `pkg/api/handlers_slashing.go` |
 | `/api/v1/mining/slash/{tx_id}` | GET | Read sanitised slash receipt (FIFO-bounded in-memory store). | `pkg/api/handlers_slash_query.go` |
 | `/api/v1/mining/enrollment/{node_id}` | GET | Read sanitised enrollment view (`phase`, `slashable`; HMAC key never leaks). | `pkg/api/handlers_enrollment_query.go` |
@@ -970,8 +971,8 @@ Source: [`cmd/qsdmcli/`](../../source/cmd/qsdmcli/). Subcommands:
 
 | Subcommand | Purpose |
 |---|---|
-| `qsdmcli enroll` | Build + submit `qsdm/enroll/v1`. |
-| `qsdmcli unenroll` | Build + submit `qsdm/unenroll/v1`. |
+| `qsdmcli enroll` | Build, sign and submit a `qsdm/enroll/v2` enroll transaction. |
+| `qsdmcli unenroll` | Build, sign and submit a `qsdm/enroll/v2` unenroll transaction. |
 | `qsdmcli slash` | Build + submit `qsdm/slash/v1` (consumes evidence-bundle bytes). |
 | `qsdmcli enrollment-status` | Query `/api/v1/mining/enrollment/{node_id}`. |
 | `qsdmcli enrollments` | Paginated list, with `--phase`, `--limit`, `--cursor`, `--all` flags. |
