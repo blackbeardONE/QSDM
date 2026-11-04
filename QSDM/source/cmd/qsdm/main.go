@@ -628,7 +628,10 @@ func SetupNetworkPublic(ctx context.Context, logger *logging.Logger, port int, b
 }
 
 // p2pLimitsFromConfig maps the [network] P2P limit keys onto the networking
-// limits. Zero fields keep their networking defaults.
+// limits. The limits are opt-in (p2p_limits_enabled): unless enabled, and
+// not switched off by p2p_limits_disabled, the result is Disabled, which
+// builds the host exactly as before these limits. Zero fields keep their
+// networking defaults.
 func p2pLimitsFromConfig(c config.P2PLimitsConfig) networking.P2PLimits {
 	var topics map[string]int
 	if len(c.GossipTopicMaxBytes) > 0 {
@@ -638,7 +641,7 @@ func p2pLimitsFromConfig(c config.P2PLimitsConfig) networking.P2PLimits {
 		}
 	}
 	return networking.P2PLimits{
-		Disabled:                  c.Disabled,
+		Disabled:                  !c.Effective(),
 		ConnLowWater:              c.ConnLowWater,
 		ConnHighWater:             c.ConnHighWater,
 		ConnGracePeriod:           c.ConnGracePeriod,

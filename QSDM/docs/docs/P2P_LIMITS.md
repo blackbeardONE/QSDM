@@ -8,13 +8,20 @@ send a message of up to 1 MiB on any topic, and send messages as fast as
 the node could read them. Most topic handlers decode the JSON, and some
 check signatures, before they look at who sent a message or how often.
 
-This page describes the limits a node now applies, how to change them, and
-a review of the six gossip topics with the risks that remain. The public
-block producer runs these limits.
+This page describes the limits a node can apply, how to change them, and a
+review of the six gossip topics with the risks that remain.
+
+**The limits are opt-in.** A node applies them only with
+`p2p_limits_enabled = true` under `[network]` (or
+`QSDM_P2P_LIMITS_ENABLED=1`). Without it the node builds its libp2p host
+exactly as before, and any other key on this page set without the opt-in
+stops the node at startup. The public block producer runs with the limits
+on. The "With the limits" column below and the defaults in
+[section 2](#2-configuration) describe a node with the opt-in.
 
 ## 1. What changes
 
-| Layer | Before | Now |
+| Layer | Before (and without the opt-in) | With the limits |
 |---|---|---|
 | Connection manager | libp2p default: trims from 192 connections down to 160, grace period 1 minute | trims from 96 connections down to 64, grace period 1 minute. Configured bootstrap peers are protected (tag `qsdm-bootstrap`) and never trimmed. |
 | Resource manager | libp2p default, scaled to the host (about 1,000 or more connections on an 8 GB host), 8 connections per IP address | fixed limits: 192 connections (128 inbound) and 2,048 streams (1,024 inbound) in total; per peer 8 connections and 256 streams (128 inbound); 8 connections per IPv4 address and per IPv6 /56 (64 per /48). Memory, file descriptor, transient and service limits keep the library's scaled defaults. Loopback (`127.0.0.0/8`, `::1`) has no per-IP limit. |
@@ -30,6 +37,8 @@ decoded.
 
 ### A node without peers is unaffected
 
+With the limits on:
+
 - The gossip guard accepts every message the node published itself,
   whatever its size. Local publishes (blocks, BFT messages, prevote-lock
   proofs, evidence, the transaction relay) pass exactly as before.
@@ -41,17 +50,20 @@ decoded.
   peers. No consensus, block production or validation code changed, and the
   topic handlers in `pkg/chain` and `pkg/bridge` are unchanged.
 - `p2p_limits_disabled = true` (or `QSDM_P2P_LIMITS_DISABLED=1`) builds the
-  host exactly as before: libp2p defaults, no gossip guard and no scoring.
+  host exactly as before, even with `p2p_limits_enabled = true`: libp2p
+  defaults, no gossip guard and no scoring.
 
 ## 2. Configuration
 
 All keys go under `[network]` (TOML) or `network:` (YAML). Environment
-variables override the file. Every key is optional; 0 or an unset key means
-the default.
+variables override the file. The limits apply only with
+`p2p_limits_enabled = true`. With it, every other key is optional, and 0 or
+an unset key means the default.
 
 | Key | Env | Default | Meaning |
 |---|---|---|---|
-| `p2p_limits_disabled` | `QSDM_P2P_LIMITS_DISABLED` | `false` | `true` turns every limit on this page off (libp2p library defaults, no gossip guard, no scoring). Escape hatch only. |
+| `p2p_limits_enabled` | `QSDM_P2P_LIMITS_ENABLED` | `false` | `true` applies the limits on this page. Without it the node uses the libp2p library defaults, as before, and refuses the other keys. |
+| `p2p_limits_disabled` | `QSDM_P2P_LIMITS_DISABLED` | `false` | `true` turns every limit on this page off (libp2p library defaults, no gossip guard, no scoring), even with `p2p_limits_enabled = true`. Escape hatch only. |
 | `conn_low_water` | `QSDM_P2P_CONN_LOW_WATER` | 64 | the connection manager trims down to this many connections; must be below `conn_high_water` |
 | `conn_high_water` | `QSDM_P2P_CONN_HIGH_WATER` | 96 | trimming starts above this many connections; must be at most `max_conns` |
 | `conn_grace_period` | `QSDM_P2P_CONN_GRACE_PERIOD` | `1m` | a new connection is not trimmed for this long (Go duration) |
@@ -73,12 +85,16 @@ the default.
 
 Rules:
 
+- Without `p2p_limits_enabled = true`, setting any other key on this page
+  (except `p2p_limits_disabled`) stops the node with `P2P limit keys are set
+  but p2p_limits_enabled is false`, so nobody believes a limit is enforced
+  when it is not. The same applies to the environment variables.
 - The node refuses to start with limits it cannot use. Config validation
-  refuses a negative count or size (every key except `gossip_peer_rate`),
-  a negative `conn_grace_period`,
-  `conn_low_water` not below `conn_high_water` when both are set, and a
-  topic entry with an empty name or a size of 0 or less. When the host is
-  built, the limits are checked again with the defaults filled in:
+  refuses a negative count or size (every key except `gossip_peer_rate`), a
+  negative `conn_grace_period`, `conn_low_water` not below
+  `conn_high_water` when both are set, and a topic entry with an empty name
+  or a size of 0 or less. When the host is built, the limits are checked
+  again with the defaults filled in:
   `conn_low_water` must be below `conn_high_water`, `max_conns` must be at
   least `conn_high_water` (so the connection manager trims before the
   resource manager refuses), and each inbound limit must be at most its
@@ -91,13 +107,14 @@ Rules:
 - The boolean environment variables accept `1`, `true`, `yes` or `on`;
   anything else set means `false`.
 - With `p2p_limits_disabled = true` the other keys are neither checked nor
-  used.
+  used, with or without the opt-in.
 
-Example: fewer inbound peers, a lower gossip rate, and a smaller
-transaction limit.
+Example: the limits on, with fewer inbound peers, a lower gossip rate, and
+a smaller transaction limit.
 
 ```toml
 [network]
+p2p_limits_enabled = true
 max_inbound_conns = 64
 gossip_peer_rate = 20.0
 
@@ -109,6 +126,7 @@ The same in YAML:
 
 ```yaml
 network:
+  p2p_limits_enabled: true
   max_inbound_conns: 64
   gossip_peer_rate: 20.0
   gossip_topic_max_bytes:
@@ -175,12 +193,14 @@ graylist (the node ignores everything it sends). The count fades over about
   connmgr=64/96 grace=1m0s conns=192(in 128) streams=2048(in 1024) per_peer_conns=8 per_peer_streams=256(in 128) per_ip_conns=8 gossip_max=1048576 topics=[...] peer_rate=100/s burst=1000 scoring=true
   ```
 
-  or `disabled (libp2p library defaults)`.
+  or `disabled (libp2p library defaults)` when the limits are off (no
+  opt-in, or `p2p_limits_disabled = true`).
 - The gossip guard counts the messages from other peers that it handles:
   `Accepted`, `RejectedOversize` (larger than the topic's limit) and
   `RateLimited` (over the rate, ignored). Programs that embed the node read
   them with `Network.GossipGuardStats()` in `pkg/networking`. They are not
-  yet exported as Prometheus metrics or in the status API.
+  yet exported as Prometheus metrics or in the status API. Without the
+  limits they stay at zero.
 - A connection or stream that the resource manager refuses fails with a
   libp2p resource-limit error. The node does not count these.
 
@@ -199,8 +219,9 @@ graylist (the node ignores everything it sends). The count fades over about
 - `QSDM/source/pkg/config/p2p_limits.go`, plus small hooks in `config.go`
   and `config_toml.go`: parsing, environment overrides and `Validate`.
 - `QSDM/source/cmd/qsdm/main.go`: `p2pLimitsFromConfig` maps the config
-  onto the networking limits, and `SetupNetwork` and `SetupNetworkPublic`
-  pass them on.
+  onto the networking limits (`Disabled` unless the limits are opted in
+  and not switched off), and `SetupNetwork` and `SetupNetworkPublic` pass
+  them on.
 
 ## 6. Tests
 
@@ -226,11 +247,19 @@ CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/networking/ ./pkg/con
 - `pkg/networking/p2p_limits_topics_test.go`: the size table covers all six
   topic names, including the ones defined in `pkg/chain` and `pkg/bridge`.
 - `pkg/config/p2p_limits_test.go`: TOML and YAML parsing of every key,
-  unset keys stay zero, a bad duration, environment overrides (including
-  merging topic entries), malformed environment values are ignored, and
-  `Validate`.
+  unset keys stay zero and the limits off, a bad duration, environment
+  overrides (including merging topic entries and
+  `QSDM_P2P_LIMITS_ENABLED`), malformed environment values are ignored, and
+  `Validate` (including a tuning key without the opt-in).
 - `cmd/qsdm/p2p_limits_test.go`: the mapping from config to networking
-  copies every field, and a zero config maps to exactly the defaults.
+  copies every field; a zero config maps to `Disabled` (the host from
+  before the limits); the opt-in alone maps to exactly the defaults; and
+  `p2p_limits_disabled` wins over the opt-in.
+- `pkg/config/live_shape_test.go` and `cmd/qsdm/live_shape_test.go` load
+  `pkg/config/testdata/producer_live_shape.toml`, a config shaped like the
+  block producer's from before these limits. It loads and validates, every
+  new feature stays off, and the host `main()` builds from it has no
+  limits and no gossip guard.
 
 ## 7. Remaining risks
 

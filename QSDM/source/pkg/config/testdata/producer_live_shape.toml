@@ -1,0 +1,37 @@
+# A config shaped like the public block producer's core.toml from before the P2P
+# limits and the private P2P mode: its version 1 producer transition table and its
+# activation heights, and none of the keys added since. It is not a copy of a
+# server file. The paths are strings only; no test reads them.
+
+[node]
+role = "validator"
+
+[network]
+port = 14001
+bind_address = "127.0.0.1"
+bootstrap_peers = []
+host_key_path = "/var/lib/qsdm/host_key"
+
+[storage]
+type = "sqlite"
+sqlite_path = "/var/lib/qsdm/qsdm.db"
+
+[consensus]
+require_signed_votes = true
+signed_message_activation_height = 827000
+poe_activation_height = 816600
+task_action_signature_activation_height = 625000
+tx_content_root_activation_height = 625000
+signer_key_path = "/var/lib/qsdm/producer_signer.json"
+authorized_block_producers = ["42d05e653f004d0aa71ae9cebc7b2a5b5d0dc7bb41b219a8e99d7c29229c438b"]
+
+[consensus.producer_transition]
+version = 1
+checkpoint_height = 659976
+checkpoint_hash = "16884d35cee8b805fab51f1ecad740022fdb991e0fece15394774e1c5b7cdd0b"
+historical_signature_height = 482566
+historical_producer = "42d05e653f004d0aa71ae9cebc7b2a5b5d0dc7bb41b219a8e99d7c29229c438b"
+replacement_producer = "1cf60b16cf9aee5e8eaf67a8518a2b2ba7bc54f2dd607f05bc5a861b7a94c859"
+effective_height = 659977
+historical_prefix_bytes = 2728741562
+historical_prefix_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

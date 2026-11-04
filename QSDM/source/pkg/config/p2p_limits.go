@@ -15,6 +15,7 @@ import (
 // [network], so the keys sit directly in that table:
 //
 //	[network]
+//	p2p_limits_enabled = true         # opt in (default false: libp2p library defaults, as before these limits)
 //	conn_low_water = 64
 //	conn_high_water = 96
 //	conn_grace_period = "1m"
@@ -32,14 +33,20 @@ import (
 //	gossip_peer_scoring_disabled = false
 //	gossip_validate_queue = 256
 //	gossip_validate_throttle = 2048
-//	p2p_limits_disabled = false       # escape hatch: libp2p library defaults
+//	p2p_limits_disabled = false       # escape hatch: libp2p library defaults even when enabled
 //
 //	[network.gossip_topic_max_bytes]
 //	"qsdm-transactions" = 262144
 //
-// Every key is optional; 0 / unset means "use the built-in default" (see
-// pkg/networking/p2p_limits.go DefaultP2PLimits).
+// The limits are opt-in: unless p2p_limits_enabled = true the node builds
+// the host exactly as before these limits (libp2p library defaults, no
+// gossip guard, no peer scoring), so a config without these keys behaves as
+// before. Setting any tuning key without p2p_limits_enabled = true is
+// refused, so nobody believes a limit is enforced when it is not. With the
+// limits enabled every tuning key is optional; 0 / unset means "use the
+// built-in default" (see pkg/networking/p2p_limits.go DefaultP2PLimits).
 type P2PLimitsTOML struct {
+	P2PLimitsEnabled          bool           `toml:"p2p_limits_enabled" yaml:"p2p_limits_enabled"`
 	P2PLimitsDisabled         bool           `toml:"p2p_limits_disabled" yaml:"p2p_limits_disabled"`
 	ConnLowWater              int            `toml:"conn_low_water" yaml:"conn_low_water"`
 	ConnHighWater             int            `toml:"conn_high_water" yaml:"conn_high_water"`
@@ -63,7 +70,13 @@ type P2PLimitsTOML struct {
 
 // P2PLimitsConfig is the parsed form held on Config. Zero fields mean "use
 // the networking default"; cmd/qsdm maps this onto networking.P2PLimits.
+// The limits apply only when Enabled is true and Disabled is false
+// (Effective).
 type P2PLimitsConfig struct {
+	// Enabled opts in to the limits (p2p_limits_enabled /
+	// QSDM_P2P_LIMITS_ENABLED). Default false: the libp2p construction from
+	// before these limits.
+	Enabled                   bool
 	Disabled                  bool
 	ConnLowWater              int
 	ConnHighWater             int
@@ -87,6 +100,7 @@ type P2PLimitsConfig struct {
 
 func (t P2PLimitsTOML) toConfig() (P2PLimitsConfig, error) {
 	c := P2PLimitsConfig{
+		Enabled:                   t.P2PLimitsEnabled,
 		Disabled:                  t.P2PLimitsDisabled,
 		ConnLowWater:              t.ConnLowWater,
 		ConnHighWater:             t.ConnHighWater,
@@ -131,6 +145,9 @@ func applyP2PLimitsEnv(c *P2PLimitsConfig) {
 				*dst = n
 			}
 		}
+	}
+	if strings.TrimSpace(os.Getenv("QSDM_P2P_LIMITS_ENABLED")) != "" {
+		c.Enabled = envcompat.Truthy("QSDM_P2P_LIMITS_ENABLED", "QSDM_P2P_LIMITS_ENABLED")
 	}
 	if strings.TrimSpace(os.Getenv("QSDM_P2P_LIMITS_DISABLED")) != "" {
 		c.Disabled = envcompat.Truthy("QSDM_P2P_LIMITS_DISABLED", "QSDM_P2P_LIMITS_DISABLED")
@@ -196,11 +213,32 @@ func parseTopicSizes(s string) (map[string]int, error) {
 	return out, nil
 }
 
-// Validate rejects negative counts and an inverted connection-manager water
-// mark when both are set. Cross-field checks that depend on the defaults
-// (e.g. max_conns >= conn_high_water) are repeated by networking.P2PLimits.
+// Effective reports whether the limits are applied: opted in and not
+// switched off by the escape hatch.
+func (c P2PLimitsConfig) Effective() bool { return c.Enabled && !c.Disabled }
+
+// tuningKeysSet reports whether any limit value is configured.
+func (c P2PLimitsConfig) tuningKeysSet() bool {
+	return c.ConnLowWater != 0 || c.ConnHighWater != 0 || c.ConnGracePeriod != 0 || c.MaxConns != 0 ||
+		c.MaxInboundConns != 0 || c.MaxStreams != 0 || c.MaxInboundStreams != 0 || c.MaxConnsPerPeer != 0 ||
+		c.MaxStreamsPerPeer != 0 || c.MaxInboundStreamsPerPeer != 0 || c.MaxConnsPerIP != 0 ||
+		c.GossipMaxMessageBytes != 0 || len(c.GossipTopicMaxBytes) > 0 || c.GossipPeerRate != 0 ||
+		c.GossipPeerBurst != 0 || c.GossipPeerScoringDisabled || c.GossipValidateQueue != 0 ||
+		c.GossipValidateThrottle != 0
+}
+
+// Validate rejects limit keys set without p2p_limits_enabled, negative
+// counts and an inverted connection-manager water mark when both are set.
+// Cross-field checks that depend on the defaults (e.g. max_conns >=
+// conn_high_water) are repeated by networking.P2PLimits.
 func (c P2PLimitsConfig) Validate() error {
 	if c.Disabled {
+		return nil
+	}
+	if !c.Enabled {
+		if c.tuningKeysSet() {
+			return fmt.Errorf("[network] P2P limit keys are set but p2p_limits_enabled is false (the limits are opt-in); set p2p_limits_enabled = true or remove them")
+		}
 		return nil
 	}
 	ints := []struct {

@@ -21,7 +21,7 @@ func TestP2PLimits_TOMLUnsetIsZero(t *testing.T) {
 	if err := loadConfigFile(p, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.P2PLimits.Disabled || cfg.P2PLimits.MaxConns != 0 || cfg.P2PLimits.GossipTopicMaxBytes != nil {
+	if cfg.P2PLimits.Enabled || cfg.P2PLimits.Effective() || cfg.P2PLimits.Disabled || cfg.P2PLimits.MaxConns != 0 || cfg.P2PLimits.GossipTopicMaxBytes != nil {
 		t.Fatalf("unset keys must stay zero (networking defaults apply): %+v", cfg.P2PLimits)
 	}
 	if err := cfg.P2PLimits.Validate(); err != nil {
@@ -34,6 +34,7 @@ func TestP2PLimits_TOMLParsesAllKeys(t *testing.T) {
 	content := `
 [network]
 port = 4001
+p2p_limits_enabled = true
 conn_low_water = 10
 conn_high_water = 20
 conn_grace_period = "30s"
@@ -65,6 +66,7 @@ gossip_validate_throttle = 512
 	}
 	l := cfg.P2PLimits
 	want := P2PLimitsConfig{
+		Enabled:      true,
 		ConnLowWater: 10, ConnHighWater: 20, ConnGracePeriod: 30 * time.Second,
 		MaxConns: 40, MaxInboundConns: 30, MaxStreams: 500, MaxInboundStreams: 250,
 		MaxConnsPerPeer: 4, MaxStreamsPerPeer: 64, MaxInboundStreamsPerPeer: 32, MaxConnsPerIP: 3,
@@ -86,7 +88,7 @@ gossip_validate_throttle = 512
 
 func p2pLimitsEqualNoMap(a, b P2PLimitsConfig) bool {
 	a.GossipTopicMaxBytes, b.GossipTopicMaxBytes = nil, nil
-	return a.Disabled == b.Disabled && a.ConnLowWater == b.ConnLowWater && a.ConnHighWater == b.ConnHighWater &&
+	return a.Enabled == b.Enabled && a.Disabled == b.Disabled && a.ConnLowWater == b.ConnLowWater && a.ConnHighWater == b.ConnHighWater &&
 		a.ConnGracePeriod == b.ConnGracePeriod && a.MaxConns == b.MaxConns && a.MaxInboundConns == b.MaxInboundConns &&
 		a.MaxStreams == b.MaxStreams && a.MaxInboundStreams == b.MaxInboundStreams && a.MaxConnsPerPeer == b.MaxConnsPerPeer &&
 		a.MaxStreamsPerPeer == b.MaxStreamsPerPeer && a.MaxInboundStreamsPerPeer == b.MaxInboundStreamsPerPeer &&
@@ -150,6 +152,7 @@ func TestP2PLimits_EnvOverrides(t *testing.T) {
 	t.Setenv("QSDM_P2P_GOSSIP_VALIDATE_QUEUE", "64")
 	t.Setenv("QSDM_P2P_GOSSIP_VALIDATE_THROTTLE", "256")
 	t.Setenv("QSDM_P2P_LIMITS_DISABLED", "false")
+	t.Setenv("QSDM_P2P_LIMITS_ENABLED", "1")
 
 	c := P2PLimitsConfig{MaxConns: 1, GossipTopicMaxBytes: map[string]int{"qsdm-bridge": 1, "qsdm-blocks": 5}}
 	applyP2PLimitsEnv(&c)
@@ -157,7 +160,7 @@ func TestP2PLimits_EnvOverrides(t *testing.T) {
 		c.MaxInboundConns != 60 || c.MaxStreams != 900 || c.MaxInboundStreams != 400 || c.MaxConnsPerPeer != 2 ||
 		c.MaxStreamsPerPeer != 100 || c.MaxInboundStreamsPerPeer != 50 || c.MaxConnsPerIP != 4 ||
 		c.GossipMaxMessageBytes != 700000 || c.GossipPeerRate != -1 || c.GossipPeerBurst != 7 ||
-		!c.GossipPeerScoringDisabled || c.GossipValidateQueue != 64 || c.GossipValidateThrottle != 256 || c.Disabled {
+		!c.GossipPeerScoringDisabled || c.GossipValidateQueue != 64 || c.GossipValidateThrottle != 256 || c.Disabled || !c.Enabled {
 		t.Fatalf("env overrides: %+v", c)
 	}
 	if c.GossipTopicMaxBytes["qsdm-bridge"] != 999 || c.GossipTopicMaxBytes["qsdm-evidence"] != 8888 || c.GossipTopicMaxBytes["qsdm-blocks"] != 5 {
@@ -177,10 +180,14 @@ func TestP2PLimits_EnvMalformedIgnored(t *testing.T) {
 
 func TestP2PLimits_ConfigValidate(t *testing.T) {
 	bad := []P2PLimitsConfig{
-		{ConnLowWater: 20, ConnHighWater: 10},
-		{MaxConns: -1},
-		{ConnGracePeriod: -time.Second},
-		{GossipTopicMaxBytes: map[string]int{"qsdm-bridge": 0}},
+		{Enabled: true, ConnLowWater: 20, ConnHighWater: 10},
+		{Enabled: true, MaxConns: -1},
+		{Enabled: true, ConnGracePeriod: -time.Second},
+		{Enabled: true, GossipTopicMaxBytes: map[string]int{"qsdm-bridge": 0}},
+		// Opt-in: a tuning key without p2p_limits_enabled is refused.
+		{MaxConns: 64},
+		{GossipTopicMaxBytes: map[string]int{"qsdm-transactions": 262144}},
+		{GossipPeerScoringDisabled: true},
 	}
 	for i, l := range bad {
 		c := p2pBaseValidConfig()
@@ -196,5 +203,24 @@ func TestP2PLimits_ConfigValidate(t *testing.T) {
 	}
 	if err := p2pBaseValidConfig().Validate(); err != nil {
 		t.Fatalf("zero limits must validate: %v", err)
+	}
+	c = p2pBaseValidConfig()
+	c.P2PLimits = P2PLimitsConfig{Enabled: true, MaxConns: 64}
+	if err := c.Validate(); err != nil || !c.P2PLimits.Effective() {
+		t.Fatalf("enabled limits with a tuning key must validate: %v", err)
+	}
+}
+
+func TestP2PLimits_EnvEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		env  string
+		want bool
+	}{{"1", true}, {"true", true}, {"0", false}, {"false", false}} {
+		t.Setenv("QSDM_P2P_LIMITS_ENABLED", tc.env)
+		c := P2PLimitsConfig{Enabled: !tc.want}
+		applyP2PLimitsEnv(&c)
+		if c.Enabled != tc.want || c.Effective() != tc.want {
+			t.Errorf("QSDM_P2P_LIMITS_ENABLED=%s: %+v", tc.env, c)
+		}
 	}
 }
