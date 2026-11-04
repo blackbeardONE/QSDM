@@ -59,10 +59,19 @@ type Config struct {
 	// format: single line of base64(proto.Marshal(libp2p PrivKey)),
 	// mode 0600; see pkg/networking/hostkey.go.
 	NetworkHostKeyPath string
+	// P2PLimits bounds libp2p connections/streams and GossipSub traffic.
+	// Zero fields use the defaults in pkg/networking/p2p_limits.go.
+	// TOML/YAML: keys under [network] (see p2p_limits.go); env: QSDM_P2P_*.
+	P2PLimits P2PLimitsConfig
 	// BridgeRelay authenticates qsdm-bridge gossip events. With no trusted
 	// keys (the default) remote bridge events are never applied.
 	// TOML/YAML: bridge_relay_* under [network]; env: QSDM_BRIDGE_RELAY_*.
 	BridgeRelay BridgeRelayConfig
+	// PrivateP2P restricts libp2p to a private-network bind and a fixed list
+	// of peer IDs. Off by default: no change.
+	// TOML/YAML: private_p2p, private_p2p_allowed_peers under [network];
+	// env: QSDM_P2P_PRIVATE, QSDM_P2P_PRIVATE_ALLOWED_PEERS.
+	PrivateP2P PrivateP2PConfig
 	// SubmeshConfigPath: optional file (e.g. config/micropayments.toml) loaded into DynamicSubmeshManager at startup.
 	SubmeshConfigPath string
 	// ConfigFileUsed is the absolute path to the main config file when one was loaded; used to resolve relative submesh_config.
@@ -194,6 +203,13 @@ type Config struct {
 	// ([consensus] poe_activation_height or QSDM_POE_ACTIVATION_HEIGHT).
 	// Zero keeps them off. See chain.SetPoEActivationHeight.
 	PoEActivationHeight uint64
+
+	// StreamEd25519RetirementHeight is the first height at which a CELL
+	// stream open (qsdm/streams/v1), which registers an Ed25519 session
+	// key, is refused ([consensus] stream_ed25519_retirement_height or
+	// QSDM_STREAM_ED25519_RETIREMENT_HEIGHT). Zero keeps the rule off. See
+	// chain.SetStreamEd25519RetirementHeight.
+	StreamEd25519RetirementHeight uint64
 
 	// ConsensusSignerKeyPath is the validator-only ML-DSA hot key used to
 	// authenticate consensus traffic. It is not a wallet and must never hold
@@ -401,11 +417,17 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.BootstrapPeers = tomlCfg.Network.BootstrapPeers
 		cfg.SubmeshConfigPath = strings.TrimSpace(tomlCfg.Network.SubmeshConfig)
 		cfg.NetworkHostKeyPath = strings.TrimSpace(tomlCfg.Network.HostKeyPath)
+		if lim, err := tomlCfg.Network.P2PLimitsTOML.toConfig(); err != nil {
+			return err
+		} else {
+			cfg.P2PLimits = lim
+		}
 		if br, err := tomlCfg.Network.BridgeRelayTOML.toConfig(); err != nil {
 			return err
 		} else {
 			cfg.BridgeRelay = br
 		}
+		cfg.PrivateP2P = tomlCfg.Network.PrivateP2PTOML.toConfig()
 		cfg.StorageType = tomlCfg.Storage.Type
 		cfg.SQLitePath = tomlCfg.Storage.SQLitePath
 		cfg.ScyllaHosts = tomlCfg.Storage.ScyllaHosts
@@ -459,6 +481,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.TxContentRootActivationHeight = tomlCfg.Consensus.TxContentRootActivationHeight
 		cfg.EnrollmentStateRootActivationHeight = tomlCfg.Consensus.EnrollmentStateRootActivationHeight
 		cfg.PoEActivationHeight = tomlCfg.Consensus.PoEActivationHeight
+		cfg.StreamEd25519RetirementHeight = tomlCfg.Consensus.StreamEd25519RetirementHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(tomlCfg.Consensus.SignerKeyPath)
 		cfg.ForkDustHeight = tomlCfg.Consensus.ForkDustHeight
 		if tomlCfg.Performance.TransactionInterval != "" {
@@ -507,11 +530,17 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.BootstrapPeers = yamlCfg.Network.BootstrapPeers
 		cfg.SubmeshConfigPath = strings.TrimSpace(yamlCfg.Network.SubmeshConfig)
 		cfg.NetworkHostKeyPath = strings.TrimSpace(yamlCfg.Network.HostKeyPath)
+		if lim, err := yamlCfg.Network.P2PLimitsTOML.toConfig(); err != nil {
+			return err
+		} else {
+			cfg.P2PLimits = lim
+		}
 		if br, err := yamlCfg.Network.BridgeRelayTOML.toConfig(); err != nil {
 			return err
 		} else {
 			cfg.BridgeRelay = br
 		}
+		cfg.PrivateP2P = yamlCfg.Network.PrivateP2PTOML.toConfig()
 		cfg.StorageType = yamlCfg.Storage.Type
 		cfg.SQLitePath = yamlCfg.Storage.SQLitePath
 		cfg.ScyllaHosts = yamlCfg.Storage.ScyllaHosts
@@ -571,6 +600,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.TxContentRootActivationHeight = yamlCfg.Consensus.TxContentRootActivationHeight
 		cfg.EnrollmentStateRootActivationHeight = yamlCfg.Consensus.EnrollmentStateRootActivationHeight
 		cfg.PoEActivationHeight = yamlCfg.Consensus.PoEActivationHeight
+		cfg.StreamEd25519RetirementHeight = yamlCfg.Consensus.StreamEd25519RetirementHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(yamlCfg.Consensus.SignerKeyPath)
 		cfg.ForkDustHeight = yamlCfg.Consensus.ForkDustHeight
 		if yamlCfg.Performance.TransactionInterval != "" {
@@ -776,13 +806,20 @@ func applyEnvOverrides(cfg *Config) {
 			cfg.PoEActivationHeight = h
 		}
 	}
+	if v := strings.TrimSpace(getEnvString("QSDM_STREAM_ED25519_RETIREMENT_HEIGHT", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.StreamEd25519RetirementHeight = h
+		}
+	}
 	if v := strings.TrimSpace(getEnvString("QSDM_CONSENSUS_SIGNER_KEY_PATH", "")); v != "" {
 		cfg.ConsensusSignerKeyPath = v
 	}
 	if val := strings.TrimSpace(envPreferred("QSDM_NETWORK_HOST_KEY_PATH", "QSDM_NETWORK_HOST_KEY_PATH")); val != "" {
 		cfg.NetworkHostKeyPath = val
 	}
+	applyP2PLimitsEnv(&cfg.P2PLimits)
 	applyBridgeRelayEnv(&cfg.BridgeRelay)
+	applyPrivateP2PEnv(&cfg.PrivateP2P)
 	if val := strings.TrimSpace(envPreferred("QSDM_NGC_PROOF_PERSIST_PATH", "QSDM_NGC_PROOF_PERSIST_PATH")); val != "" {
 		cfg.NGCProofPersistPath = val
 	}
@@ -1033,7 +1070,13 @@ func (c *Config) Validate() error {
 	if c.NetworkPort < 1 || c.NetworkPort > 65535 {
 		return fmt.Errorf("invalid network port: %d", c.NetworkPort)
 	}
+	if err := c.P2PLimits.Validate(); err != nil {
+		return err
+	}
 	if err := c.BridgeRelay.Validate(c.ConsensusSignerKeyPath); err != nil {
+		return err
+	}
+	if err := c.PrivateP2P.Validate(c.NetworkBindAddress, c.BootstrapPeers); err != nil {
 		return err
 	}
 

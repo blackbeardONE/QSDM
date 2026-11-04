@@ -86,10 +86,18 @@ type NetworkConfig struct {
 	// line of base64(proto.Marshal(libp2p PrivKey)), mode 0600; see
 	// pkg/networking/hostkey.go. Env override: QSDM_NETWORK_HOST_KEY_PATH.
 	HostKeyPath string `toml:"host_key_path" yaml:"host_key_path"`
+	// P2PLimitsTOML holds the connection / resource-manager / gossip limits.
+	// Embedded so its keys live directly under [network]; see p2p_limits.go
+	// for the key list and pkg/networking for the defaults.
+	P2PLimitsTOML `yaml:",inline"`
 	// BridgeRelayTOML holds the qsdm-bridge gossip authentication keys
 	// (bridge_relay_*). Embedded so its keys live directly under [network];
 	// see bridge_relay.go.
 	BridgeRelayTOML `yaml:",inline"`
+	// PrivateP2PTOML holds the private P2P mode (private_p2p,
+	// private_p2p_allowed_peers), also directly under [network]; see
+	// private_p2p.go and QSDM/docs/docs/PRIVATE_P2P.md.
+	PrivateP2PTOML `yaml:",inline"`
 }
 
 type StorageConfig struct {
@@ -201,6 +209,14 @@ type ConsensusConfigTOML struct {
 	// validator must use the same value, and wallets must send real parents
 	// (GET /api/v1/chain/parents) before it is reached.
 	PoEActivationHeight uint64 `toml:"poe_activation_height" yaml:"poe_activation_height"`
+
+	// StreamEd25519RetirementHeight is the first height at which a CELL
+	// stream open (qsdm/streams/v1) is refused, because every stream open
+	// registers an Ed25519 usage-receipt session key. Streams opened below
+	// the height can still take receipts, settle and close. Zero, the
+	// default, never activates; blocks below the height replay exactly as
+	// before. Every validator must use the same value.
+	StreamEd25519RetirementHeight uint64 `toml:"stream_ed25519_retirement_height" yaml:"stream_ed25519_retirement_height"`
 
 	// SignerKeyPath stores the validator-only ML-DSA consensus hot key.
 	SignerKeyPath string `toml:"signer_key_path" yaml:"signer_key_path"`

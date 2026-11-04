@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -18,43 +19,46 @@ import (
 // with a non-null tx) and runs GossipValidator.HandleIncoming, the signature,
 // fee and nonce triage a follower applies before its mempool. In "harness
 // signs" mode the harness signs the decoded transaction with a funded
-// Ed25519 or ML-DSA-87 key (by the algorithm the input names), so the fuzzer
-// reaches admission; otherwise the signature is checked as sent.
+// ML-DSA-87 key when the input names "ml-dsa", and with a funded Ed25519 key
+// otherwise, so the fuzzer reaches admission; otherwise the signature is
+// checked as sent. Ed25519 is retired (ErrEd25519Retired): a SignedTx that
+// names it is refused however well it is signed, and only ML-DSA-87 is ever
+// admitted.
 
-// Key-pinning options of the pin input.
+// Key-pinning options of the pin input: optional ML-DSA-87 pins (the Ed25519
+// keyring went with the Ed25519 verifier).
 const (
 	fuzzPinNone = iota
-	fuzzPinEd25519Same
-	fuzzPinEd25519Other
-	fuzzPinMLDSA
+	fuzzPinMLDSASame
+	fuzzPinMLDSAOther
 )
 
 type fuzzGossipKeys struct {
-	edPriv  ed25519.PrivateKey
-	edPub   ed25519.PublicKey
-	edAddr  string
-	otherEd ed25519.PublicKey
-	ml      fuzzKey
-	other   fuzzKey
+	edPriv ed25519.PrivateKey
+	edPub  ed25519.PublicKey
+	edAddr string
+	ml     fuzzKey
+	other  fuzzKey
 }
 
 func newFuzzGossipKeys() fuzzGossipKeys {
 	seed := bytes.Repeat([]byte{0x44}, ed25519.SeedSize)
 	priv := ed25519.NewKeyFromSeed(seed)
 	pub := priv.Public().(ed25519.PublicKey)
-	other := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x45}, ed25519.SeedSize)).Public().(ed25519.PublicKey)
-	return fuzzGossipKeys{edPriv: priv, edPub: pub, edAddr: Ed25519WalletAddress(pub), otherEd: other,
+	// The sender the retired Ed25519 verifier bound this key to.
+	sum := sha256.Sum256(pub)
+	return fuzzGossipKeys{edPriv: priv, edPub: pub, edAddr: hex.EncodeToString(sum[:]),
 		ml: newFuzzKey(0x46), other: newFuzzKey(0x47)}
 }
 
 func (k fuzzGossipKeys) verifier(pin uint8) *SigVerifier {
 	sv := NewSigVerifier()
-	switch pin % 4 {
-	case fuzzPinEd25519Same:
-		sv.RegisterKey(k.edAddr, k.edPub)
-	case fuzzPinEd25519Other:
-		sv.RegisterKey(k.edAddr, k.otherEd)
-	case fuzzPinMLDSA:
+	switch pin % 3 {
+	case fuzzPinMLDSASame:
+		if err := sv.RegisterMLDSAKey(k.ml.address, k.ml.pub); err != nil {
+			panic(err)
+		}
+	case fuzzPinMLDSAOther:
 		if err := sv.RegisterMLDSAKey(k.ml.address, k.other.pub); err != nil {
 			panic(err)
 		}
@@ -89,18 +93,6 @@ func checkVerifiedSignedTx(t *testing.T, sv *SigVerifier, stx *SignedTx) {
 	derived := sha256.Sum256(stx.PublicKey)
 	senderIsKey := strings.EqualFold(hex.EncodeToString(derived[:]), tx.Sender)
 	switch stx.Algorithm {
-	case SigEd25519:
-		if len(stx.PublicKey) != ed25519.PublicKeySize || len(stx.Signature) != ed25519.SignatureSize ||
-			!ed25519.Verify(stx.PublicKey, digest, stx.Signature) {
-			t.Fatal("verified an Ed25519 signature crypto/ed25519 rejects")
-		}
-		if pinned, ok := sv.GetKey(tx.Sender); ok {
-			if !bytes.Equal(pinned, stx.PublicKey) {
-				t.Fatalf("verified a key other than the one pinned for %q", tx.Sender)
-			}
-		} else if !senderIsKey {
-			t.Fatalf("verified sender %q, which is not hex(sha256(public_key))", tx.Sender)
-		}
 	case SigMLDSA:
 		if !fuzzVerifyMLDSA(stx.PublicKey, digest, stx.Signature) {
 			t.Fatal("verified an ML-DSA-87 signature the reference verifier rejects")
@@ -112,6 +104,7 @@ func checkVerifiedSignedTx(t *testing.T, sv *SigVerifier, stx *SignedTx) {
 			t.Fatalf("verified a key other than the one pinned for %q", tx.Sender)
 		}
 	default:
+		// Ed25519 is retired; ML-DSA-87 is the only accepted algorithm.
 		t.Fatalf("verified algorithm %q", stx.Algorithm)
 	}
 	for _, change := range []func(*mempool.Tx){
@@ -154,8 +147,12 @@ func FuzzHandleGossipSignedTx(f *testing.F) {
 		if err := json.Unmarshal(signed(alg, 0), &stx); err != nil {
 			f.Fatal(err)
 		}
-		if verdict, err := gv.HandleIncoming(pool, &stx); verdict != GossipAccepted {
+		verdict, err := gv.HandleIncoming(pool, &stx)
+		if alg == SigMLDSA && verdict != GossipAccepted {
 			f.Fatalf("genuine %s seed rejected: %v", alg, err)
+		}
+		if alg == SigEd25519 && (verdict != GossipRejected || !errors.Is(err, ErrEd25519Retired)) {
+			f.Fatalf("genuine %s seed not refused as retired: %s %v", alg, verdict, err)
 		}
 	}
 	for _, s := range []struct {
@@ -164,13 +161,14 @@ func FuzzHandleGossipSignedTx(f *testing.F) {
 		signs bool
 	}{
 		{signed(SigEd25519, 0), fuzzPinNone, false},
-		{signed(SigEd25519, 0), fuzzPinEd25519Same, false},
-		{signed(SigEd25519, 0), fuzzPinEd25519Other, false},
 		{signed(SigEd25519, 3), fuzzPinNone, false},
 		{signed(SigEd25519, 9), fuzzPinNone, true},
 		{signed(SigMLDSA, 0), fuzzPinNone, false},
-		{signed(SigMLDSA, 0), fuzzPinMLDSA, false},
+		{signed(SigMLDSA, 0), fuzzPinMLDSASame, false},
+		{signed(SigMLDSA, 0), fuzzPinMLDSAOther, false},
 		{signed(SigMLDSA, 1), fuzzPinNone, true},
+		// ML-DSA-87 material labelled ed25519: the label decides.
+		{bytes.Replace(signed(SigMLDSA, 0), []byte(`"ml-dsa"`), []byte(`"ed25519"`), 1), fuzzPinNone, false},
 		{bytes.Replace(signed(SigEd25519, 0), []byte(`"ed25519"`), []byte(`"rsa"`), 1), fuzzPinNone, true},
 		{[]byte(`{"tx":{"ID":"t","Sender":"s","Recipient":"r","Amount":1,"Fee":1},"algorithm":"ed25519"}`), fuzzPinNone, true},
 		{[]byte(`{"tx":{},"signature":"AA==","public_key":"AA==","algorithm":"ml-dsa"}`), fuzzPinNone, false},
@@ -189,9 +187,24 @@ func FuzzHandleGossipSignedTx(f *testing.F) {
 		}
 		gv, pool, accounts := newGossip(pin)
 		before := cloneSignedTx(&stx)
+		refusedBefore := TxSigEd25519Rejected()
 		sigErr := gv.sig.Verify(&stx)
 		if !reflect.DeepEqual(before, cloneSignedTx(&stx)) {
 			t.Fatal("SigVerifier.Verify modified the transaction")
+		}
+		// A SignedTx that names Ed25519 never verifies. With a signature and a
+		// key present it is refused as retired and counted once; nothing else
+		// is refused as retired or counted.
+		if stx.Algorithm == SigEd25519 && sigErr == nil {
+			t.Fatal("verified an Ed25519 SignedTx")
+		}
+		retired := stx.Algorithm == SigEd25519 && len(stx.Signature) > 0 && len(stx.PublicKey) > 0
+		counted := TxSigEd25519Rejected() - refusedBefore
+		if retired && (!errors.Is(sigErr, ErrEd25519Retired) || counted != 1) {
+			t.Fatalf("Ed25519 SignedTx refused with %v, counted %d times", sigErr, counted)
+		}
+		if !retired && (errors.Is(sigErr, ErrEd25519Retired) || counted != 0) {
+			t.Fatalf("SignedTx (algorithm %q) refused with %v, counted %d times as Ed25519", stx.Algorithm, sigErr, counted)
 		}
 		verdict, err := gv.HandleIncoming(pool, &stx)
 		inPool := pool.Size() == 1
@@ -199,6 +212,9 @@ func FuzzHandleGossipSignedTx(f *testing.F) {
 		case GossipRejected:
 			if inPool || gv.QuarantineSize() != 0 {
 				t.Fatalf("a rejected transaction was kept (%v)", err)
+			}
+			if retired && !errors.Is(err, ErrEd25519Retired) {
+				t.Fatalf("Ed25519 SignedTx rejected without ErrEd25519Retired: %v", err)
 			}
 			return
 		case GossipAccepted, GossipQuarantined:

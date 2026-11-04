@@ -69,6 +69,10 @@ type BootstrapDiscovery struct {
 	acceptedDiscovered uint64
 }
 
+// BootstrapProtectTag is the connection-manager protection tag applied to
+// configured bootstrap peers.
+const BootstrapProtectTag = "qsdm-bootstrap"
+
 // NewBootstrapDiscovery creates the explicit bootstrap dialer.
 //
 // Security posture:
@@ -136,6 +140,12 @@ func NewBootstrapDiscovery(ctx context.Context, h host.Host, cfg BootstrapConfig
 			}
 		}
 		bd.bootstrapPeers = append(bd.bootstrapPeers, *pi)
+		// Operator-configured bootstrap peers are exempt from connection
+		// manager trimming, so an inbound connection flood cannot push
+		// the node off its trusted upstream.
+		if cm := h.ConnManager(); cm != nil {
+			cm.Protect(pi.ID, BootstrapProtectTag)
+		}
 	}
 
 	if len(cfg.BootstrapPeers) == 0 {

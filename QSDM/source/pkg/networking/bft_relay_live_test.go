@@ -74,9 +74,7 @@ func TestLiveBFTRelay_Propagation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := topicA.Publish(ctx, body); err != nil {
-		t.Fatalf("publish: %v", err)
-	}
+	defer keepPublishing(ctx, t, topicA, body)()
 
 	deadline := time.After(12 * time.Second)
 	for {

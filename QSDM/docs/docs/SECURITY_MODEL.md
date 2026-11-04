@@ -15,7 +15,7 @@ network see [Network status](NETWORK_STATUS.md).
 | Area | Protected today | Not yet / what you trust |
 |---|---|---|
 | Wallet keys | Generated and kept on your device; private keys are stored encrypted | Your device, your passphrase, and the software you installed |
-| Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL); nonces stop replays; transfers must name committed parents (Proof-of-Entanglement, from block 816,600) | The generic peer-to-peer transaction-gossip verifier code still accepts Ed25519. It cannot be reached on the live chain today because the producer has no transaction gossip ingress; retiring it is planned |
+| Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL); nonces stop replays; transfers must name committed parents (Proof-of-Entanglement, from block 816,600) | Ed25519 transaction signatures are refused (`ed25519_tx_accepted: false`). CELL stream session keys are still Ed25519 until a stream retirement height is set |
 | Block production | One producer runs the chain; every block is stored and served publicly | You trust that producer to include valid transactions and not to censor or reorder them |
 | Consensus | **Signed consensus enforced from block 827,000** (`signed_consensus_active: true`): every BFT vote and consensus message must carry a valid ML-DSA signature; unsigned consensus traffic is refused | There is only one producer and no independent validators yet, so there is no multi-validator BFT today |
 | Mining | Enrollment needs a signed enrollment and a 10 CELL bond; proofs carry NVIDIA attestation; duplicate proofs and nonces are rejected durably | Consumer-GPU attestation (`nvidia-hmac-v1`) is an economic control tied to the enrollment and its bond, not a hardware proof |
@@ -48,11 +48,13 @@ network see [Network status](NETWORK_STATUS.md).
   category 5). It is designed to resist known quantum attacks on signatures.
   It does not make the rest of the system "quantum-proof": transport (TLS)
   and some peer-to-peer traffic still use classical cryptography.
-- The generic peer-to-peer transaction-gossip verifier code still accepts
-  Ed25519 signatures. The producer runs without transaction gossip ingress, so
-  no Ed25519 transaction can reach the live chain today. Wallets, task actions
-  and consensus use ML-DSA. Retiring the Ed25519 path is on the
-  [Roadmap](ROADMAP.md).
+- Ed25519 transaction signatures are retired: since 16 October 2026 the
+  generic peer-to-peer transaction-gossip verifier refuses them, and
+  ML-DSA-87 is the only accepted transaction signature (status API
+  `ed25519_tx_accepted: false`). Wallets, task actions and consensus use
+  ML-DSA. CELL stream session keys, which sign stream usage receipts, are
+  still Ed25519 until a stream retirement height
+  (`stream_ed25519_retirement_height`) is set; see the [Roadmap](ROADMAP.md).
 - From block 816,600 every transfer must name committed parent transactions
   ([Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md)). The parents are part of
   the signed bytes.
@@ -62,12 +64,17 @@ network see [Network status](NETWORK_STATUS.md).
 - Today one block producer creates every block, with a backup node that follows
   the chain. Since 2 November 2026 its peer-to-peer port is public, with
   connection, stream and block-request limits; the status API's `peers` counts
-  the connected peers.
+  the connected peers. The code of those limits is in this repository: the
+  block-request budget is always on, and the connection, stream and gossip
+  limits are opt-in for other nodes ([P2P limits](P2P_LIMITS.md)). A node
+  that only follows a known producer can run in private peer-to-peer mode,
+  which accepts and dials only listed peer IDs over private addresses
+  ([Private P2P mode](PRIVATE_P2P.md)).
 - On 3 November 2026 fuzzing found that one block with a null transaction entry
   stopped a node before any signature was checked. The producer's peer-to-peer
   port was closed while a fixed build went in, and it reopened on 4 November.
   The decoders that read peer messages, public API request bodies and mining
-  submissions are fuzzed every night (39 targets in
+  submissions are fuzzed every night (44 targets in
   `.github/workflows/go-fuzz-nightly.yml`).
 - Bridge events on the `qsdm-bridge` topic are applied only when they are
   signed by a relayer key on the operator's allowlist, which is empty by

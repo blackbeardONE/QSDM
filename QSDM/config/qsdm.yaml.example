@@ -22,6 +22,34 @@ network:
   # bridge_relay_trusted_keys_file: "/opt/qsdm/bridge_relayers.txt"  # one hex key per line
   # bridge_relay_signer_key_path: "/opt/qsdm/bridge_relayer_key.json"  # signs local events; never the consensus key
   # bridge_relay_max_event_age: "10m"
+  # Private P2P mode (QSDM/docs/docs/PRIVATE_P2P.md); off by default. When on, bind_address
+  # must be a literal private IP and only the listed libp2p peer IDs may connect.
+  # private_p2p: false
+  # private_p2p_allowed_peers: []      # libp2p peer IDs, 12D3KooW...
+  # P2P connection, stream and gossip limits (QSDM/docs/docs/P2P_LIMITS.md). They are
+  # opt-in. Without p2p_limits_enabled the other keys are refused. With it every key is
+  # optional; 0 or unset means the default shown. Env names as in qsdm.toml.example.
+  # p2p_limits_enabled: false           # true applies the limits below
+  # p2p_limits_disabled: false          # true: libp2p library defaults even when enabled
+  # conn_low_water: 64
+  # conn_high_water: 96
+  # conn_grace_period: "1m"
+  # max_conns: 192
+  # max_inbound_conns: 128
+  # max_streams: 2048
+  # max_inbound_streams: 1024
+  # max_conns_per_peer: 8
+  # max_streams_per_peer: 256
+  # max_inbound_streams_per_peer: 128
+  # max_conns_per_ip: 8                 # per IPv4 address or IPv6 /56; loopback exempt
+  # gossip_max_message_bytes: 1048576
+  # gossip_peer_rate: 100.0             # messages/s per topic per forwarding peer; < 0 turns it off
+  # gossip_peer_burst: 1000
+  # gossip_peer_scoring_disabled: false
+  # gossip_validate_queue: 256
+  # gossip_validate_throttle: 2048
+  # gossip_topic_max_bytes:             # per-topic size limits, merged over the defaults
+  #   qsdm-transactions: 262144
 
 # Storage Configuration
 storage:
@@ -68,6 +96,10 @@ wallet:
 # Governance Configuration
 governance:
   proposal_file: "proposals.json"
+
+# Consensus (see the [consensus] section of qsdm.toml.example).
+# consensus:
+#   stream_ed25519_retirement_height: 0  # CELL stream opens (Ed25519 session keys) refused from this height; 0 = never; same value on every validator; env QSDM_STREAM_ED25519_RETIREMENT_HEIGHT
 
 # Performance Configuration
 performance:

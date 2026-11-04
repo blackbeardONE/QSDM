@@ -68,6 +68,8 @@ type Network struct {
 	mu         sync.Mutex
 	logger     *logging.Logger
 	banGater   *banGater
+	limits     P2PLimits
+	guard      *gossipGuard
 
 	peerStatusMu sync.Mutex
 	peerStatus   map[peer.ID]time.Time
@@ -128,9 +130,58 @@ func SetupLibP2PWithPortBindAndKey(ctx context.Context, logger *logging.Logger, 
 // the only production caller that enables it; tests and loopback-only nodes
 // keep the historical no-router-mutation behavior.
 func SetupLibP2PWithPortBindAndKeyAndNAT(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string, enableNAT bool) (*Network, error) {
+	return SetupLibP2PWithOptions(ctx, logger, SetupOptions{
+		Port:        port,
+		BindAddress: bindAddress,
+		HostKeyPath: hostKeyPath,
+		EnableNAT:   enableNAT,
+	})
+}
+
+// SetupOptions configures SetupLibP2PWithOptions.
+type SetupOptions struct {
+	Port        int
+	BindAddress string
+	HostKeyPath string
+	EnableNAT   bool
+	// Limits bounds connections, streams and gossip. The zero value
+	// means DefaultP2PLimits(); set Limits.Disabled to fall back to the libp2p
+	// library defaults.
+	Limits P2PLimits
+	// AllowedPeers turns on private P2P mode (private_p2p.go): only these
+	// libp2p peer IDs may connect or be dialled, only over private addresses,
+	// BindAddress must be a literal private IP, EnableNAT must be false and
+	// mDNS is not started. Empty (the default) changes nothing.
+	AllowedPeers []string
+}
+
+// SetupLibP2PWithOptions creates the libp2p host, the GossipSub router and the
+// qsdm-transactions subscription with explicit connection / resource / gossip
+// limits (see p2p_limits.go and QSDM/docs/docs/P2P_LIMITS.md).
+func SetupLibP2PWithOptions(ctx context.Context, logger *logging.Logger, so SetupOptions) (*Network, error) {
+	port, bindAddress, hostKeyPath, enableNAT := so.Port, so.BindAddress, so.HostKeyPath, so.EnableNAT
+	limits := so.Limits
+	if !limits.Disabled {
+		limits = limits.WithDefaults()
+		if err := limits.Validate(); err != nil {
+			return nil, err
+		}
+	}
 	var opts []libp2p.Option
 	if port < 0 || port > 65535 {
 		return nil, fmt.Errorf("invalid libp2p port: %d", port)
+	}
+	allow, aerr := parseAllowedPeers(so.AllowedPeers)
+	if aerr != nil {
+		return nil, aerr
+	}
+	if allow != nil {
+		if enableNAT {
+			return nil, fmt.Errorf("private p2p: NAT port mapping and hole punching cannot be enabled")
+		}
+		if err := validatePrivateListen(bindAddress); err != nil {
+			return nil, err
+		}
 	}
 	listenAddrs, lerr := libp2pListenAddrs(port, bindAddress)
 	if lerr != nil {
@@ -154,19 +205,27 @@ func SetupLibP2PWithPortBindAndKeyAndNAT(ctx context.Context, logger *logging.Lo
 	// attaches it later. Passing the gater here rather than wiring it afterwards
 	// is required -- libp2p takes the ConnectionGater as a construction option
 	// and there is no setter on a live host.
-	gater := &banGater{}
+	gater := &banGater{allow: allow}
 	opts = append(opts, libp2p.ConnectionGater(gater))
+	limitOpts, err := limits.hostOptions()
+	if err != nil {
+		return nil, err
+	}
+	opts = append(opts, limitOpts...)
 
 	h, err := libp2p.New(opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	// Setup mDNS discovery to find local peers
-	notifee := &DiscoveryNotifee{h: h, logger: logger}
-	mdnsService := mdns.NewMdnsService(h, "qsdm-mdns", notifee)
-	if mdnsService == nil {
-		return nil, fmt.Errorf("failed to start mDNS service")
+	// Setup mDNS discovery to find local peers. Private mode skips it: the
+	// peer set is fixed and mDNS would announce the node on every attached LAN.
+	if allow == nil {
+		notifee := &DiscoveryNotifee{h: h, logger: logger}
+		mdnsService := mdns.NewMdnsService(h, "qsdm-mdns", notifee)
+		if mdnsService == nil {
+			return nil, fmt.Errorf("failed to start mDNS service")
+		}
 	}
 
 	// pubsub.StrictSign is the secure baseline: every published message
@@ -180,13 +239,24 @@ func SetupLibP2PWithPortBindAndKeyAndNAT(ctx context.Context, logger *logging.Lo
 	// net-01 ("P2P message authentication") is satisfied by this line
 	// plus DefaultPubsubSignaturePolicy below + the round-trip test
 	// in pubsub_signpolicy_test.go.
-	ps, err := pubsub.NewGossipSub(ctx, h,
-		pubsub.WithMessageSignaturePolicy(DefaultPubsubSignaturePolicy))
+	//
+	// The P2P limits add: a global max message size, a larger validation
+	// queue, peer scoring, and an inline default validator (gossipGuard)
+	// enforcing per-topic payload ceilings and a per-peer rate on every
+	// topic. Locally published messages always pass the guard.
+	var guard *gossipGuard
+	psOpts := []pubsub.Option{pubsub.WithMessageSignaturePolicy(DefaultPubsubSignaturePolicy)}
+	if !limits.Disabled {
+		guard = newGossipGuard(h.ID(), limits)
+		psOpts = append(psOpts, limits.pubsubOptions(guard)...)
+	}
+	ps, err := pubsub.NewGossipSub(ctx, h, psOpts...)
 	if err != nil {
+		_ = h.Close()
 		return nil, fmt.Errorf("failed to create pubsub: %w", err)
 	}
 
-	topic, err := ps.Join("qsdm-transactions")
+	topic, err := ps.Join(TxTopicName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to join pubsub topic: %w", err)
 	}
@@ -207,6 +277,8 @@ func SetupLibP2PWithPortBindAndKeyAndNAT(ctx context.Context, logger *logging.Lo
 		cancel:       cancel,
 		logger:       logger,
 		banGater:     gater,
+		limits:       limits,
+		guard:        guard,
 		peerStatus:   make(map[peer.ID]time.Time),
 		peerMsgCount: make(map[peer.ID]int64),
 	}
@@ -222,7 +294,8 @@ func SetupLibP2PWithPortBindAndKeyAndNAT(ctx context.Context, logger *logging.Lo
 	go net.handleMessages()
 	go net.monitorPeers()
 
-	logger.Info("LibP2P host created", "hostID", h.ID().String())
+	logger.Info("LibP2P host created", "hostID", h.ID().String(), "p2p_limits", limits.String(),
+		"private_p2p", allow != nil, "allowed_peers", len(allow))
 	return net, nil
 }
 
@@ -245,6 +318,23 @@ func libp2pListenAddrs(port int, bindAddress string) ([]string, error) {
 		return []string{fmt.Sprintf("/ip4/%s/tcp/%d", ip4.String(), port)}, nil
 	}
 	return []string{fmt.Sprintf("/ip6/%s/tcp/%d", ip.String(), port)}, nil
+}
+
+// Limits returns the effective P2P limits this host was built with.
+func (n *Network) Limits() P2PLimits {
+	if n == nil {
+		return P2PLimits{}
+	}
+	return n.limits
+}
+
+// GossipGuardStats returns the gossip guard counters (zero when limits are
+// disabled).
+func (n *Network) GossipGuardStats() GossipGuardStats {
+	if n == nil {
+		return GossipGuardStats{}
+	}
+	return n.guard.Stats()
 }
 
 // PeerCount implements netmetrics.NetworkProvider for this

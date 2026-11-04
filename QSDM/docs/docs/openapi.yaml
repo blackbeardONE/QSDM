@@ -6376,6 +6376,9 @@ components:
         - tx_content_root_active
         - poe_activation_height
         - poe_active
+        - ed25519_tx_accepted
+        - stream_ed25519_retirement_height
+        - stream_ed25519_session_keys_retired
       properties:
         signed_consensus_supported:
           type: boolean
@@ -6422,6 +6425,23 @@ components:
         poe_active:
           type: boolean
           description: Whether the PoE parent rules govern the next block (chain tip + 1).
+        ed25519_tx_accepted:
+          type: boolean
+          description: |
+            Whether the SignedTx dispatcher accepts Ed25519 signatures. Always
+            false: Ed25519 transaction signatures are retired and ML-DSA-87 is
+            the only accepted algorithm.
+        stream_ed25519_retirement_height:
+          type: integer
+          format: int64
+          description: |
+            First height at which a CELL stream open, which registers an
+            Ed25519 session key, is refused ([consensus]
+            stream_ed25519_retirement_height or
+            QSDM_STREAM_ED25519_RETIREMENT_HEIGHT); 0 means not scheduled.
+        stream_ed25519_session_keys_retired:
+          type: boolean
+          description: Whether the stream Ed25519 retirement governs the next block (chain tip + 1).
 
     # ------------------------------------------------------------------
     # Versions

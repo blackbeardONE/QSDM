@@ -25,7 +25,7 @@ examples from October 2026, and the live values are always in the status API.
 | Transfer parents (Proof-of-Entanglement) | **Enforced from block 816,600** (11 October 2026): every CELL transfer names committed parents. Send with Hive 1.4.22 or newer, the web wallet, or `qsdmcli --auto-parents`. See [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md). |
 | Mining | NVIDIA GPUs through QSDM Hive 1.4.21 or newer, **open to every enrolled miner** since 19 October 2026 (protocol v2; every proof carries the enrollment owner's operator signature), in 7-day windows that renew automatically. Mining was paused from 22 October to 1 November 2026 (see [What is running](#what-is-running)). See [Mining today](MINING_TODAY.md). |
 | Supply | Max supply **90,000,000 CELL**, all from mining. No genesis treasury and no premine ([Genesis Policy v1.1](GENESIS_POLICY_v1.1.md)). Transaction fees are burned (credited to no account). |
-| Release | `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101`, live since 1 November 2026, 11:31 UTC (see [What is running](#what-is-running)) |
+| Release | `hardened-legacy-20261103-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1103`, live since 3 November 2026, 17:37 UTC (see [What is running](#what-is-running)) |
 | Independent audit | None completed. Security review is an open [community review](COMMUNITY_REVIEW.md) with a [bug bounty](BUG_BOUNTY.md) (rewards confirmed by the owner on 17 October 2026; 50,000 CELL pool); a professional audit remains welcome. The [internal security review](SECURITY_AUDIT.md) is a self-maintained checklist. |
 
 ## Check it yourself
@@ -90,6 +90,8 @@ How to read the fields that matter most:
 | `consensus_auth.poe_activation_height`, `poe_active` | The block from which transfers must name committed parents, and whether that height has been reached. |
 | `consensus_auth.edge_relay_only_activation_height`, `edge_relay_only_active` | From block 833,800, paid edge tasks settle only through an authorized settlement relay. |
 | `consensus_auth.task_action_signatures_active`, `tx_content_root_active` | `true`: task actions must carry a valid signature, and the block's transaction root commits transaction contents (both from block 625,000). |
+| `consensus_auth.ed25519_tx_accepted` | `false`: transactions signed with Ed25519 are refused; ML-DSA-87 is the only accepted transaction signature. |
+| `consensus_auth.stream_ed25519_retirement_height`, `stream_ed25519_session_keys_retired` | The block from which a CELL stream open (which registers an Ed25519 session key) is refused, and whether the next block is at or above it. `0` and `false`: no height is set. |
 | `tokenomics.*` | Supply cap, amount mined so far, current block reward and the next halving height. Amounts are also given in dust (1 CELL = 100,000,000 dust). |
 | `mining.protocol_versions_accepted` | Only mining protocol v2 proofs are accepted. |
 | `mining.attestation_types_required` | The NVIDIA attestation types a proof may carry. |
@@ -100,29 +102,35 @@ The [explorer](https://qsdm.tech/explorer.html) and the
 
 ## What is running
 
-- **Core release** `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101`
-  (live since 2026-11-01 11:31 UTC; mining paused 11:17-11:33 UTC for the
-  switch): the d7ffcd4 base, the September 2026 recovery patches, the
-  hardened-legacy mining work (durable proof and nonce de-duplication,
-  persistent pending rewards, and a stop-on-failure rule for block storage),
-  the Proof-of-Entanglement parent rules (enforced from block 816,600),
-  signed consensus (enforced from block 827,000), the relay-only rule for paid
-  edge tasks (from block 833,800), reserved built-in task IDs, the retirement
-  of Ed25519 transactions (2026-10-16) and reopened miner enrollment
-  (2026-10-17); since rc1101 also a response budget for peer-to-peer block
-  requests (one answer per peer every 2 s, 2 per second in total, duplicate
-  blocks dropped before verification), built with Go 1.26.10 (GO-2026-6809)
-  and klauspost/compress v1.18.7 (CVE-2026-63209). The base of this code is
-  `QSDM/source` in this repository; the release-only changes since rc1017
-  (the peer-to-peer limits and the block-request budget) are not yet mirrored
-  here. The other new features of the release candidates ship switched off.
+- **Core release** `hardened-legacy-20261103-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1103`
+  (live since 2026-11-03 17:37 UTC). It is rc1101 (live from 2026-11-01
+  11:31 UTC) with one fix: a block with a null transaction entry could stop a
+  node before any signature was checked. Fuzzing found it on 2026-11-03, and
+  the fix is in this repository. The release has the d7ffcd4 base, the
+  September 2026 recovery patches, the hardened-legacy mining work (durable
+  proof and nonce de-duplication, persistent pending rewards, and a
+  stop-on-failure rule for block storage), the Proof-of-Entanglement parent
+  rules (enforced from block 816,600), signed consensus (enforced from block
+  827,000), the relay-only rule for paid edge tasks (from block 833,800),
+  reserved built-in task IDs, the retirement of Ed25519 transactions
+  (2026-10-16) and reopened miner enrollment (2026-10-17); since rc1101 also
+  a response budget for peer-to-peer block requests (one answer per peer
+  every 2 s, 2 per second in total, duplicate blocks dropped before
+  verification), built with Go 1.26.10 (GO-2026-6809) and
+  klauspost/compress v1.18.7 (CVE-2026-63209). The base of this code is
+  `QSDM/source` in this repository, which also has the peer-to-peer limits
+  (opt-in with `p2p_limits_enabled`, switched on at the producer), the
+  block-request budget ([P2P limits](P2P_LIMITS.md)), the Ed25519 retirement
+  and the private peer-to-peer mode ([Private P2P mode](PRIVATE_P2P.md)).
+  The other new features of the release candidates ship switched off.
 - **Peer-to-peer.** Since 2026-11-02 the producer accepts libp2p peers from
   the internet on port 4001
   (`/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`,
   the host behind `api.qsdm.tech`), with connection and stream limits and the
   block-request budget above; before that the port listened on the host only.
-  A full node does not need it: it follows the chain over HTTPS
-  ([Run a full node](RUN_A_FULL_NODE.md)).
+  It was closed from 2026-11-03 13:39 UTC while the null-transaction fix went
+  in, and reopened on 2026-11-04 04:19 UTC. A full node does not need it: it
+  follows the chain over HTTPS ([Run a full node](RUN_A_FULL_NODE.md)).
 - **Upgrade history.** Every network upgrade, with its height, time and what
   users had to do, is listed in [Network upgrades](NETWORK_UPGRADES.md).
 - **Timeline.** The chain was paused on 2026-09-22 and restarted on 2026-09-27
@@ -148,9 +156,10 @@ docs.
   the code but no longer planned: since 2026-10-19 the plan is for miners to
   produce blocks, in stages (see the [Roadmap](ROADMAP.md)). Today one
   producer signs every consensus message.
-- Retirement of the Ed25519 code path in the generic peer-to-peer
-  transaction-gossip verifier. It cannot be reached on the live chain today
-  (the producer has no transaction gossip ingress), but the code still exists.
+- Retirement of Ed25519 CELL stream session keys. The rule is in the code
+  (`stream_ed25519_retirement_height`), but no height is set
+  (`stream_ed25519_session_keys_retired: false`). Ed25519 transactions are
+  already refused (`ed25519_tx_accepted: false`).
 - The published mainnet migration manifest and fork height
   ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) §5).
 - A published security review with its findings fixed. The current path is

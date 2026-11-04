@@ -98,6 +98,28 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **2026-11-04: the producer's peer-to-peer hardening in `QSDM/source`.**
+  This repository now has what the producer runs: opt-in connection, stream
+  and gossip limits (`p2p_limits_enabled`, see
+  [P2P limits](QSDM/docs/docs/P2P_LIMITS.md)), the block-request budget, and
+  a private peer-to-peer mode with a peer-ID allowlist (see
+  [Private P2P mode](QSDM/docs/docs/PRIVATE_P2P.md)). The generic transaction
+  dispatcher refuses Ed25519-signed transactions, and a height-gated rule
+  (`stream_ed25519_retirement_height`, no height set) can retire Ed25519
+  stream session keys. 44 fuzz targets run every night. Nothing changes on
+  the live network.
+
+- **2026-11-04: public peer-to-peer reopened.** The producer accepts libp2p
+  connections on port 4001 again since 04:19 UTC, now on rc1103.
+
+- **2026-11-03: release rc1103.** The producer runs
+  `hardened-legacy-20261103-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1103` since
+  17:37 UTC: rc1101 plus a fix for a crash that one block with a null
+  transaction entry could cause before any signature check (found by fuzzing
+  the same day; the fix is in `QSDM/source`). Public peer-to-peer was closed
+  from 13:39 UTC until the fix was live. Full nodes follow the chain over
+  HTTPS and were not exposed. No existing block hash changes.
+
 - **2026-11-02: public peer-to-peer on the producer.** The producer accepts
   libp2p connections from the internet on port 4001
   (`/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`)

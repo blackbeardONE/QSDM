@@ -241,6 +241,23 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		if streams == nil {
 			return ErrStreamStateNotWired
 		}
+		// Ed25519 session keys are retired from the configured height
+		// (stream_ed25519_retirement.go): a stream open in a block at or
+		// above it is refused before anything is charged. With no height
+		// configured (the default) this branch is skipped and nothing
+		// changes. A tx that does not decode is refused by ApplyEconomicTx
+		// with the same decode error, as before.
+		if StreamEd25519RetirementHeight() != 0 {
+			if action, decErr := DecodeStreamActionTx(tx); decErr == nil && action.Action == StreamActionOpen {
+				h, ok := a.currentHeight()
+				if !ok {
+					return ErrEnrollmentHeightUnset
+				}
+				if err := checkStreamEd25519Retirement(action, h); err != nil {
+					return err
+				}
+			}
+		}
 		return streams.ApplyEconomicTx(tx, a.accounts)
 	}
 	if tx.ContractID == RecoveryCapsuleContractID {

@@ -54,12 +54,12 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
 
 ### What is running (November 2026)
 
-- **Core:** release `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101`
-  since 2026-11-01, based on this repository's `QSDM/source` (d7ffcd4 plus
+- **Core:** release `hardened-legacy-20261103-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1103`
+  since 2026-11-03, based on this repository's `QSDM/source` (d7ffcd4 plus
   the recovery patches and the HL1/HL2 hardened-legacy mining work listed in
-  the [changelog](CHANGELOG.md)). Its peer-to-peer limits and block-request
-  budget are not yet mirrored here; see
-  [Network status](QSDM/docs/docs/NETWORK_STATUS.md#what-is-running). Since
+  the [changelog](CHANGELOG.md)). Its peer-to-peer limits (opt-in here) and
+  block-request budget are in this repository too; see
+  [P2P limits](QSDM/docs/docs/P2P_LIMITS.md). Since
   2026-11-02 the producer accepts peer-to-peer connections on port 4001. The
   chain was stopped on 2026-09-22 and restarted on 2026-09-27; public mining
   reopened on 2026-10-02.

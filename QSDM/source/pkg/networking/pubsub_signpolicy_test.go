@@ -150,9 +150,7 @@ func TestPubsubWithMessageSignaturePolicy_RoundTrip(t *testing.T) {
 		}
 	}()
 
-	if err := t1.Publish(ctx, payload); err != nil {
-		t.Fatalf("h1 publish: %v", err)
-	}
+	defer keepPublishing(ctx, t, t1, payload)()
 
 	select {
 	case err := <-errCh:

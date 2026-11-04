@@ -609,15 +609,58 @@ func submeshCLI(dynamicManager *submesh.DynamicSubmeshManager, profilePath strin
 // behaviour (acceptable for tests and dev; on production it causes the
 // post-restart trust-attestation blip documented in RELEASE_NOTES_v0.3.0.md
 // "Session 87").
-func SetupNetwork(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string) (*networking.Network, error) {
-	return networking.SetupLibP2PWithPortBindAndKey(ctx, logger, port, bindAddress, hostKeyPath)
+//
+// limits bounds connections, streams and gossip (QSDM/docs/docs/P2P_LIMITS.md);
+// the zero value selects networking.DefaultP2PLimits.
+func SetupNetwork(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string, limits networking.P2PLimits) (*networking.Network, error) {
+	return networking.SetupLibP2PWithOptions(ctx, logger, networking.SetupOptions{
+		Port: port, BindAddress: bindAddress, HostKeyPath: hostKeyPath, Limits: limits,
+	})
 }
 
 // SetupNetworkPublic enables the explicit public-P2P path. The NAT option is
 // paired with the all-interface bind selected by the launcher; it maps only
 // the libp2p peer port and leaves the validator APIs on loopback.
-func SetupNetworkPublic(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string) (*networking.Network, error) {
-	return networking.SetupLibP2PWithPortBindAndKeyAndNAT(ctx, logger, port, bindAddress, hostKeyPath, true)
+func SetupNetworkPublic(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string, limits networking.P2PLimits) (*networking.Network, error) {
+	return networking.SetupLibP2PWithOptions(ctx, logger, networking.SetupOptions{
+		Port: port, BindAddress: bindAddress, HostKeyPath: hostKeyPath, EnableNAT: true, Limits: limits,
+	})
+}
+
+// p2pLimitsFromConfig maps the [network] P2P limit keys onto the networking
+// limits. The limits are opt-in (p2p_limits_enabled): unless enabled, and
+// not switched off by p2p_limits_disabled, the result is Disabled, which
+// builds the host exactly as before these limits. Zero fields keep their
+// networking defaults.
+func p2pLimitsFromConfig(c config.P2PLimitsConfig) networking.P2PLimits {
+	var topics map[string]int
+	if len(c.GossipTopicMaxBytes) > 0 {
+		topics = make(map[string]int, len(c.GossipTopicMaxBytes))
+		for k, v := range c.GossipTopicMaxBytes {
+			topics[k] = v
+		}
+	}
+	return networking.P2PLimits{
+		Disabled:                  !c.Effective(),
+		ConnLowWater:              c.ConnLowWater,
+		ConnHighWater:             c.ConnHighWater,
+		ConnGracePeriod:           c.ConnGracePeriod,
+		MaxConns:                  c.MaxConns,
+		MaxInboundConns:           c.MaxInboundConns,
+		MaxStreams:                c.MaxStreams,
+		MaxInboundStreams:         c.MaxInboundStreams,
+		MaxConnsPerPeer:           c.MaxConnsPerPeer,
+		MaxStreamsPerPeer:         c.MaxStreamsPerPeer,
+		MaxInboundStreamsPerPeer:  c.MaxInboundStreamsPerPeer,
+		MaxConnsPerIP:             c.MaxConnsPerIP,
+		GossipMaxMessageBytes:     c.GossipMaxMessageBytes,
+		GossipTopicMaxBytes:       topics,
+		GossipPeerRate:            c.GossipPeerRate,
+		GossipPeerBurst:           c.GossipPeerBurst,
+		GossipPeerScoringDisabled: c.GossipPeerScoringDisabled,
+		GossipValidateQueue:       c.GossipValidateQueue,
+		GossipValidateThrottle:    c.GossipValidateThrottle,
+	}
 }
 
 func isPublicP2PBind(bindAddress string) bool {
@@ -917,11 +960,24 @@ func main() {
 	}
 
 	setupNetwork := SetupNetwork
-	if isPublicP2PBind(cfg.NetworkBindAddress) {
+	p2pMode, p2pModeErr := resolveP2PStartupMode(cfg.NetworkBindAddress, cfg.PrivateP2P,
+		strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_ALLOW_PUBLIC_DHT_FALLBACK")), "1"))
+	if p2pModeErr != nil {
+		log.Fatalf("private p2p: %v", p2pModeErr)
+	}
+	switch p2pMode {
+	case p2pModePublic:
 		setupNetwork = SetupNetworkPublic
 		logger.Info("Public P2P mode enabled", "nat_port_mapping", true, "hole_punching", true, "network_port", cfg.NetworkPort)
+	case p2pModePrivate:
+		allowedPeers := append([]string(nil), cfg.PrivateP2P.AllowedPeers...)
+		setupNetwork = func(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string, limits networking.P2PLimits) (*networking.Network, error) {
+			return SetupNetworkPrivate(ctx, logger, port, bindAddress, hostKeyPath, limits, allowedPeers)
+		}
+		logger.Info("Private P2P mode enabled", "bind_address", cfg.NetworkBindAddress, "network_port", cfg.NetworkPort,
+			"allowed_peers", strings.Join(allowedPeers, ","), "nat_port_mapping", false, "mdns", false)
 	}
-	net, err := setupNetwork(ctx, logger, cfg.NetworkPort, cfg.NetworkBindAddress, networkHostKeyPath)
+	net, err := setupNetwork(ctx, logger, cfg.NetworkPort, cfg.NetworkBindAddress, networkHostKeyPath, p2pLimitsFromConfig(cfg.P2PLimits))
 	if err != nil {
 		logger.Error("Failed to setup libp2p", "error", err)
 		metrics.RecordError("Network setup failed: " + err.Error())
@@ -1556,6 +1612,22 @@ func main() {
 			"config", "[consensus] poe_activation_height",
 			"env", "QSDM_POE_ACTIVATION_HEIGHT")
 	}
+	// Post-quantum only: from this height a CELL stream open, which
+	// registers an Ed25519 usage-receipt session key, is refused in
+	// production, in validation and in replay. Streams opened below it can
+	// still take receipts, settle and close. Zero, the default, changes
+	// nothing. (Ed25519 SignedTx are refused at admission regardless.)
+	chain.SetStreamEd25519RetirementHeight(cfg.StreamEd25519RetirementHeight)
+	if cfg.StreamEd25519RetirementHeight > 0 {
+		logger.Info("Stream Ed25519 session-key retirement scheduled",
+			"from_height", cfg.StreamEd25519RetirementHeight,
+			"refuses", "qsdm/streams/v1 open",
+			"warning", "every validator must use this exact value")
+	} else {
+		logger.Info("Stream Ed25519 session keys are not retired (no retirement height)",
+			"config", "[consensus] stream_ed25519_retirement_height",
+			"env", "QSDM_STREAM_ED25519_RETIREMENT_HEIGHT")
+	}
 	chain.SetRequireSignedCertificates(cfg.RequireSignedVotes)
 	chain.SetRequireSignedBlocks(cfg.RequireSignedVotes)
 	chain.SetRequireEvidenceProof(cfg.RequireSignedVotes)
@@ -1747,6 +1819,10 @@ func main() {
 	}
 	if p := cfg.ProducerTransition; p != nil {
 		logger.Info("Checkpoint-bound producer transition enforced", "checkpoint_height", p.CheckpointHeight, "checkpoint_hash", p.CheckpointHash, "effective_height", p.EffectiveHeight, "replacement_producer", p.ReplacementProducer)
+	}
+	if advice := producerAllowlistAdvice(cfg.AuthorizedBlockProducers, cfg.ProducerTransition); advice != "" {
+		logger.Warn("Stale external block producer allowlist", "detail", advice,
+			"config", "[consensus] authorized_block_producers", "see", "QSDM/docs/docs/PRIVATE_P2P.md")
 	}
 	if adminProducer.ExternalProducerGateEnforced() {
 		logger.Info("External block producer allowlist enforced",
@@ -2569,6 +2645,7 @@ func main() {
 	adminProducer.OnSealedBlock = hl1Hook.OnSealedBlock
 	monitoring.GlobalScrapePrometheusExporter().RegisterCollector("hl1", hl1MetricsCollector(hl1Durable))
 	monitoring.GlobalScrapePrometheusExporter().RegisterCollector("poe", poeMetricsCollector(adminProducer))
+	monitoring.GlobalScrapePrometheusExporter().RegisterCollector("pq_only", pqOnlyMetricsCollector())
 
 	// HL1 (d): in the producer role a gossiped block is never appended
 	// (errHL1ExternalAppendDisabled). HL1 (c): catch-up responses never carry

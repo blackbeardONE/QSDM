@@ -445,13 +445,18 @@ func (s *StreamStateStore) ApplyTx(tx *mempool.Tx) error {
 
 // ApplyHistoricalTx rebuilds stream projection from a committed block without
 // touching accounts. Account balances/nonces come from the matching persisted
-// account snapshot.
-func (s *StreamStateStore) ApplyHistoricalTx(tx *mempool.Tx, _ uint64) error {
+// account snapshot. height is the committed block's height; it gates the
+// Ed25519 session-key retirement (stream_ed25519_retirement.go), and 0 (as
+// ApplyTx passes) never reaches it.
+func (s *StreamStateStore) ApplyHistoricalTx(tx *mempool.Tx, height uint64) error {
 	if err := VerifyStreamActionTx(tx); err != nil {
 		return err
 	}
 	action, err := DecodeStreamActionTx(tx)
 	if err != nil {
+		return err
+	}
+	if err := checkStreamEd25519Retirement(action, height); err != nil {
 		return err
 	}
 	_, err = s.applyAction(action)

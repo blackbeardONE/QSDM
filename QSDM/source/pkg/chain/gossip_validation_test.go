@@ -1,8 +1,7 @@
 package chain
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
+	"errors"
 	"testing"
 	"time"
 
@@ -10,17 +9,17 @@ import (
 )
 
 func TestGossipValidator_AcceptsValidTx(t *testing.T) {
+	signer := newTestMLDSASigner(t)
+	alice := signer.Address()
 	as := NewAccountStore()
-	as.Credit("alice", 100)
+	as.Credit(alice, 100)
 	txv := NewTxValidator(as)
 	sv := NewSigVerifier()
 	pool := mempool.New(mempool.DefaultConfig())
 	gv := NewGossipValidator(sv, txv, DefaultGossipValidationConfig())
 
-	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	sv.RegisterKey("alice", pub)
-	stx := NewTxSigner(priv).Sign(&mempool.Tx{
-		ID: "tx1", Sender: "alice", Recipient: "bob", Amount: 1, Fee: 0.1, Nonce: 0,
+	stx := signer.Sign(t, &mempool.Tx{
+		ID: "tx1", Sender: alice, Recipient: "bob", Amount: 1, Fee: 0.1, Nonce: 0,
 	})
 
 	verdict, err := gv.HandleIncoming(pool, stx)
@@ -36,16 +35,17 @@ func TestGossipValidator_AcceptsValidTx(t *testing.T) {
 }
 
 func TestGossipValidator_RejectsBadSignature(t *testing.T) {
+	signer := newTestMLDSASigner(t)
+	alice := signer.Address()
 	as := NewAccountStore()
-	as.Credit("alice", 100)
+	as.Credit(alice, 100)
 	txv := NewTxValidator(as)
 	sv := NewSigVerifier()
 	pool := mempool.New(mempool.DefaultConfig())
 	gv := NewGossipValidator(sv, txv, DefaultGossipValidationConfig())
 
-	_, priv, _ := ed25519.GenerateKey(rand.Reader)
-	stx := NewTxSigner(priv).Sign(&mempool.Tx{
-		ID: "tx1", Sender: "alice", Recipient: "bob", Amount: 1, Fee: 0.1, Nonce: 0,
+	stx := signer.Sign(t, &mempool.Tx{
+		ID: "tx1", Sender: alice, Recipient: "bob", Amount: 1, Fee: 0.1, Nonce: 0,
 	})
 	stx.Signature = []byte("bad")
 
@@ -56,8 +56,10 @@ func TestGossipValidator_RejectsBadSignature(t *testing.T) {
 }
 
 func TestGossipValidator_RejectsLowFee(t *testing.T) {
+	signer := newTestMLDSASigner(t)
+	alice := signer.Address()
 	as := NewAccountStore()
-	as.Credit("alice", 100)
+	as.Credit(alice, 100)
 	txv := NewTxValidator(as)
 	sv := NewSigVerifier()
 	cfg := DefaultGossipValidationConfig()
@@ -65,10 +67,8 @@ func TestGossipValidator_RejectsLowFee(t *testing.T) {
 	gv := NewGossipValidator(sv, txv, cfg)
 	pool := mempool.New(mempool.DefaultConfig())
 
-	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	sv.RegisterKey("alice", pub)
-	stx := NewTxSigner(priv).Sign(&mempool.Tx{
-		ID: "tx1", Sender: "alice", Recipient: "bob", Amount: 1, Fee: 0.1, Nonce: 0,
+	stx := signer.Sign(t, &mempool.Tx{
+		ID: "tx1", Sender: alice, Recipient: "bob", Amount: 1, Fee: 0.1, Nonce: 0,
 	})
 
 	verdict, err := gv.HandleIncoming(pool, stx)
@@ -78,8 +78,10 @@ func TestGossipValidator_RejectsLowFee(t *testing.T) {
 }
 
 func TestGossipValidator_QuarantinesFutureNonce(t *testing.T) {
+	signer := newTestMLDSASigner(t)
+	alice := signer.Address()
 	as := NewAccountStore()
-	as.Credit("alice", 100)
+	as.Credit(alice, 100)
 	txv := NewTxValidator(as)
 	sv := NewSigVerifier()
 	cfg := DefaultGossipValidationConfig()
@@ -87,10 +89,8 @@ func TestGossipValidator_QuarantinesFutureNonce(t *testing.T) {
 	gv := NewGossipValidator(sv, txv, cfg)
 	pool := mempool.New(mempool.DefaultConfig())
 
-	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	sv.RegisterKey("alice", pub)
-	stx := NewTxSigner(priv).Sign(&mempool.Tx{
-		ID: "tx-future", Sender: "alice", Recipient: "bob", Amount: 1, Fee: 1, Nonce: 2,
+	stx := signer.Sign(t, &mempool.Tx{
+		ID: "tx-future", Sender: alice, Recipient: "bob", Amount: 1, Fee: 1, Nonce: 2,
 	})
 
 	verdict, err := gv.HandleIncoming(pool, stx)
@@ -106,8 +106,10 @@ func TestGossipValidator_QuarantinesFutureNonce(t *testing.T) {
 }
 
 func TestGossipValidator_RejectsFarFutureNonce(t *testing.T) {
+	signer := newTestMLDSASigner(t)
+	alice := signer.Address()
 	as := NewAccountStore()
-	as.Credit("alice", 100)
+	as.Credit(alice, 100)
 	txv := NewTxValidator(as)
 	sv := NewSigVerifier()
 	cfg := DefaultGossipValidationConfig()
@@ -115,10 +117,8 @@ func TestGossipValidator_RejectsFarFutureNonce(t *testing.T) {
 	gv := NewGossipValidator(sv, txv, cfg)
 	pool := mempool.New(mempool.DefaultConfig())
 
-	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	sv.RegisterKey("alice", pub)
-	stx := NewTxSigner(priv).Sign(&mempool.Tx{
-		ID: "tx-future", Sender: "alice", Recipient: "bob", Amount: 1, Fee: 1, Nonce: 5,
+	stx := signer.Sign(t, &mempool.Tx{
+		ID: "tx-future", Sender: alice, Recipient: "bob", Amount: 1, Fee: 1, Nonce: 5,
 	})
 
 	verdict, err := gv.HandleIncoming(pool, stx)
@@ -128,14 +128,16 @@ func TestGossipValidator_RejectsFarFutureNonce(t *testing.T) {
 }
 
 func TestGossipValidator_PurgeExpired(t *testing.T) {
+	signer := newTestMLDSASigner(t)
+	alice := signer.Address()
 	as := NewAccountStore()
-	as.Credit("alice", 100)
+	as.Credit(alice, 100)
 	txv := NewTxValidator(as)
 	gv := NewGossipValidator(NewSigVerifier(), txv, DefaultGossipValidationConfig())
 
 	gv.mu.Lock()
 	gv.quarantine["x"] = QuarantineEntry{
-		TxID: "x", Sender: "alice", Reason: "future nonce",
+		TxID: "x", Sender: alice, Reason: "future nonce",
 		ReceivedAt: time.Now().Add(-2 * time.Hour),
 		RetryAfter: time.Now().Add(-time.Minute),
 	}
@@ -150,3 +152,19 @@ func TestGossipValidator_PurgeExpired(t *testing.T) {
 	}
 }
 
+// The gossip path refuses a correctly signed Ed25519 tx: Ed25519 is retired.
+func TestGossipValidator_RejectsEd25519(t *testing.T) {
+	stx := ed25519SignedTx(t, "tx-ed")
+	as := NewAccountStore()
+	as.Credit(stx.Tx.Sender, 100)
+	gv := NewGossipValidator(NewSigVerifier(), NewTxValidator(as), DefaultGossipValidationConfig())
+	pool := mempool.New(mempool.DefaultConfig())
+
+	verdict, err := gv.HandleIncoming(pool, stx)
+	if verdict != GossipRejected || !errors.Is(err, ErrEd25519Retired) {
+		t.Fatalf("expected ed25519 rejection, verdict=%s err=%v", verdict, err)
+	}
+	if pool.Size() != 0 {
+		t.Fatal("ed25519 tx entered the mempool")
+	}
+}

@@ -44,7 +44,7 @@ Each item is a consensus rule on the live chain. Details and dates are in
 
 | Step | What it means for you |
 |---|---|
-| **Retire Ed25519** | The generic peer-to-peer transaction-gossip verifier stops accepting Ed25519 signatures. That code path cannot be reached on the live chain today (the producer has no transaction gossip ingress), but it still exists in the code. |
+| **Retire Ed25519 stream session keys** | Ed25519 transactions are already refused (since 2026-10-16, `ed25519_tx_accepted: false`). CELL stream session keys, which sign stream usage receipts, are still Ed25519. From a published height (`stream_ed25519_retirement_height`) a stream open, which registers such a key, is refused; streams opened before it can still take receipts, settle and close. The rule is in the code; no height is set yet. |
 | **Standby producer** | A second, independently run producer that can take over block production. |
 | **Block production by miners** | Miners produce blocks, in stages, instead of a set of independent validators (decision of 2026-10-19). The single producer's role ends with the last stage. Designed, not built; each stage is a published network upgrade with at least 7 days' notice. |
 

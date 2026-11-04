@@ -3,88 +3,86 @@ package chain
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"testing"
 
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 )
 
-func makeTestKeypair(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
-	t.Helper()
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pub, priv
-}
-
 func TestTxSigner_SignAndVerify(t *testing.T) {
-	_, priv := makeTestKeypair(t)
-	signer := NewTxSigner(priv)
+	signer := newTestMLDSASigner(t)
 	verifier := NewSigVerifier()
 
 	// Sender must be the address derived from the signing key. A signature
 	// alone does not authorize spending from an arbitrary account.
 	tx := &mempool.Tx{ID: "tx1", Sender: signer.Address(), Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
-	signed := signer.Sign(tx)
-
-	if err := verifier.Verify(signed); err != nil {
-		t.Fatalf("valid signature should verify: %v", err)
+	if err := verifier.Verify(signer.Sign(t, tx)); err != nil {
+		t.Fatalf("valid ML-DSA signature should verify: %v", err)
 	}
 }
 
-// TestSigVerifier_Ed25519RejectsSenderImpersonation is the regression test for
-// the gossip impersonation hole: with an empty keyring, verifyEd25519 used to
-// accept any (victim-sender, attacker-key, attacker-signature) triple because
-// the keyring cross-check was skipped when no key was registered. Any peer on
-// the tx-gossip topic could therefore spend from any funded account.
-func TestSigVerifier_Ed25519RejectsSenderImpersonation(t *testing.T) {
-	_, attackerPriv := makeTestKeypair(t)
-	victimPub, _ := makeTestKeypair(t)
+// ed25519SignedTx builds a correctly signed Ed25519 SignedTx whose sender is
+// SHA256(public key), i.e. one the retired verifier would have accepted.
+func ed25519SignedTx(t *testing.T, id string) *SignedTx {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(pub)
+	tx := &mempool.Tx{ID: id, Sender: hex.EncodeToString(sum[:]), Recipient: "bob", Amount: 1, Fee: 1, Nonce: 0}
+	return &SignedTx{Tx: tx, Signature: ed25519.Sign(priv, TxSigningHash(tx)), PublicKey: pub, Algorithm: SigEd25519}
+}
 
-	attacker := NewTxSigner(attackerPriv)
-	verifier := NewSigVerifier() // empty keyring — the production configuration
+// Ed25519 is retired: a correctly signed, sender-bound Ed25519 SignedTx is
+// refused with ErrEd25519Retired and counted.
+func TestSigVerifier_Ed25519Retired(t *testing.T) {
+	verifier := NewSigVerifier()
+	before := TxSigEd25519Rejected()
+	err := verifier.Verify(ed25519SignedTx(t, "ed-1"))
+	if !errors.Is(err, ErrEd25519Retired) {
+		t.Fatalf("ed25519 SignedTx must be refused with ErrEd25519Retired, got %v", err)
+	}
+	if got := TxSigEd25519Rejected(); got != before+1 {
+		t.Fatalf("ed25519 rejection counter: %d -> %d", before, got)
+	}
 
-	victim := Ed25519WalletAddress(victimPub)
-	tx := &mempool.Tx{ID: "steal", Sender: victim, Recipient: attacker.Address(), Amount: 1000, Fee: 1, Nonce: 0}
+	// An ML-DSA key and signature labelled "ed25519" is refused too: the
+	// label decides, and the label is retired.
+	signer := newTestMLDSASigner(t)
+	stx := signer.Sign(t, &mempool.Tx{ID: "ed-2", Sender: signer.Address(), Recipient: "bob", Amount: 1, Fee: 1})
+	stx.Algorithm = SigEd25519
+	if err := verifier.Verify(stx); !errors.Is(err, ErrEd25519Retired) {
+		t.Fatalf("ml-dsa material labelled ed25519 must be refused, got %v", err)
+	}
+	// Relabelled honestly, the same SignedTx verifies.
+	stx.Algorithm = SigMLDSA
+	if err := verifier.Verify(stx); err != nil {
+		t.Fatalf("ml-dsa SignedTx: %v", err)
+	}
+}
 
-	// Attacker signs correctly — with their own key, for the victim's account.
-	signed := attacker.Sign(tx)
+// An attacker cannot sign for another sender: the sender must be the
+// address derived from the presented key.
+func TestSigVerifier_MLDSARejectsSenderImpersonation(t *testing.T) {
+	attacker := newTestMLDSASigner(t)
+	victim := newTestMLDSASigner(t)
+	verifier := NewSigVerifier() // empty keyring: the production configuration
 
-	if err := verifier.Verify(signed); err == nil {
+	tx := &mempool.Tx{ID: "steal", Sender: victim.Address(), Recipient: attacker.Address(), Amount: 1000, Fee: 1, Nonce: 0}
+	if err := verifier.Verify(attacker.Sign(t, tx)); err == nil {
 		t.Fatal("attacker must not be able to sign a transaction on behalf of another sender")
 	}
 }
 
-// TestSigVerifier_Ed25519PinnedKeyOverridesDerivation confirms an operator can
-// still pin a key for a non-derived address via RegisterKey, and that the pin
-// is authoritative rather than additive.
-func TestSigVerifier_Ed25519PinnedKeyOverridesDerivation(t *testing.T) {
-	pub, priv := makeTestKeypair(t)
-	signer := NewTxSigner(priv)
-	verifier := NewSigVerifier()
-	verifier.RegisterKey("Alice", pub)
-
-	tx := &mempool.Tx{ID: "tx1", Sender: "alice", Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
-	if err := verifier.Verify(signer.Sign(tx)); err != nil {
-		t.Fatalf("pinned key should authorize its address (case-insensitively): %v", err)
-	}
-
-	// A different key for that pinned address must still be refused.
-	_, otherPriv := makeTestKeypair(t)
-	other := NewTxSigner(otherPriv)
-	tx2 := &mempool.Tx{ID: "tx2", Sender: "alice", Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
-	if err := verifier.Verify(other.Sign(tx2)); err == nil {
-		t.Fatal("a key other than the pinned one must not spend from the pinned address")
-	}
-}
-
 func TestTxSigner_TamperedTxFails(t *testing.T) {
-	_, priv := makeTestKeypair(t)
-	signer := NewTxSigner(priv)
+	signer := newTestMLDSASigner(t)
 	verifier := NewSigVerifier()
 
-	tx := &mempool.Tx{ID: "tx1", Sender: "alice", Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
-	signed := signer.Sign(tx)
+	tx := &mempool.Tx{ID: "tx1", Sender: signer.Address(), Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
+	signed := signer.Sign(t, tx)
 
 	// Tamper with amount
 	signed.Tx.Amount = 99999
@@ -94,39 +92,38 @@ func TestTxSigner_TamperedTxFails(t *testing.T) {
 }
 
 func TestSigVerifier_WrongKeyFails(t *testing.T) {
-	_, priv1 := makeTestKeypair(t)
-	_, priv2 := makeTestKeypair(t)
-
-	signer1 := NewTxSigner(priv1)
+	signer1 := newTestMLDSASigner(t)
+	signer2 := newTestMLDSASigner(t)
 	verifier := NewSigVerifier()
 
-	tx := &mempool.Tx{ID: "tx1", Sender: "alice", Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
-	signed := signer1.Sign(tx)
+	tx := &mempool.Tx{ID: "tx1", Sender: signer1.Address(), Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
+	signed := signer1.Sign(t, tx)
 
-	// Replace public key with different one
-	signed.PublicKey = priv2.Public().(ed25519.PublicKey)
+	// Replace public key with a different one
+	signed.PublicKey = append([]byte(nil), signer2.pub...)
 	if err := verifier.Verify(signed); err == nil {
 		t.Fatal("wrong public key should fail verification")
 	}
 }
 
 func TestSigVerifier_RegisteredKeyMismatch(t *testing.T) {
-	pub1, priv1 := makeTestKeypair(t)
-	pub2, _ := makeTestKeypair(t)
-
-	signer := NewTxSigner(priv1)
+	signer := newTestMLDSASigner(t)
+	other := newTestMLDSASigner(t)
 	verifier := NewSigVerifier()
-	verifier.RegisterKey("alice", pub2) // register different key
+	if err := verifier.RegisterMLDSAKey(signer.Address(), other.pub); err != nil { // pin a different key
+		t.Fatal(err)
+	}
 
-	tx := &mempool.Tx{ID: "tx1", Sender: "alice", Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
-	signed := signer.Sign(tx)
-
+	tx := &mempool.Tx{ID: "tx1", Sender: signer.Address(), Recipient: "bob", Amount: 10, Fee: 1, Nonce: 0}
+	signed := signer.Sign(t, tx)
 	if err := verifier.Verify(signed); err == nil {
 		t.Fatal("registered key mismatch should fail")
 	}
 
-	// Now register the correct key
-	verifier.RegisterKey("alice", pub1)
+	// Now pin the correct key
+	if err := verifier.RegisterMLDSAKey(signer.Address(), signer.pub); err != nil {
+		t.Fatal(err)
+	}
 	if err := verifier.Verify(signed); err != nil {
 		t.Fatalf("matching registered key should pass: %v", err)
 	}
@@ -134,35 +131,41 @@ func TestSigVerifier_RegisteredKeyMismatch(t *testing.T) {
 
 func TestSigVerifier_MissingSignature(t *testing.T) {
 	verifier := NewSigVerifier()
-	stx := &SignedTx{
-		Tx:        &mempool.Tx{ID: "tx1", Sender: "alice"},
-		Signature: nil,
-		PublicKey: make([]byte, 32),
-		Algorithm: SigEd25519,
-	}
-	if err := verifier.Verify(stx); err == nil {
-		t.Fatal("missing signature should fail")
+	for _, alg := range []SigAlgorithm{SigMLDSA, SigEd25519} {
+		stx := &SignedTx{
+			Tx:        &mempool.Tx{ID: "tx1", Sender: "alice"},
+			Signature: nil,
+			PublicKey: make([]byte, mldsa87PublicKeyLen),
+			Algorithm: alg,
+		}
+		if err := verifier.Verify(stx); err == nil {
+			t.Fatalf("%s: missing signature should fail", alg)
+		}
 	}
 }
 
 func TestSigVerifier_MissingPublicKey(t *testing.T) {
 	verifier := NewSigVerifier()
-	stx := &SignedTx{
-		Tx:        &mempool.Tx{ID: "tx1", Sender: "alice"},
-		Signature: make([]byte, 64),
-		PublicKey: nil,
-		Algorithm: SigEd25519,
-	}
-	if err := verifier.Verify(stx); err == nil {
-		t.Fatal("missing public key should fail")
+	for _, alg := range []SigAlgorithm{SigMLDSA, SigEd25519} {
+		stx := &SignedTx{
+			Tx:        &mempool.Tx{ID: "tx1", Sender: "alice"},
+			Signature: make([]byte, mldsa87SignatureLen),
+			PublicKey: nil,
+			Algorithm: alg,
+		}
+		if err := verifier.Verify(stx); err == nil {
+			t.Fatalf("%s: missing public key should fail", alg)
+		}
 	}
 }
 
 func TestSigVerifier_NilTx(t *testing.T) {
 	verifier := NewSigVerifier()
-	stx := &SignedTx{Tx: nil, Signature: []byte{1}, PublicKey: []byte{2}, Algorithm: SigEd25519}
-	if err := verifier.Verify(stx); err == nil {
-		t.Fatal("nil tx should fail")
+	for _, alg := range []SigAlgorithm{SigMLDSA, SigEd25519} {
+		stx := &SignedTx{Tx: nil, Signature: []byte{1}, PublicKey: []byte{2}, Algorithm: alg}
+		if err := verifier.Verify(stx); err == nil {
+			t.Fatalf("%s: nil tx should fail", alg)
+		}
 	}
 }
 
@@ -276,33 +279,5 @@ func TestSigVerifier_MLDSAKeyRing_registerRemoveCount(t *testing.T) {
 	sv.RemoveMLDSAKey("ABCD")
 	if sv.MLDSAKeyCount() != 0 {
 		t.Fatal("expected 0 after remove")
-	}
-}
-
-func TestSigVerifier_KeyManagement(t *testing.T) {
-	pub, _ := makeTestKeypair(t)
-	sv := NewSigVerifier()
-
-	sv.RegisterKey("alice", pub)
-	if sv.KeyCount() != 1 {
-		t.Fatal("expected 1 key")
-	}
-	got, ok := sv.GetKey("alice")
-	if !ok || !got.Equal(pub) {
-		t.Fatal("expected alice's key")
-	}
-
-	sv.RemoveKey("alice")
-	if sv.KeyCount() != 0 {
-		t.Fatal("expected 0 keys after removal")
-	}
-}
-
-func TestTxSigner_PublicKeyHex(t *testing.T) {
-	_, priv := makeTestKeypair(t)
-	signer := NewTxSigner(priv)
-	h := signer.PublicKeyHex()
-	if len(h) != 64 {
-		t.Fatalf("expected 64 hex chars, got %d", len(h))
 	}
 }
