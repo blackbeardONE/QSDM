@@ -252,16 +252,28 @@ func WalletMintCounts() []struct {
 }
 
 // ---------- /api/v1/wallet/create ----------
+//
+// HISTORY: the endpoint generated a key pair on the node, returned
+// only its address and discarded the private key. It now always
+// returns 410 Gone, so only `gone` increments on an upgraded node;
+// success / failed stay on the exposition surface for dashboards
+// that still watch them.
 
 var (
-	walletCreateSuccess atomic.Uint64
-	walletCreateFailed  atomic.Uint64 // CGO/liboqs init error, OS RNG read error
+	walletCreateSuccess atomic.Uint64 // REMOVED ROUTE: 201: address generated (now never increments)
+	walletCreateFailed  atomic.Uint64 // REMOVED ROUTE: CGO/liboqs init error, OS RNG read error (now never increments)
+	walletCreateGone    atomic.Uint64 // 410: endpoint removed; every call lands here
 )
 
 // Result tags for qsdm_wallet_create_total.
 const (
 	WalletCreateResultSuccess = "success"
 	WalletCreateResultFailed  = "failed"
+	// WalletCreateResultGone is the only result that increments now:
+	// every call to /api/v1/wallet/create returns 410 Gone. A rising
+	// count means a caller that should create its wallet on its own
+	// device and submit signed transfers to /api/v1/wallet/submit-signed.
+	WalletCreateResultGone = "gone"
 )
 
 // RecordWalletCreate increments qsdm_wallet_create_total{result=...}.
@@ -271,6 +283,8 @@ func RecordWalletCreate(result string) {
 		walletCreateSuccess.Add(1)
 	case WalletCreateResultFailed:
 		walletCreateFailed.Add(1)
+	case WalletCreateResultGone:
+		walletCreateGone.Add(1)
 	}
 }
 
@@ -285,6 +299,7 @@ func WalletCreateCounts() []struct {
 	}{
 		{WalletCreateResultSuccess, walletCreateSuccess.Load()},
 		{WalletCreateResultFailed, walletCreateFailed.Load()},
+		{WalletCreateResultGone, walletCreateGone.Load()},
 	}
 }
 
@@ -332,7 +347,7 @@ func walletPrometheusMetrics() []Metric {
 	for _, p := range WalletCreateCounts() {
 		out = append(out, Metric{
 			Name: "qsdm_wallet_create_total",
-			Help: "POST /api/v1/wallet/create terminal outcomes by per-result tag (success / failed). failed climbing on a CGO build is a liboqs/OpenSSL init failure signal.",
+			Help: "/api/v1/wallet/create terminal outcomes by per-result tag. The route generated a key pair on the node and discarded the private key; it now always returns 410 Gone, so only the `gone` tag increments on an upgraded node. The success / failed tags are retained for dashboards that still watch them. A rising `gone` count indicates a caller that should create its wallet on its own device (QSDM Hive, qsdmcli wallet new) and submit signed transfers to /api/v1/wallet/submit-signed.",
 			Type: MetricCounter,
 			Value: float64(p.Count),
 			Labels: map[string]string{"result": p.Result},

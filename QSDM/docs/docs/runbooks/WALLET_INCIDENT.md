@@ -53,7 +53,11 @@ and admin mint burst (supply-inflation tripwire).
   - `qsdm_wallet_mint_total{result=...}`: success /
     admin_rejected / invalid_request / store_failed /
     no_wallet_service.
-  - `qsdm_wallet_create_total{result=...}`: success / failed.
+  - `qsdm_wallet_create_total{result=...}`: success / failed /
+    gone. `/api/v1/wallet/create` is removed and answers 410 Gone,
+    so only `gone` increments; a rising count is a caller that
+    should create its wallet in QSDM Hive or with
+    `qsdmcli wallet new` and use `/api/v1/wallet/submit-signed`.
 - **`$CELL`** — the main coin minted by `/api/v1/wallet/mint`.
   Mint is admin-only and gated by NVIDIA-lock; sustained
   successful mint volume regardless of policy is the

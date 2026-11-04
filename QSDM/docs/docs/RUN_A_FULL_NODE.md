@@ -9,6 +9,40 @@ A new node starts from a **verified snapshot**, checked against a **checkpoint y
 whole procedure was tested end to end on 2026-10-19: a fresh machine imported the snapshot, caught up with the
 producer within minutes, and its block hashes and state roots equalled the producer's at every height compared.
 
+## Quick install (one command)
+
+`install-full-node.sh` does steps 1 to 7 below on a fresh Linux x86_64 server (Ubuntu 22.04 or later, or Debian 12).
+It makes every check those steps make, takes the values to pin from qsdm.tech and never from a download, and stops
+before it installs anything if a check fails.
+
+Get the script and read it first (it is plain bash):
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/blackbeardONE/QSDM/main/QSDM/scripts/fullnode/install-full-node.sh
+less install-full-node.sh
+```
+
+Then run it as root, or as a user who can use `sudo`:
+
+```bash
+bash install-full-node.sh --from-website
+```
+
+`--from-website` reads the values to pin from https://qsdm.tech/fullnode.html and prints them: compare them with the
+page in your browser. To give the values yourself instead, pass each one as a flag (`--help` lists them).
+
+- If a check fails, the script says what did not match and what to do. Once that is fixed, run the same command
+  again: it carries on where it stopped, and it never deletes chain data.
+- `--dry-run` prints the plan and changes nothing.
+- The release signature is checked only when the script finds `qsdmcli` (or you pass `--qsdmcli PATH`). Without it,
+  the `qsdm` binary is still checked against the SHA-256 on qsdm.tech. `--require-signature` makes the signature
+  check compulsory.
+- It stops early if the server has too little memory or disk (see "What you need" below).
+- At the end it compares your node's blocks with the network (step 7). Run the same command again later to repeat
+  that check.
+
+The manual steps below are what the script does. Use them if you prefer to do it by hand.
+
 ## What you need
 
 | | |

@@ -105,7 +105,7 @@ func TestMerkleTree_OutOfRangeProof(t *testing.T) {
 func TestVerifyTxInBlock(t *testing.T) {
 	txIDs := []string{"tx1", "tx2", "tx3", "tx4"}
 	tree := BuildMerkleTree(txIDs)
-	header := BlockHeader{TxRoot: tree.Root}
+	header := BlockHeader{TxRoot: tree.Root, TxCount: len(txIDs)}
 
 	proof, _ := tree.GenerateProof(2)
 	if !VerifyTxInBlock("tx3", proof, header) {

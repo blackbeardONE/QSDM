@@ -75,6 +75,7 @@ func TestWalletPrometheusMetrics_AlwaysIncludesAllResultLabels(t *testing.T) {
 	wantCreate := []string{
 		WalletCreateResultSuccess,
 		WalletCreateResultFailed,
+		WalletCreateResultGone,
 	}
 	for _, r := range wantCreate {
 		if !byCreateResult[r] {

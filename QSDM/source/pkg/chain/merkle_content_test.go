@@ -36,7 +36,7 @@ func TestInclusionProofs_MatchTheRootFormat(t *testing.T) {
 		if err != nil {
 			t.Fatalf("could not generate an ID proof: %v", err)
 		}
-		header := BlockHeader{Height: h, TxRoot: computeTxRoot(txs, h)}
+		header := BlockHeader{Height: h, TxRoot: computeTxRoot(txs, h), TxCount: len(txs)}
 		if header.TxRoot != tree.Root {
 			t.Fatalf("below activation the root must merkleize IDs: %s vs %s", header.TxRoot, tree.Root)
 		}
@@ -60,7 +60,7 @@ func TestInclusionProofs_MatchTheRootFormat(t *testing.T) {
 		if err != nil {
 			t.Fatalf("could not generate a content proof: %v", err)
 		}
-		header := BlockHeader{Height: h, TxRoot: computeTxRoot(txs, h)}
+		header := BlockHeader{Height: h, TxRoot: computeTxRoot(txs, h), TxCount: len(txs)}
 		if header.TxRoot != tree.Root {
 			t.Fatalf("at activation the root must merkleize content digests: %s vs %s",
 				header.TxRoot, tree.Root)
@@ -127,7 +127,7 @@ func TestVerifyTxInBlock_RefusesADigestShapedID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate proof: %v", err)
 	}
-	header := BlockHeader{Height: h, TxRoot: computeTxRoot(txs, h)}
+	header := BlockHeader{Height: h, TxRoot: computeTxRoot(txs, h), TxCount: len(txs)}
 
 	// The adversarial input: an "ID" that is really the content digest, so the
 	// leaf comparison alone would succeed.
@@ -180,7 +180,7 @@ func TestVerifyTxContentInBlock_RefusesADigestKeyedID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate proof: %v", err)
 	}
-	header := BlockHeader{Height: belowActivation, TxRoot: computeTxRoot(txs, belowActivation)}
+	header := BlockHeader{Height: belowActivation, TxRoot: computeTxRoot(txs, belowActivation), TxCount: len(txs)}
 	if header.TxRoot != tree.Root {
 		t.Fatalf("below activation the root must be ID-keyed: %s vs %s", header.TxRoot, tree.Root)
 	}

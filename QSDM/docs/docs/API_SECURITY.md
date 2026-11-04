@@ -4,8 +4,10 @@
 > **Public network today.** This page describes the security features of the
 > node's HTTP API as built from source. On the public pilot network
 > (pre-mainnet), registration/login (`/api/v1/auth/*`) and the custodial wallet
-> routes (`/api/v1/wallet/create`, `/api/v1/wallet/send`) are not publicly
-> reachable. Public wallet transfers use ML-DSA-87 signed wallet transactions
+> route `/api/v1/wallet/send` are not publicly reachable, and
+> `/api/v1/wallet/create` is removed (it answers 410 Gone). Wallets are created
+> in QSDM Hive or with `qsdmcli wallet new`, where the private key stays.
+> Public wallet transfers use ML-DSA-87 signed wallet transactions
 > sent to `POST /api/v1/wallet/submit-signed`. See the
 > [API reference](API_REFERENCE.md) for the routes that are available and the
 > [security model](SECURITY_MODEL.md) for what is and is not protected.
@@ -124,14 +126,23 @@ All authenticated endpoints require:
   - `X-Nonce`: Unique nonce
   - `X-Signature`: ML-DSA request signature
 
-#### `POST /api/v1/wallet/create`
-Create a new wallet.
+#### `POST /api/v1/wallet/create` (removed)
+Answers 410 Gone to every method and generates no key. The route used to
+generate a key pair on the node and return only its address; the private key
+was discarded, so CELL sent to that address could never be spent. Create a
+wallet in QSDM Hive or with `qsdmcli wallet new`, and submit signed transfers
+to `POST /api/v1/wallet/submit-signed`. The route needs no token, so old
+callers get the 410 rather than a 401.
 
-**Response:**
+**Response (410):**
 ```json
 {
-  "address": "wallet_address",
-  "balance": 1000.0
+  "status": "gone",
+  "reason": "...",
+  "migration": {
+    "create_wallet": "...",
+    "signed_transfer": "..."
+  }
 }
 ```
 

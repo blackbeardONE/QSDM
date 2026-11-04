@@ -30,6 +30,8 @@ import {
   storeUserConfig,
 } from './controllers';
 import db from './db';
+import { installCrashRecorder } from './diagnostics/crashRecorder';
+import { diagnosticsMenuItems } from './diagnostics/diagnosticsReport';
 import { handleDeepLinks } from './handleDeepLinks';
 import initHandlers from './initHandlers';
 import { configureLogger } from './logger';
@@ -901,6 +903,10 @@ process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception ->', error);
 });
 
+// Also keep a scrubbed record of each crash, on this computer only:
+// <userData>/diagnostics/crash-*.json (see ./diagnostics/crashRecorder.ts).
+installCrashRecorder();
+
 dialog.showErrorBox = (title, content) => {
   console.log(`[Error Box]: ${title}\n${content}`);
 };
@@ -1002,6 +1008,7 @@ const createMenu = () => {
             shell.openExternal('https://qsdm.tech');
           },
         },
+        ...diagnosticsMenuItems(() => mainWindow),
       ],
     },
   ];
@@ -1026,6 +1033,10 @@ function createTray() {
         if (mainWindow) mainWindow.show();
       },
     },
+    // createWindow() removes the window menu bar on Windows and Linux once
+    // the UI has loaded, so the tray is where those users find these items.
+    ...diagnosticsMenuItems(() => mainWindow),
+    { type: 'separator' },
     {
       label: 'Quit',
       click: () => {

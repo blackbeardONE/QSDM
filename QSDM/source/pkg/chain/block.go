@@ -1030,7 +1030,14 @@ func computeTxRoot(txs []*mempool.Tx, height uint64) string {
 		}
 	} else {
 		for i, tx := range txs {
-			leaves[i] = tx.ID
+			// A block decoded from JSON can carry null transactions. Every
+			// replay loop skips them and TxContentDigest hashes nil as the
+			// empty transaction; dereferencing one here instead let a single
+			// gossiped block or proposal crash the node before any signature
+			// was checked.
+			if tx != nil {
+				leaves[i] = tx.ID
+			}
 		}
 	}
 	tree := BuildMerkleTree(leaves)

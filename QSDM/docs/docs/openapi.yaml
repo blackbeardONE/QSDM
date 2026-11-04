@@ -1283,40 +1283,32 @@ paths:
     post:
       tags:
         - Wallet
-      summary: Create wallet
+      summary: Removed wallet creation (always 410 Gone)
+      deprecated: true
       description: |
-        Generates a fresh ML-DSA-87 key pair on the node and returns its
-        address with balance 0. The request body is not read. The private key
-        is neither returned nor kept, so no one can sign for the address
-        afterwards. This route does not use the node's wallet service: when
-        no key can be generated (for example liboqs or OpenSSL missing on a
-        CGO build) it answers 500.
+        Removed. The route generated an ML-DSA-87 key pair on the node,
+        returned only its address and discarded the private key, so no one
+        could ever sign for that address and CELL sent to it was lost. It now
+        generates no key: it ignores any body and answers 410 Gone with a
+        `migration` block, counting the call in
+        `qsdm_wallet_create_total{result="gone"}`. Every method gets the 410,
+        GET included. The route stays in the public list so old callers get
+        the 410 instead of a 401.
+
+        Create a wallet where its private key stays, in QSDM Hive or with
+        `qsdmcli wallet new`, and send CELL by signing each transfer there and
+        submitting it to `POST /wallet/submit-signed`.
         A read-only follower node (QSDM_API_READ_ONLY=1) answers 503.
       operationId: createWallet
-      x-qsdm-access: public
+      x-qsdm-access: closed
       x-qsdm-follower: refused
       responses:
-        '201':
-          description: Address generated.
+        '410':
+          description: The endpoint is removed; see `migration` for replacements.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/WalletCreateResponse'
-        '405':
-          description: The method is not POST.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '500':
-          description: |
-            No key pair could be generated. The message is
-            `internal server error (id=<id>)`, followed by the raw error
-            unless QSDM_PRODUCTION_MODE is on.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/WalletCreateGoneResponse'
         '503':
           description: The node is a read-only follower.
           content:
@@ -7520,16 +7512,24 @@ components:
           description: Token lifetime in seconds; always 3600.
           example: 3600
 
-    WalletCreateResponse:
+    WalletCreateGoneResponse:
       type: object
       properties:
-        address:
+        status:
           type: string
-          description: Lowercase hex SHA-256 of the new public key (64 characters).
-        balance:
-          type: number
-          format: double
-          description: Always 0.
+          enum:
+            - gone
+        reason:
+          type: string
+          description: Fixed text explaining the removal.
+        migration:
+          type: object
+          description: Fixed pointers to the self-custody wallet flow.
+          properties:
+            create_wallet:
+              type: string
+            signed_transfer:
+              type: string
 
     WalletBalanceResponse:
       type: object

@@ -1,6 +1,6 @@
 # QSDM Privacy Policy
 
-Last updated: August 3, 2026
+Last updated: November 4, 2026
 
 This policy describes data handling by the open-source QSDM Hive desktop
 application and the reference services operated at `qsdm.tech`. A separately
@@ -18,6 +18,22 @@ access to the wallet.
 
 Hive's analytics functions are disabled and do not transmit product-usage
 events. Hive contains no advertising tracker.
+
+## Crash records and diagnostics reports
+
+Hive keeps crash records on your computer. When part of Hive crashes, Hive
+writes a short record of it to a `diagnostics` folder in its application-data
+directory. Before it writes, Hive removes the secrets it can find: recovery
+phrases, private keys and other key material, tokens, passwords, email
+addresses, and your home folder path. Nothing is sent anywhere, and Hive keeps
+the records until you delete them.
+
+If you need help, open the menu of the Hive tray icon and choose **Save a
+diagnostics report…** (on a Mac it is also in the Help menu). Hive saves one
+text file, in the place you pick, with the crash records, Hive's current log,
+and basic version, system, and graphics details, with the same secrets
+removed. Read it, then attach it to your support request if you choose to.
+**Open the diagnostics folder** in the same menu shows the records.
 
 ## Optional QSDM Account data
 
