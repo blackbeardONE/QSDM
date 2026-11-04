@@ -124,34 +124,59 @@ func snapshotUsage() error {
 	return fmt.Errorf("usage: qsdm --%s --state-dir <stopped state dir copy> --out <new dir> | qsdm --%s --from <snapshot dir>", snapshotExportMode, snapshotImportMode)
 }
 
+// snapshotArgs is a parsed snapshot-mode command line.
+type snapshotArgs struct {
+	Mode     string // snapshotExportMode or snapshotImportMode
+	StateDir string // export: the stopped state directory (or its copy)
+	OutDir   string // export: the new snapshot directory
+	From     string // import: the snapshot directory
+}
+
+// snapshotParseArgs parses the arguments of a snapshot mode (os.Args[1:]).
+// Anything but one mode with its required flags, and nothing else, is the
+// usage error.
+func snapshotParseArgs(args []string) (snapshotArgs, error) {
+	if len(args) == 0 {
+		return snapshotArgs{}, snapshotUsage()
+	}
+	a := snapshotArgs{Mode: strings.TrimLeft(args[0], "-")}
+	fset := flag.NewFlagSet("qsdm "+a.Mode, flag.ContinueOnError)
+	fset.SetOutput(io.Discard)
+	switch a.Mode {
+	case snapshotExportMode:
+		fset.StringVar(&a.StateDir, "state-dir", "", "")
+		fset.StringVar(&a.OutDir, "out", "", "")
+		if err := fset.Parse(args[1:]); err != nil || fset.NArg() != 0 || a.StateDir == "" || a.OutDir == "" {
+			return snapshotArgs{}, snapshotUsage()
+		}
+	case snapshotImportMode:
+		fset.StringVar(&a.From, "from", "", "")
+		if err := fset.Parse(args[1:]); err != nil || fset.NArg() != 0 || a.From == "" {
+			return snapshotArgs{}, snapshotUsage()
+		}
+	default:
+		return snapshotArgs{}, snapshotUsage()
+	}
+	return a, nil
+}
+
 // snapshotRun parses args and runs one mode, returning its JSON report.
 func snapshotRun(cfg *config.Config, args []string, now func() time.Time) ([]byte, error) {
-	if len(args) == 0 {
-		return nil, snapshotUsage()
+	a, err := snapshotParseArgs(args)
+	if err != nil {
+		return nil, err
 	}
-	mode := strings.TrimLeft(args[0], "-")
-	fset := flag.NewFlagSet("qsdm "+mode, flag.ContinueOnError)
-	fset.SetOutput(io.Discard)
 	var res any
-	switch mode {
+	switch a.Mode {
 	case snapshotExportMode:
-		stateDir := fset.String("state-dir", "", "")
-		outDir := fset.String("out", "", "")
-		if err := fset.Parse(args[1:]); err != nil || fset.NArg() != 0 || *stateDir == "" || *outDir == "" {
-			return nil, snapshotUsage()
-		}
 		r, err := snapshotRunExport(snapshotExportOptions{
-			StateDir: *stateDir, OutDir: *outDir, Consensus: snapshotConsensusFromConfig(cfg), Now: now,
+			StateDir: a.StateDir, OutDir: a.OutDir, Consensus: snapshotConsensusFromConfig(cfg), Now: now,
 		})
 		if err != nil {
 			return nil, err
 		}
 		res = r
 	case snapshotImportMode:
-		from := fset.String("from", "", "")
-		if err := fset.Parse(args[1:]); err != nil || fset.NArg() != 0 || *from == "" {
-			return nil, snapshotUsage()
-		}
 		role, err := resolveBlockProductionRole(
 			envcompat.Truthy("QSDM_SOLO_VALIDATOR_MODE", "QSDM_SOLO_VALIDATOR_MODE"),
 			envcompat.Truthy("QSDM_NETWORK_BLOCK_PRODUCER", "QSDM_NETWORK_BLOCK_PRODUCER"))
@@ -159,7 +184,7 @@ func snapshotRun(cfg *config.Config, args []string, now func() time.Time) ([]byt
 			return nil, err
 		}
 		r, err := snapshotRunImport(snapshotImportOptions{
-			SnapshotDir:  *from,
+			SnapshotDir:  a.From,
 			StateDir:     filepath.Dir(cfg.SQLitePath),
 			Pinned:       cfg.SnapshotBootstrap,
 			ProducerRole: role.localProductionEnabled(),
@@ -170,8 +195,6 @@ func snapshotRun(cfg *config.Config, args []string, now func() time.Time) ([]byt
 			return nil, err
 		}
 		res = r
-	default:
-		return nil, snapshotUsage()
 	}
 	return json.MarshalIndent(res, "", "  ")
 }
@@ -363,6 +386,18 @@ func snapshotRequireEmptyStaking(path string) error {
 	if err != nil {
 		return fmt.Errorf("staking ledger: %w", err)
 	}
+	return snapshotCheckEmptyStaking(data)
+}
+
+// snapshotCheckEmptyStaking is snapshotRequireEmptyStaking on the file's
+// bytes. It accepts only a file that the node itself reads as an empty
+// ledger: a strict decode (no unknown field, every entry counted) and the
+// node's own decoder (chain.StakingLedgerEntries, as LoadOrNewStakingLedger
+// decodes) must both find no entry. For a file its decoder refuses (data
+// after the ledger, another version, a malformed entry) the node loads its
+// backup file instead, which a snapshot does not carry, so the source's
+// staking state would be unknown.
+func snapshotCheckEmptyStaking(data []byte) error {
 	var doc struct {
 		V      int               `json:"v"`
 		Bonds  []json.RawMessage `json:"bonds"`
@@ -373,8 +408,12 @@ func snapshotRequireEmptyStaking(path string) error {
 	if err := dec.Decode(&doc); err != nil {
 		return fmt.Errorf("staking ledger: %w", err)
 	}
-	if len(doc.Bonds) != 0 || len(doc.Unbond) != 0 {
-		return fmt.Errorf("staking ledger holds %d bond(s) and %d unbonding entr(ies): local state the state root does not commit cannot be imported; sync this node from genesis", len(doc.Bonds), len(doc.Unbond))
+	bonds, unbonding, err := chain.StakingLedgerEntries(data)
+	if err != nil {
+		return fmt.Errorf("staking ledger: the node cannot load it, so its staking state is unknown: %w", err)
+	}
+	if len(doc.Bonds) != 0 || len(doc.Unbond) != 0 || bonds != 0 || unbonding != 0 {
+		return fmt.Errorf("staking ledger holds %d bond(s) and %d unbonding entr(ies): local state the state root does not commit cannot be imported; sync this node from genesis", max(len(doc.Bonds), bonds), max(len(doc.Unbond), unbonding))
 	}
 	return nil
 }

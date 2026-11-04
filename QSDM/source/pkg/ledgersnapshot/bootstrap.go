@@ -52,6 +52,11 @@ func ReadManifest(dir string) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, fmt.Errorf("ledger snapshot: manifest: %w", err)
 	}
+	return decodeManifest(data)
+}
+
+// decodeManifest is ReadManifest on the manifest's bytes.
+func decodeManifest(data []byte) (Manifest, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var m Manifest
@@ -137,12 +142,21 @@ func ReadCheckpoint(dir string) (cp Checkpoint, ok bool, err error) {
 	if err != nil {
 		return Checkpoint{}, false, fmt.Errorf("ledger snapshot: checkpoint: %w", err)
 	}
+	if cp, err = decodeCheckpoint(data); err != nil {
+		return Checkpoint{}, false, err
+	}
+	return cp, true, nil
+}
+
+// decodeCheckpoint is ReadCheckpoint on the checkpoint file's bytes.
+func decodeCheckpoint(data []byte) (Checkpoint, error) {
+	var cp Checkpoint
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&cp); err != nil {
-		return Checkpoint{}, false, fmt.Errorf("ledger snapshot: checkpoint invalid: %w", err)
+		return Checkpoint{}, fmt.Errorf("ledger snapshot: checkpoint invalid: %w", err)
 	}
-	return cp, true, nil
+	return cp, nil
 }
 
 // RemoveSnapshot removes a snapshot directory written by Capture (and an

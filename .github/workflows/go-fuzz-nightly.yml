@@ -59,6 +59,11 @@ jobs:
           - { pkg: pkg/producerpolicy, target: FuzzTransitionValidate }
           - { pkg: pkg/networking, target: FuzzGossipGuardValidate }
           - { pkg: pkg/networking, target: FuzzPrivateGaterAddress }
+          - { pkg: pkg/ledgersnapshot, target: FuzzDecodeManifest }
+          - { pkg: pkg/ledgersnapshot, target: FuzzDecodeCheckpoint }
+          - { pkg: pkg/config, target: FuzzSnapshotBootstrapConfig }
+          - { pkg: cmd/qsdm, target: FuzzSnapshotArgs }
+          - { pkg: cmd/qsdm, target: FuzzSnapshotStakingLedger }
           - { pkg: pkg/edgepool, target: FuzzDecodeFederationContext }
           - { pkg: pkg/edgepool, target: FuzzDecodeMotherContext }
           - { pkg: pkg/edgepool, target: FuzzVerifyRequestSignature }

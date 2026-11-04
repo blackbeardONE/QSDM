@@ -150,7 +150,11 @@ installed) unless every check below passes:
      does not commit and that is not rebuilt from blocks.
    - The staking ledger must be empty: no bond and no unbonding entry. It is
      local, the state root does not commit it, and a maturing unbonding entry
-     credits balances. It is not installed.
+     credits balances. It is not installed. It must also be a file that the
+     node's own staking decoder reads as an empty ledger. For a file that
+     decoder refuses (data after the ledger, another version, a malformed
+     entry) the node falls back to a backup file, which a snapshot does not
+     carry, so the source's staking state would be unknown.
    - Receipts are not imported. The new node has no receipt history below N.
      Receipts are API history, not consensus state.
 
@@ -390,6 +394,32 @@ CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/ledgersnapshot/ ./pkg
 - `pkg/config` `TestSnapshotBootstrap*`: validation, environment overrides,
   TOML and YAML loading and the `Config.Validate` wiring. `live_shape_test.go`
   checks that a producer-shaped config leaves the bootstrap off.
+- `pkg/chain` `TestStakingLedgerEntries`: the staking decoder that the import
+  shares with the node refuses exactly the files for which the node's loader
+  falls back to its backup.
+
+Fuzz targets cover each parser that the bootstrap adds for untrusted or
+operator input (the journal is read by the node's existing block decoder).
+Their seeds run with the other tests, and the nightly fuzz workflow fuzzes
+each for five minutes:
+
+- `FuzzDecodeManifest` (`pkg/ledgersnapshot`): any manifest bytes. An accepted
+  manifest names exactly the four validator files in order, with sizes that
+  are not negative and lower-case hex digests, reads the same with the lenient
+  JSON decoder, and is accepted again unchanged when written back.
+- `FuzzDecodeCheckpoint` (`pkg/ledgersnapshot`): any checkpoint file. An
+  accepted checkpoint reads back unchanged when written back.
+- `FuzzSnapshotBootstrapConfig` (`pkg/config`): any file values and any
+  environment overrides. The result is the trimmed file value or the
+  non-blank variable, a malformed height variable is refused, and `Validate`
+  accepts exactly the configurations the import and the boot guard can
+  enforce (checked against an independent statement of the rules).
+- `FuzzSnapshotArgs` (`cmd/qsdm`): any command line. Every refusal is the usage
+  error; an accepted one is dispatched by `main()`, names one mode and has
+  exactly the paths that mode needs, each given on the command line.
+- `FuzzSnapshotStakingLedger` (`cmd/qsdm`): any staking ledger. A file the
+  check accepts loads with the node's own loader from its own bytes (not from
+  the loader's backup) and holds no bond and no unbonding entry.
 
 ## 8. Remaining risks and limits
 
