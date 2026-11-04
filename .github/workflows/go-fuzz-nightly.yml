@@ -48,6 +48,9 @@ jobs:
           - { pkg: pkg/chain, target: FuzzVerifyBFTWire }
           - { pkg: pkg/chain, target: FuzzVerifyBlockSignature }
           - { pkg: pkg/chain, target: FuzzMerkleProof }
+          - { pkg: pkg/chain, target: FuzzHandleGossipSignedTx }
+          - { pkg: pkg/chain, target: FuzzApplyWalletTransferTx }
+          - { pkg: pkg/chain, target: FuzzBlockRequestWindow }
           - { pkg: pkg/edgepool, target: FuzzDecodeFederationContext }
           - { pkg: pkg/edgepool, target: FuzzDecodeMotherContext }
           - { pkg: pkg/edgepool, target: FuzzVerifyRequestSignature }
