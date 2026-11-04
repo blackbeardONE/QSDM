@@ -19,6 +19,10 @@ stops the node at startup. The public block producer runs with the limits
 on. The "With the limits" column below and the defaults in
 [section 2](#2-configuration) describe a node with the opt-in.
 
+The [block request budget](#block-requests-every-node) and the changes to
+how blocks are deduplicated are not part of the opt-in: every node applies
+them.
+
 ## 1. What changes
 
 | Layer | Before (and without the opt-in) | With the limits |
@@ -52,6 +56,38 @@ With the limits on:
 - `p2p_limits_disabled = true` (or `QSDM_P2P_LIMITS_DISABLED=1`) builds the
   host exactly as before, even with `p2p_limits_enabled = true`: libp2p
   defaults, no gossip guard and no scoring.
+
+### Block requests (every node)
+
+A node that is behind asks its peers for missing blocks with a
+`block_request` on the `qsdm-blocks` topic, and every peer with a block
+store answers with up to 64 blocks. Every node now limits those answers,
+with or without the opt-in, and with no setting to change:
+
+- It answers at most one `block_request` per requesting peer every 2
+  seconds, with a burst of 4, and at most 2 per second in total, with a
+  burst of 8. The requesting peer is the message's author, which StrictSign
+  authenticates, not the `origin_node` field the sender writes itself.
+- The table of requesting peers holds at most 4,096 entries. When it is
+  full, entries idle long enough to have refilled are removed, at most once
+  a second; if none can go, a request from a new peer is not answered.
+- A request over the budget gets no reply and costs no read of the block
+  store. The requester asks again on its next try, or catches up over HTTP.
+- An empty answer (no blocks in the requested range) is no longer
+  published.
+- A node that is behind asks once every 10 seconds, so the budget never
+  slows an honest catch-up.
+
+Blocks are also cheaper to deduplicate:
+
+- A received block is looked up by its claimed hash before its hash and
+  producer signature are checked, and recorded only after they pass. A
+  re-signed copy of a block the node already has costs a map lookup, and a
+  forged block that claims a genuine block's hash cannot take its place.
+- The set of seen block hashes keeps the newest 100,000 (about 11.5 days
+  of blocks) and forgets the oldest first. A forgotten block that arrives
+  again is checked again and handed to the chain, which refuses a block it
+  already has.
 
 ## 2. Configuration
 
@@ -146,7 +182,7 @@ which is not always its author.
 |---|---|---|---|---|
 | `qsdm-transactions` | signed transactions; signed enrollment envelopes | 256 KiB | up to two JSON decodes, then a post-quantum signature check, nonce and fee checks, and mempool admission | the guard (100 per second per peer). Before, inbound messages had no limit; only the outbound relay was limited (80 per second, with deduplication). Reputation bans apply after decoding. |
 | `qsdm-bft` | `bft_propose` (carries a full block), `bft_prevote`, `bft_precommit` | 1 MiB (a proposal carries a block) | a JSON decode of the envelope and a SHA-256, then deduplication and a per-peer window (256 per minute) **before** the signature check | the handler (256 per minute per peer) and the guard |
-| `qsdm-blocks` | `new_block`, `block_request`, `block_response` (up to 64 blocks) | 1 MiB | a full JSON decode, the block hash and the producer signature are checked **before** the seen-hash check; a `block_request` makes the node read up to 64 blocks and publish them | the guard only; there was nothing before |
+| `qsdm-blocks` | `new_block`, `block_request`, `block_response` (up to 64 blocks) | 1 MiB | a full JSON decode, the block hash and the producer signature were checked **before** the seen-hash check (now after it); a `block_request` makes the node read up to 64 blocks and publish them | the guard; on every node, the [block request budget](#block-requests-every-node) |
 | `qsdm-evidence` | consensus evidence (an equivocation proof: two signed votes) | 256 KiB | a JSON decode, then the signature checks, **before** deduplication and the per-peer window | the handler (64 per minute per peer, after the checks) and the guard (before decoding) |
 | `qsdm-prevote-lock` | prevote-lock proofs and round certificates | 512 KiB (one signature per validator) | a JSON decode and the proof or certificate check **before** deduplication and the per-peer window | the handler (128 per minute per peer, after the check) and the guard |
 | `qsdm-bridge` | bridge lock and swap events | 64 KiB | a JSON decode; an event is applied only when it is signed by a trusted relayer key ([Bridge relay authentication](BRIDGE_RELAY_AUTH.md)) | the guard only |
@@ -203,6 +239,9 @@ graylist (the node ignores everything it sends). The count fades over about
   limits they stay at zero.
 - A connection or stream that the resource manager refuses fails with a
   libp2p resource-limit error. The node does not count these.
+- The block propagator counts the block requests it left unanswered
+  because they were over the budget: `BlockPropagator.DroppedBlockResponses()`
+  in `pkg/chain`. This counter is not exported yet either.
 
 ## 5. Code
 
@@ -222,13 +261,17 @@ graylist (the node ignores everything it sends). The count fades over about
   onto the networking limits (`Disabled` unless the limits are opted in
   and not switched off), and `SetupNetwork` and `SetupNetworkPublic` pass
   them on.
+- `QSDM/source/pkg/chain/propagation_budget.go`: the block request budget.
+  `QSDM/source/pkg/chain/propagation.go`: the budget check on
+  `block_request`, the skipped empty answer, deduplication before
+  verification, and the bounded seen set.
 
 ## 6. Tests
 
 From `QSDM/source`, with the same settings as CI:
 
 ```
-CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/networking/ ./pkg/config/ ./cmd/qsdm/
+CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/networking/ ./pkg/config/ ./cmd/qsdm/ ./pkg/chain/
 ```
 
 - `pkg/networking/p2p_limits_test.go`: the defaults and validation; the
@@ -255,6 +298,16 @@ CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/networking/ ./pkg/con
   copies every field; a zero config maps to `Disabled` (the host from
   before the limits); the opt-in alone maps to exactly the defaults; and
   `p2p_limits_disabled` wins over the opt-in.
+- `pkg/chain/propagation_budget_test.go`: a peer's burst, then refill (half
+  an interval earns nothing); the global limit across peers; a refused
+  request spends no token; the bound on the peer table and the removal of
+  idle entries; a clock that steps back earns nothing; through a real
+  pubsub topic, only the requests within the budget are answered and the
+  others never read the block store; no empty answers; a forged block that
+  claims a genuine block's hash first cannot block the genuine one; the
+  seen set forgets the oldest hash first. Removing the budget check, the
+  empty-answer check or the seen-set bound each makes one of these tests
+  fail.
 - `pkg/config/live_shape_test.go` and `cmd/qsdm/live_shape_test.go` load
   `pkg/config/testdata/producer_live_shape.toml`, a config shaped like the
   block producer's from before these limits. It loads and validates, every
@@ -272,9 +325,10 @@ CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/networking/ ./pkg/con
    with a block store publish a response of up to 1 MiB to the whole topic.
    The guard limits each forwarding peer to 100 messages per second, but
    that still lets one abusive neighbour pull about 100 MiB per second of
-   responses out of a node. Options: answer catch-up requests on a direct
-   stream with its own limits, rely on HTTP sync on public nodes, or give
-   the block propagator a response budget per peer.
+   responses out of a node.
+   **Addressed** by the [block request budget](#block-requests-every-node):
+   a node now sends at most about 2 MiB per second of answers, whatever the
+   request rate.
 3. **Verification before deduplication** on blocks, evidence and
    prevote-lock proofs. A valid message is fully verified before the
    handler's seen check, so a peer can re-sign copies of a valid block,
@@ -282,9 +336,13 @@ CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/networking/ ./pkg/con
    cost a signature check. The guard caps this at 100 per second per peer
    and topic. Checking "hash, then seen, then rate, then signature", as the
    BFT handler already does, would remove it.
+   **Blocks: addressed.** A block is looked up by its claimed hash before it
+   is verified, and recorded only after. Evidence and prevote-lock proofs
+   are unchanged.
 4. **The block propagator's seen set is never pruned.** It only stores the
    hashes of blocks that pass verification, so it grows with the chain, not
    with an attacker, but it is unbounded for the life of the process.
+   **Addressed:** it keeps the newest 100,000 hashes.
 5. **Rate limits apply per forwarding peer, not per author.** A set of peers
    on different addresses gets that many times the budget. This is bounded
    by `max_inbound_conns` and `max_conns_per_ip`.
