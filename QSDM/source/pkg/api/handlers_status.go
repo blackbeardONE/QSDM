@@ -93,6 +93,16 @@ type ConsensusAuthInfo struct {
 	// reports whether the rules govern the next block.
 	PoEActivationHeight uint64 `json:"poe_activation_height"`
 	PoEActive           bool   `json:"poe_active"`
+	// Ed25519TxAccepted reports whether the generic SignedTx dispatcher
+	// accepts Ed25519 signatures. It is always false: Ed25519 transaction
+	// signatures are retired and ML-DSA-87 is the only accepted algorithm.
+	Ed25519TxAccepted bool `json:"ed25519_tx_accepted"`
+	// StreamEd25519RetirementHeight is the first height at which a CELL
+	// stream open (which registers an Ed25519 session key) is refused (0 =
+	// not scheduled). StreamEd25519SessionKeysRetired reports whether the
+	// rule governs the next block.
+	StreamEd25519RetirementHeight   uint64 `json:"stream_ed25519_retirement_height"`
+	StreamEd25519SessionKeysRetired bool   `json:"stream_ed25519_session_keys_retired"`
 }
 
 // MiningInfo advertises the validator's mining-consensus posture so
@@ -370,6 +380,9 @@ func (h *Handlers) buildConsensusAuthInfo(chainTip uint64) ConsensusAuthInfo {
 		TxContentRootActive:                 activationReached(chainTip, posture.txContentRootActivationHeight),
 		PoEActivationHeight:                 chain.PoEActivationHeight(),
 		PoEActive:                           chain.PoEActiveAt(chainTip + 1),
+		Ed25519TxAccepted:                   false,
+		StreamEd25519RetirementHeight:       chain.StreamEd25519RetirementHeight(),
+		StreamEd25519SessionKeysRetired:     chain.StreamEd25519SessionKeysRetiredAt(chainTip + 1),
 	}
 }
 

@@ -195,6 +195,13 @@ type Config struct {
 	// Zero keeps them off. See chain.SetPoEActivationHeight.
 	PoEActivationHeight uint64
 
+	// StreamEd25519RetirementHeight is the first height at which a CELL
+	// stream open (qsdm/streams/v1), which registers an Ed25519 session
+	// key, is refused ([consensus] stream_ed25519_retirement_height or
+	// QSDM_STREAM_ED25519_RETIREMENT_HEIGHT). Zero keeps the rule off. See
+	// chain.SetStreamEd25519RetirementHeight.
+	StreamEd25519RetirementHeight uint64
+
 	// ConsensusSignerKeyPath is the validator-only ML-DSA hot key used to
 	// authenticate consensus traffic. It is not a wallet and must never hold
 	// user or treasury funds. Empty resolves to a file under the node state
@@ -459,6 +466,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.TxContentRootActivationHeight = tomlCfg.Consensus.TxContentRootActivationHeight
 		cfg.EnrollmentStateRootActivationHeight = tomlCfg.Consensus.EnrollmentStateRootActivationHeight
 		cfg.PoEActivationHeight = tomlCfg.Consensus.PoEActivationHeight
+		cfg.StreamEd25519RetirementHeight = tomlCfg.Consensus.StreamEd25519RetirementHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(tomlCfg.Consensus.SignerKeyPath)
 		cfg.ForkDustHeight = tomlCfg.Consensus.ForkDustHeight
 		if tomlCfg.Performance.TransactionInterval != "" {
@@ -571,6 +579,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.TxContentRootActivationHeight = yamlCfg.Consensus.TxContentRootActivationHeight
 		cfg.EnrollmentStateRootActivationHeight = yamlCfg.Consensus.EnrollmentStateRootActivationHeight
 		cfg.PoEActivationHeight = yamlCfg.Consensus.PoEActivationHeight
+		cfg.StreamEd25519RetirementHeight = yamlCfg.Consensus.StreamEd25519RetirementHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(yamlCfg.Consensus.SignerKeyPath)
 		cfg.ForkDustHeight = yamlCfg.Consensus.ForkDustHeight
 		if yamlCfg.Performance.TransactionInterval != "" {
@@ -774,6 +783,11 @@ func applyEnvOverrides(cfg *Config) {
 	if v := strings.TrimSpace(getEnvString("QSDM_POE_ACTIVATION_HEIGHT", "")); v != "" {
 		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
 			cfg.PoEActivationHeight = h
+		}
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_STREAM_ED25519_RETIREMENT_HEIGHT", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.StreamEd25519RetirementHeight = h
 		}
 	}
 	if v := strings.TrimSpace(getEnvString("QSDM_CONSENSUS_SIGNER_KEY_PATH", "")); v != "" {

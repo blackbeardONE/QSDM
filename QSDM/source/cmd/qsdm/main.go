@@ -1556,6 +1556,22 @@ func main() {
 			"config", "[consensus] poe_activation_height",
 			"env", "QSDM_POE_ACTIVATION_HEIGHT")
 	}
+	// Post-quantum only: from this height a CELL stream open, which
+	// registers an Ed25519 usage-receipt session key, is refused in
+	// production, in validation and in replay. Streams opened below it can
+	// still take receipts, settle and close. Zero, the default, changes
+	// nothing. (Ed25519 SignedTx are refused at admission regardless.)
+	chain.SetStreamEd25519RetirementHeight(cfg.StreamEd25519RetirementHeight)
+	if cfg.StreamEd25519RetirementHeight > 0 {
+		logger.Info("Stream Ed25519 session-key retirement scheduled",
+			"from_height", cfg.StreamEd25519RetirementHeight,
+			"refuses", "qsdm/streams/v1 open",
+			"warning", "every validator must use this exact value")
+	} else {
+		logger.Info("Stream Ed25519 session keys are not retired (no retirement height)",
+			"config", "[consensus] stream_ed25519_retirement_height",
+			"env", "QSDM_STREAM_ED25519_RETIREMENT_HEIGHT")
+	}
 	chain.SetRequireSignedCertificates(cfg.RequireSignedVotes)
 	chain.SetRequireSignedBlocks(cfg.RequireSignedVotes)
 	chain.SetRequireEvidenceProof(cfg.RequireSignedVotes)
@@ -2569,6 +2585,7 @@ func main() {
 	adminProducer.OnSealedBlock = hl1Hook.OnSealedBlock
 	monitoring.GlobalScrapePrometheusExporter().RegisterCollector("hl1", hl1MetricsCollector(hl1Durable))
 	monitoring.GlobalScrapePrometheusExporter().RegisterCollector("poe", poeMetricsCollector(adminProducer))
+	monitoring.GlobalScrapePrometheusExporter().RegisterCollector("pq_only", pqOnlyMetricsCollector())
 
 	// HL1 (d): in the producer role a gossiped block is never appended
 	// (errHL1ExternalAppendDisabled). HL1 (c): catch-up responses never carry

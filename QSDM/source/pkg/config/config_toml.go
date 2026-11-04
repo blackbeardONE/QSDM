@@ -202,6 +202,14 @@ type ConsensusConfigTOML struct {
 	// (GET /api/v1/chain/parents) before it is reached.
 	PoEActivationHeight uint64 `toml:"poe_activation_height" yaml:"poe_activation_height"`
 
+	// StreamEd25519RetirementHeight is the first height at which a CELL
+	// stream open (qsdm/streams/v1) is refused, because every stream open
+	// registers an Ed25519 usage-receipt session key. Streams opened below
+	// the height can still take receipts, settle and close. Zero, the
+	// default, never activates; blocks below the height replay exactly as
+	// before. Every validator must use the same value.
+	StreamEd25519RetirementHeight uint64 `toml:"stream_ed25519_retirement_height" yaml:"stream_ed25519_retirement_height"`
+
 	// SignerKeyPath stores the validator-only ML-DSA consensus hot key.
 	SignerKeyPath string `toml:"signer_key_path" yaml:"signer_key_path"`
 
