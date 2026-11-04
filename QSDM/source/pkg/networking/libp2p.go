@@ -148,6 +148,11 @@ type SetupOptions struct {
 	// means DefaultP2PLimits(); set Limits.Disabled to fall back to the libp2p
 	// library defaults.
 	Limits P2PLimits
+	// AllowedPeers turns on private P2P mode (private_p2p.go): only these
+	// libp2p peer IDs may connect or be dialled, only over private addresses,
+	// BindAddress must be a literal private IP, EnableNAT must be false and
+	// mDNS is not started. Empty (the default) changes nothing.
+	AllowedPeers []string
 }
 
 // SetupLibP2PWithOptions creates the libp2p host, the GossipSub router and the
@@ -165,6 +170,18 @@ func SetupLibP2PWithOptions(ctx context.Context, logger *logging.Logger, so Setu
 	var opts []libp2p.Option
 	if port < 0 || port > 65535 {
 		return nil, fmt.Errorf("invalid libp2p port: %d", port)
+	}
+	allow, aerr := parseAllowedPeers(so.AllowedPeers)
+	if aerr != nil {
+		return nil, aerr
+	}
+	if allow != nil {
+		if enableNAT {
+			return nil, fmt.Errorf("private p2p: NAT port mapping and hole punching cannot be enabled")
+		}
+		if err := validatePrivateListen(bindAddress); err != nil {
+			return nil, err
+		}
 	}
 	listenAddrs, lerr := libp2pListenAddrs(port, bindAddress)
 	if lerr != nil {
@@ -188,7 +205,7 @@ func SetupLibP2PWithOptions(ctx context.Context, logger *logging.Logger, so Setu
 	// attaches it later. Passing the gater here rather than wiring it afterwards
 	// is required -- libp2p takes the ConnectionGater as a construction option
 	// and there is no setter on a live host.
-	gater := &banGater{}
+	gater := &banGater{allow: allow}
 	opts = append(opts, libp2p.ConnectionGater(gater))
 	limitOpts, err := limits.hostOptions()
 	if err != nil {
@@ -201,11 +218,14 @@ func SetupLibP2PWithOptions(ctx context.Context, logger *logging.Logger, so Setu
 		return nil, err
 	}
 
-	// Setup mDNS discovery to find local peers
-	notifee := &DiscoveryNotifee{h: h, logger: logger}
-	mdnsService := mdns.NewMdnsService(h, "qsdm-mdns", notifee)
-	if mdnsService == nil {
-		return nil, fmt.Errorf("failed to start mDNS service")
+	// Setup mDNS discovery to find local peers. Private mode skips it: the
+	// peer set is fixed and mDNS would announce the node on every attached LAN.
+	if allow == nil {
+		notifee := &DiscoveryNotifee{h: h, logger: logger}
+		mdnsService := mdns.NewMdnsService(h, "qsdm-mdns", notifee)
+		if mdnsService == nil {
+			return nil, fmt.Errorf("failed to start mDNS service")
+		}
 	}
 
 	// pubsub.StrictSign is the secure baseline: every published message
@@ -274,7 +294,8 @@ func SetupLibP2PWithOptions(ctx context.Context, logger *logging.Logger, so Setu
 	go net.handleMessages()
 	go net.monitorPeers()
 
-	logger.Info("LibP2P host created", "hostID", h.ID().String(), "p2p_limits", limits.String())
+	logger.Info("LibP2P host created", "hostID", h.ID().String(), "p2p_limits", limits.String(),
+		"private_p2p", allow != nil, "allowed_peers", len(allow))
 	return net, nil
 }
 

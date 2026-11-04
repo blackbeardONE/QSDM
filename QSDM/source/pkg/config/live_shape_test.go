@@ -17,7 +17,7 @@ var liveShapeEnv = []string{
 	"QSDM_P2P_GOSSIP_TOPIC_MAX_BYTES", "QSDM_P2P_GOSSIP_PEER_RATE", "QSDM_P2P_GOSSIP_PEER_BURST",
 	"QSDM_P2P_GOSSIP_PEER_SCORING_DISABLED", "QSDM_P2P_GOSSIP_VALIDATE_QUEUE", "QSDM_P2P_GOSSIP_VALIDATE_THROTTLE",
 	"QSDM_BRIDGE_RELAY_TRUSTED_KEYS", "QSDM_BRIDGE_RELAY_TRUSTED_KEYS_FILE", "QSDM_BRIDGE_RELAY_SIGNER_KEY_PATH",
-	"QSDM_BRIDGE_RELAY_MAX_EVENT_AGE",
+	"QSDM_BRIDGE_RELAY_MAX_EVENT_AGE", "QSDM_P2P_PRIVATE", "QSDM_P2P_PRIVATE_ALLOWED_PEERS",
 }
 
 // loadLiveShape loads testdata/producer_live_shape.toml through the
@@ -51,6 +51,9 @@ func TestLiveShapedConfig_NewFeaturesOff(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cfg.BridgeRelay, BridgeRelayConfig{}) {
 		t.Errorf("bridge relay auth must have no keys and no signer: %+v", cfg.BridgeRelay)
+	}
+	if !reflect.DeepEqual(cfg.PrivateP2P, PrivateP2PConfig{}) {
+		t.Errorf("private P2P must be off: %+v", cfg.PrivateP2P)
 	}
 
 	// Settings the config already had are unchanged.

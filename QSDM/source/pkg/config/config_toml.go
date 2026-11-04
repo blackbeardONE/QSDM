@@ -94,6 +94,10 @@ type NetworkConfig struct {
 	// (bridge_relay_*). Embedded so its keys live directly under [network];
 	// see bridge_relay.go.
 	BridgeRelayTOML `yaml:",inline"`
+	// PrivateP2PTOML holds the private P2P mode (private_p2p,
+	// private_p2p_allowed_peers), also directly under [network]; see
+	// private_p2p.go and QSDM/docs/docs/PRIVATE_P2P.md.
+	PrivateP2PTOML `yaml:",inline"`
 }
 
 type StorageConfig struct {

@@ -29,6 +29,10 @@ type banGater struct {
 	mu     sync.RWMutex
 	rep    *ReputationTracker
 	exempt map[string]struct{}
+	// allow is the private P2P peer allowlist (private_p2p.go). Set once
+	// before the host is built and never changed, so it is read without the
+	// lock. nil = private mode off: every peer passes this check.
+	allow map[peer.ID]struct{}
 }
 
 // SetTracker attaches (or clears) the tracker whose bans this gater enforces.
@@ -98,10 +102,14 @@ func (g *banGater) banned(p peer.ID) bool {
 }
 
 // InterceptPeerDial blocks outbound dials to a banned peer.
-func (g *banGater) InterceptPeerDial(p peer.ID) bool { return !g.banned(p) }
+func (g *banGater) InterceptPeerDial(p peer.ID) bool { return g.peerAllowed(p) && !g.banned(p) }
 
 // InterceptAddrDial blocks a dial to a specific address of a banned peer.
-func (g *banGater) InterceptAddrDial(p peer.ID, _ multiaddr.Multiaddr) bool { return !g.banned(p) }
+// In private mode it also refuses the peer if it is not listed and any address
+// that is not private, so an allowed peer's public addresses are never dialled.
+func (g *banGater) InterceptAddrDial(p peer.ID, a multiaddr.Multiaddr) bool {
+	return g.peerAllowed(p) && g.addrAllowed(a) && !g.banned(p)
+}
 
 // InterceptAccept allows every inbound connection at the raw-socket stage.
 //
@@ -109,12 +117,22 @@ func (g *banGater) InterceptAddrDial(p peer.ID, _ multiaddr.Multiaddr) bool { re
 // completes, so there is nothing to match a ban against here. Rejecting on
 // address alone would ban whole NATs and shared hosts. The real check is in
 // InterceptSecured.
-func (g *banGater) InterceptAccept(_ network.ConnMultiaddrs) bool { return true }
+//
+// Private mode adds an address-only check that needs no identity: a connection
+// whose remote address is not private is refused before the handshake.
+func (g *banGater) InterceptAccept(c network.ConnMultiaddrs) bool {
+	if c == nil {
+		return !g.privateMode()
+	}
+	return g.addrAllowed(c.RemoteMultiaddr())
+}
 
 // InterceptSecured blocks a connection in either direction once the peer's
 // identity is known. This is the check that matters for inbound traffic.
+// In private mode an unlisted peer is refused here in both directions; the ban
+// exemption for bootstrap peers never overrides the allowlist.
 func (g *banGater) InterceptSecured(_ network.Direction, p peer.ID, _ network.ConnMultiaddrs) bool {
-	return !g.banned(p)
+	return g.peerAllowed(p) && !g.banned(p)
 }
 
 // InterceptUpgraded allows anything that survived InterceptSecured.

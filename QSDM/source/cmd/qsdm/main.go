@@ -960,9 +960,22 @@ func main() {
 	}
 
 	setupNetwork := SetupNetwork
-	if isPublicP2PBind(cfg.NetworkBindAddress) {
+	p2pMode, p2pModeErr := resolveP2PStartupMode(cfg.NetworkBindAddress, cfg.PrivateP2P,
+		strings.EqualFold(strings.TrimSpace(os.Getenv("QSDM_ALLOW_PUBLIC_DHT_FALLBACK")), "1"))
+	if p2pModeErr != nil {
+		log.Fatalf("private p2p: %v", p2pModeErr)
+	}
+	switch p2pMode {
+	case p2pModePublic:
 		setupNetwork = SetupNetworkPublic
 		logger.Info("Public P2P mode enabled", "nat_port_mapping", true, "hole_punching", true, "network_port", cfg.NetworkPort)
+	case p2pModePrivate:
+		allowedPeers := append([]string(nil), cfg.PrivateP2P.AllowedPeers...)
+		setupNetwork = func(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string, limits networking.P2PLimits) (*networking.Network, error) {
+			return SetupNetworkPrivate(ctx, logger, port, bindAddress, hostKeyPath, limits, allowedPeers)
+		}
+		logger.Info("Private P2P mode enabled", "bind_address", cfg.NetworkBindAddress, "network_port", cfg.NetworkPort,
+			"allowed_peers", strings.Join(allowedPeers, ","), "nat_port_mapping", false, "mdns", false)
 	}
 	net, err := setupNetwork(ctx, logger, cfg.NetworkPort, cfg.NetworkBindAddress, networkHostKeyPath, p2pLimitsFromConfig(cfg.P2PLimits))
 	if err != nil {
@@ -1806,6 +1819,10 @@ func main() {
 	}
 	if p := cfg.ProducerTransition; p != nil {
 		logger.Info("Checkpoint-bound producer transition enforced", "checkpoint_height", p.CheckpointHeight, "checkpoint_hash", p.CheckpointHash, "effective_height", p.EffectiveHeight, "replacement_producer", p.ReplacementProducer)
+	}
+	if advice := producerAllowlistAdvice(cfg.AuthorizedBlockProducers, cfg.ProducerTransition); advice != "" {
+		logger.Warn("Stale external block producer allowlist", "detail", advice,
+			"config", "[consensus] authorized_block_producers", "see", "QSDM/docs/docs/PRIVATE_P2P.md")
 	}
 	if adminProducer.ExternalProducerGateEnforced() {
 		logger.Info("External block producer allowlist enforced",

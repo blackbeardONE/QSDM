@@ -1,0 +1,44 @@
+# A follower core.toml in private P2P mode (QSDM/docs/docs/PRIVATE_P2P.md): the block producer's
+# [consensus] table with its version 1 transition table, the allowlist pinned to the current producer
+# 1cf60b16cf9aee5e8eaf67a8518a2b2ba7bc54f2dd607f05bc5a861b7a94c859, and a private [network].
+# Private P2P: libp2p binds bind_address only and accepts/dials only private_p2p_allowed_peers.
+# The node's environment must keep QSDM_NETWORK_BLOCK_PRODUCER unset or 0 (a follower never produces).
+# The paths are strings only; no test reads them.
+
+[node]
+role = "validator"
+
+[network]
+port = 24001
+bind_address = "100.101.102.103"
+bootstrap_peers = ["/ip4/100.64.0.7/tcp/14001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum"]
+private_p2p = true
+private_p2p_allowed_peers = ["12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum"]
+host_key_path = "/var/lib/qsdm/host_key"
+p2p_limits_enabled = true
+max_conns = 64
+
+[network.gossip_topic_max_bytes]
+qsdm-transactions = 262144
+
+[storage]
+type = "sqlite"
+sqlite_path = "/var/lib/qsdm/qsdm.db"
+
+[consensus]
+require_signed_votes = true
+signed_message_activation_height = 827000
+tx_content_root_activation_height = 700000
+authorized_block_producers = ["1cf60b16cf9aee5e8eaf67a8518a2b2ba7bc54f2dd607f05bc5a861b7a94c859"]
+signer_key_path = "/var/lib/qsdm/follower_signer.json"
+
+[consensus.producer_transition]
+version = 1
+checkpoint_height = 659976
+checkpoint_hash = "16884d35cee8b805fab51f1ecad740022fdb991e0fece15394774e1c5b7cdd0b"
+historical_signature_height = 482566
+historical_producer = "42d05e653f004d0aa71ae9cebc7b2a5b5d0dc7bb41b219a8e99d7c29229c438b"
+replacement_producer = "1cf60b16cf9aee5e8eaf67a8518a2b2ba7bc54f2dd607f05bc5a861b7a94c859"
+effective_height = 659977
+historical_prefix_bytes = 2728741562
+historical_prefix_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

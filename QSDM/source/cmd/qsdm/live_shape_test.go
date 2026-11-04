@@ -21,7 +21,7 @@ func liveShapeConfig(t *testing.T) *config.Config {
 	for _, k := range []string{
 		"QSDM_P2P_LIMITS_ENABLED", "QSDM_P2P_LIMITS_DISABLED", "QSDM_P2P_MAX_CONNS", "QSDM_P2P_GOSSIP_TOPIC_MAX_BYTES",
 		"QSDM_BRIDGE_RELAY_TRUSTED_KEYS", "QSDM_BRIDGE_RELAY_TRUSTED_KEYS_FILE", "QSDM_BRIDGE_RELAY_SIGNER_KEY_PATH",
-		"QSDM_ALLOW_PUBLIC_DHT_FALLBACK",
+		"QSDM_P2P_PRIVATE", "QSDM_P2P_PRIVATE_ALLOWED_PEERS", "QSDM_ALLOW_PUBLIC_DHT_FALLBACK",
 	} {
 		t.Setenv(k, "")
 	}
@@ -47,8 +47,15 @@ func TestLiveShapedConfig_ReleaseBehaviour(t *testing.T) {
 		t.Fatalf("P2P limits must be the construction from before the limits: %+v", limits)
 	}
 
-	// The host main() builds from these values: no gossip guard and the
-	// libp2p library defaults.
+	// Private P2P mode: off, so the historical host mode (loopback bind, no
+	// NAT, no peer allowlist).
+	mode, err := resolveP2PStartupMode(cfg.NetworkBindAddress, cfg.PrivateP2P, false)
+	if err != nil || mode != p2pModeDefault {
+		t.Fatalf("P2P startup mode: %q %v", mode, err)
+	}
+
+	// The host main() builds from these values: no gossip guard, no peer
+	// allowlist and the libp2p library defaults.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	net, err := SetupNetwork(ctx, logging.NewSilentLogger(), 0, cfg.NetworkBindAddress, "", limits)
@@ -56,8 +63,8 @@ func TestLiveShapedConfig_ReleaseBehaviour(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer net.Close()
-	if !net.Limits().Disabled || net.GossipGuardStats() != (networking.GossipGuardStats{}) {
-		t.Fatalf("host limits: %+v guard %+v", net.Limits(), net.GossipGuardStats())
+	if !net.Limits().Disabled || net.GossipGuardStats() != (networking.GossipGuardStats{}) || net.PrivateMode() {
+		t.Fatalf("host limits: %+v guard %+v private %v", net.Limits(), net.GossipGuardStats(), net.PrivateMode())
 	}
 
 	// Bridge relay: no trusted keys and no signer, so local events go out
@@ -73,5 +80,14 @@ func TestLiveShapedConfig_ReleaseBehaviour(t *testing.T) {
 	defer relay.Close()
 	if relay.TrustedKeyCount() != 0 || relay.Signing() {
 		t.Fatalf("relay: keys %d signing %v", relay.TrustedKeyCount(), relay.Signing())
+	}
+
+	// Stale allowlist warning: the only new boot output under this config is
+	// one WARN line, because the fixture, like the producer's file, pins the
+	// historical producer while the transition is configured. Block
+	// acceptance does not read the allowlist while a transition is
+	// configured, so nothing else changes.
+	if producerAllowlistAdvice(cfg.AuthorizedBlockProducers, cfg.ProducerTransition) == "" {
+		t.Fatal("expected the stale-allowlist advice for the live-shaped allowlist")
 	}
 }
