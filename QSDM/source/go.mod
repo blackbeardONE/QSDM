@@ -25,7 +25,7 @@ require (
 	github.com/libp2p/go-yamux/v5 v5.0.1
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
-	github.com/tetratelabs/wazero v1.11.0
+	github.com/tetratelabs/wazero v1.12.0
 	github.com/tyler-smith/go-bip39 v1.1.0
 	golang.org/x/crypto v0.57.0
 	golang.org/x/sys v0.48.0
