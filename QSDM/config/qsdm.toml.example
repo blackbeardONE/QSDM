@@ -190,3 +190,21 @@ disabled = false              # true -> /api/v1/trust/attestations/* returns 404
 fresh_within = "15m"          # attestations older than this are treated as stale
 refresh_interval = "10s"      # background cache rebuild cadence
 region_hint = ""              # "eu" | "us" | "apac" | "other" | "" (coarse bucket)
+
+# -----------------------------------------------------------------------------
+# Verified snapshot bootstrap (QSDM/docs/docs/SNAPSHOT_BOOTSTRAP.md).
+#
+# Off by default. When enabled, `qsdm --snapshot-import --from <dir>` may fill
+# an empty follower state directory from a snapshot whose tip is exactly the
+# checkpoint pinned here (height, block hash and state root, signed by an
+# authorized producer), and every start refuses a restored chain whose block
+# at checkpoint_height is another block. Take the values from a source
+# independent of the snapshot. A checkpoint key set while enabled is false is
+# refused. Uncommented as shown, the table changes nothing.
+# -----------------------------------------------------------------------------
+# [snapshot_bootstrap]
+# enabled = false                # env QSDM_SNAPSHOT_BOOTSTRAP
+# checkpoint_height = 0          # N, at least 1 when enabled (env QSDM_SNAPSHOT_CHECKPOINT_HEIGHT)
+# checkpoint_block_hash = ""     # 64 lower-case hex (env QSDM_SNAPSHOT_CHECKPOINT_BLOCK_HASH)
+# checkpoint_state_root = ""     # 64 lower-case hex (env QSDM_SNAPSHOT_CHECKPOINT_STATE_ROOT)
+# checkpoint_producer_id = ""    # optional: the ML-DSA-87 producer address (env QSDM_SNAPSHOT_CHECKPOINT_PRODUCER_ID)

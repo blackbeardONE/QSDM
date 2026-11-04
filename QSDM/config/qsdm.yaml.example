@@ -123,3 +123,14 @@ trust:
   fresh_within: "15m"        # attestations older than this are treated as stale
   refresh_interval: "10s"    # background cache rebuild cadence
   region_hint: ""            # "eu" | "us" | "apac" | "other" | ""
+
+# Verified snapshot bootstrap (QSDM/docs/docs/SNAPSHOT_BOOTSTRAP.md); off by default. When
+# enabled, qsdm --snapshot-import may fill an empty follower state directory from a snapshot
+# whose tip is exactly this checkpoint, and every start checks the block at checkpoint_height.
+# A checkpoint key set while enabled is false is refused. Env names as in qsdm.toml.example.
+# snapshot_bootstrap:
+#   enabled: false
+#   checkpoint_height: 0           # N, at least 1 when enabled
+#   checkpoint_block_hash: ""      # 64 lower-case hex
+#   checkpoint_state_root: ""      # 64 lower-case hex
+#   checkpoint_producer_id: ""     # optional: the ML-DSA-87 producer address

@@ -54,6 +54,7 @@
         { slug: "network-upgrades",   title: "Network upgrades",                 repoPath: DOCS_PREFIX_REPO + "/NETWORK_UPGRADES.md" },
         { slug: "mining-today",       title: "Mining today (Hive)",              repoPath: DOCS_PREFIX_REPO + "/MINING_TODAY.md" },
         { slug: "run-a-full-node",    title: "Run a full node",                  repoPath: DOCS_PREFIX_REPO + "/RUN_A_FULL_NODE.md" },
+        { slug: "snapshot-bootstrap", title: "Verified snapshot bootstrap",      repoPath: DOCS_PREFIX_REPO + "/SNAPSHOT_BOOTSTRAP.md" },
         { slug: "downloads",          title: "Downloads & verification",         repoPath: DOCS_PREFIX_REPO + "/DOWNLOADS_AND_VERIFICATION.md" },
         { slug: "security-model",     title: "Security model",                   repoPath: DOCS_PREFIX_REPO + "/SECURITY_MODEL.md" },
         { slug: "glossary",           title: "Glossary",                         repoPath: DOCS_PREFIX_REPO + "/GLOSSARY.md" },
