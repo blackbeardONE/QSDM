@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
@@ -151,6 +152,61 @@ func FuzzValidateAmountAndTimestamp(f *testing.F) {
 		}
 		if perr != nil || at.After(after.Add(MaxClockSkew)) || at.Before(before.Add(-MaxTransactionAge)) {
 			t.Fatalf("ValidateTimestamp accepted %q (parse %v) outside [now-%s, now+%s]", ts, perr, MaxTransactionAge, MaxClockSkew)
+		}
+	})
+}
+
+// FuzzValidatePasswordAndStrings covers the free-text rules of the public
+// /api/v1/auth/register body (ValidatePassword) and the bounded string
+// fields of the signed envelopes (ValidateString, ValidateGeoTag).
+func FuzzValidatePasswordAndStrings(f *testing.F) {
+	for _, seed := range []struct {
+		s        string
+		min, max int
+	}{
+		{"Correct-Horse-7-Battery", 0, MaxGeoTagLength},
+		{"Sh0rt!pass", 1, 64},
+		{"NoDigitsHere!!", 6, 64},
+		{"MyPassword123!", 0, 10},
+		{"Ünïcödé-Pässwörd-1", 1, 256},
+		{"ǅungla-title-case-1!", 0, 0},
+		{strings.Repeat("Aa1!", 64), 0, 256},
+		{strings.Repeat("Aa1!", 65), 256, 128},
+		{"", 0, 0},
+		{"PH", 2, 2},
+	} {
+		f.Add(seed.s, seed.min, seed.max)
+	}
+	weak := []string{"password", "123456", "qwerty", "abc123", "password123", "admin", "letmein", "welcome", "monkey", "12345678"}
+	f.Fuzz(func(t *testing.T, s string, minLen, maxLen int) {
+		var upper, lower, number, special bool
+		for _, r := range s {
+			switch {
+			case unicode.IsUpper(r):
+				upper = true
+			case unicode.IsLower(r):
+				lower = true
+			case unicode.IsNumber(r):
+				number = true
+			case unicode.IsPunct(r) || unicode.IsSymbol(r):
+				special = true
+			}
+		}
+		want := len(s) >= MinPasswordLength && len(s) <= MaxPasswordLength && upper && lower && number && special
+		for _, w := range weak {
+			want = want && !strings.Contains(strings.ToLower(s), w)
+		}
+		if err := ValidatePassword(s); (err == nil) != want {
+			t.Fatalf("ValidatePassword(%q) = %v, rule says valid=%v", s, err, want)
+		}
+
+		err := ValidateString(s, "field", minLen, maxLen)
+		want = len(s) >= minLen && len(s) <= maxLen
+		if (err == nil) != want || err != nil && !errors.Is(err, ErrStringTooShort) && !errors.Is(err, ErrStringTooLong) {
+			t.Fatalf("ValidateString(%d bytes, %d, %d) = %v", len(s), minLen, maxLen, err)
+		}
+		if err := ValidateGeoTag(s); (err == nil) != (len(s) <= MaxGeoTagLength) {
+			t.Fatalf("ValidateGeoTag(%d bytes) = %v", len(s), err)
 		}
 	})
 }

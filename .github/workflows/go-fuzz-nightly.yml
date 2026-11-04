@@ -56,6 +56,9 @@ jobs:
           - { pkg: pkg/api, target: FuzzValidateAddressAndTxID }
           - { pkg: pkg/api, target: FuzzValidateHexAndSignature }
           - { pkg: pkg/api, target: FuzzValidateAmountAndTimestamp }
+          - { pkg: pkg/api, target: FuzzValidatePasswordAndStrings }
+          - { pkg: pkg/api, target: FuzzTaskActionEnvelope }
+          - { pkg: pkg/api, target: FuzzReferralRegistrationEnvelope }
           - { pkg: pkg/consensus, target: FuzzValidateSignedTransaction }
           - { pkg: pkg/poe, target: FuzzCheckShape }
           - { pkg: pkg/poe, target: FuzzPickParents }
