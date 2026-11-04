@@ -85,9 +85,7 @@ func TestLiveEvidenceRelay_Propagation(t *testing.T) {
 		Timestamp:   time.Now().UTC(),
 	}
 	payload, _ := json.Marshal(ev)
-	if err := topicA.Publish(ctx, payload); err != nil {
-		t.Fatalf("publish: %v", err)
-	}
+	defer keepPublishing(ctx, t, topicA, payload)()
 
 	deadline := time.After(10 * time.Second)
 	for {

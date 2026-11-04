@@ -77,9 +77,7 @@ func TestTwoHostsGossipSubRoundTrip(t *testing.T) {
 	}()
 
 	time.Sleep(800 * time.Millisecond)
-	if err := t1.Publish(ctx, payload); err != nil {
-		t.Fatal(err)
-	}
+	defer keepPublishing(ctx, t, t1, payload)()
 
 	select {
 	case err := <-errCh:
