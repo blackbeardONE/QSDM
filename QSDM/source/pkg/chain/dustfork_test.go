@@ -313,3 +313,24 @@ func TestAccountStoreCredit_floorsSubDustUnderDust(t *testing.T) {
 		t.Fatalf("credit of 1.000000009 CELL = %d dust, want floor 100000000", got)
 	}
 }
+
+// 2^64 dust does not fit in a uint64. float64(math.MaxUint64) rounds up to
+// 2^64, so the overflow check must refuse that value too; converting it
+// returned 2^63 with no error.
+func TestCellToDust_refusesTwoToThe64Dust(t *testing.T) {
+	two64 := math.Ldexp(1, 64)
+	cell := two64 / float64(DustPerCellInt)
+	if cell*float64(DustPerCellInt) != two64 {
+		t.Fatalf("test value %v does not scale to 2^64 dust", cell)
+	}
+	if d, err := CellToDust(cell); !errors.Is(err, ErrDustConversionRange) {
+		t.Fatalf("CellToDust(%v) = %d, %v; want a range error", cell, d, err)
+	}
+	// The next float below still fits and converts to the same integer.
+	below := math.Nextafter(cell, 0)
+	scaled := below * float64(DustPerCellInt)
+	d, err := CellToDust(below)
+	if err != nil || scaled >= two64 || d != uint64(scaled) {
+		t.Fatalf("CellToDust(%v) = %d, %v; want %d", below, d, err, uint64(scaled))
+	}
+}

@@ -82,7 +82,9 @@ func CellToDust(cell float64) (uint64, error) {
 		return 0, fmt.Errorf("%w: %v is negative", ErrDustConversionRange, cell)
 	}
 	scaled := cell * float64(DustPerCellInt)
-	if scaled > float64(math.MaxUint64) {
+	// float64(math.MaxUint64) rounds up to 2^64, which does not fit in a
+	// uint64 either: converting it would wrap instead of failing.
+	if scaled >= float64(math.MaxUint64) {
 		return 0, fmt.Errorf("%w: %v overflows uint64 dust", ErrDustConversionRange, cell)
 	}
 	rounded := math.Round(scaled)
