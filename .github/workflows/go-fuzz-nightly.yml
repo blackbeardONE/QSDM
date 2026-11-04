@@ -59,6 +59,7 @@ jobs:
           - { pkg: pkg/consensus, target: FuzzValidateSignedTransaction }
           - { pkg: pkg/poe, target: FuzzCheckShape }
           - { pkg: pkg/poe, target: FuzzPickParents }
+          - { pkg: pkg/mesh3d, target: FuzzMeshPubsubWire }
           - { pkg: pkg/mining, target: FuzzVerifyProof }
           - { pkg: pkg/mining/attest/hmac, target: FuzzVerifyAttestation }
           - { pkg: pkg/mining/enrollment, target: FuzzEnrollmentAdmission }
