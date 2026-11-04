@@ -120,9 +120,14 @@ The [explorer](https://qsdm.tech/explorer.html) and the
   klauspost/compress v1.18.7 (CVE-2026-63209). The base of this code is
   `QSDM/source` in this repository, which also has the peer-to-peer limits
   (opt-in with `p2p_limits_enabled`, switched on at the producer), the
-  block-request budget ([P2P limits](P2P_LIMITS.md)), the Ed25519 retirement
-  and the private peer-to-peer mode ([Private P2P mode](PRIVATE_P2P.md)).
-  The other new features of the release candidates ship switched off.
+  block-request budget ([P2P limits](P2P_LIMITS.md)), the Ed25519 retirement,
+  the private peer-to-peer mode ([Private P2P mode](PRIVATE_P2P.md)), the
+  supply code of the Genesis Policy (a 90 million CELL cap and no genesis
+  treasury), the version 2 producer transition for a second hand-over
+  ([Producer transition](PRODUCER_TRANSITION.md)) and the verified snapshot
+  bootstrap for new full nodes
+  ([Verified snapshot bootstrap](SNAPSHOT_BOOTSTRAP.md)). The other new
+  features of the release candidates ship switched off.
 - **Peer-to-peer.** Since 2026-11-02 the producer accepts libp2p peers from
   the internet on port 4001
   (`/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`,

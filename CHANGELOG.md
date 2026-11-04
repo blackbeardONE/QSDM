@@ -98,6 +98,22 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **2026-11-04: supply rules, producer hand-over version 2 and snapshot
+  bootstrap in `QSDM/source`.** The supply code now follows the Genesis
+  Policy: a 90 million CELL cap, all of it mined, and no genesis treasury.
+  `CellToDust` refuses fractions below one dust and amounts too large for a
+  64-bit integer instead of rounding or wrapping. The genesis ceremony
+  dry-run signs with ML-DSA-87. A version 2 producer transition table can
+  describe a second hand-over, for example to a standby producer (see
+  [Producer transition](QSDM/docs/docs/PRODUCER_TRANSITION.md)), and the new
+  `qsdm-valkey` tool creates a consensus signer key offline. A new full node
+  can start from a verified snapshot instead of replaying the chain from
+  genesis (see
+  [Verified snapshot bootstrap](QSDM/docs/docs/SNAPSHOT_BOOTSTRAP.md)).
+  53 fuzz targets run every night. Nothing changes on the live network: the
+  producer already runs this code, and a version 1 table keeps its meaning.
+  Two small input checks found while writing the fuzz targets are new here.
+
 - **2026-11-04: the producer's peer-to-peer hardening in `QSDM/source`.**
   This repository now has what the producer runs: opt-in connection, stream
   and gossip limits (`p2p_limits_enabled`, see
