@@ -17,13 +17,14 @@ import (
 
 // liveShapeConfig loads the fixture shaped like the block producer's
 // core.toml through config.LoadConfig, the loader main() uses, with every
-// switch of the P2P hardening unset.
+// switch of the P2P hardening and the snapshot bootstrap unset.
 func liveShapeConfig(t *testing.T) *config.Config {
 	t.Helper()
 	for _, k := range []string{
 		"QSDM_P2P_LIMITS_ENABLED", "QSDM_P2P_LIMITS_DISABLED", "QSDM_P2P_MAX_CONNS", "QSDM_P2P_GOSSIP_TOPIC_MAX_BYTES",
 		"QSDM_BRIDGE_RELAY_TRUSTED_KEYS", "QSDM_BRIDGE_RELAY_TRUSTED_KEYS_FILE", "QSDM_BRIDGE_RELAY_SIGNER_KEY_PATH",
-		"QSDM_P2P_PRIVATE", "QSDM_P2P_PRIVATE_ALLOWED_PEERS", "QSDM_ALLOW_PUBLIC_DHT_FALLBACK",
+		"QSDM_P2P_PRIVATE", "QSDM_P2P_PRIVATE_ALLOWED_PEERS", "QSDM_SNAPSHOT_BOOTSTRAP",
+		"QSDM_SNAPSHOT_CHECKPOINT_HEIGHT", "QSDM_ALLOW_PUBLIC_DHT_FALLBACK",
 	} {
 		t.Setenv(k, "")
 	}
@@ -37,8 +38,9 @@ func liveShapeConfig(t *testing.T) *config.Config {
 
 // TestLiveShapedConfig_ReleaseBehaviour is the cmd/qsdm half of the "a node
 // configured as before behaves as before" argument. It runs the startup
-// decisions main() makes from the config for the P2P hardening and checks
-// that each one takes the path the node took before.
+// decisions main() makes from the config for the P2P hardening, the snapshot
+// bootstrap and the producer transition, and checks that each one takes the
+// path the node took before.
 func TestLiveShapedConfig_ReleaseBehaviour(t *testing.T) {
 	cfg := liveShapeConfig(t)
 
@@ -82,6 +84,18 @@ func TestLiveShapedConfig_ReleaseBehaviour(t *testing.T) {
 	defer relay.Close()
 	if relay.TrustedKeyCount() != 0 || relay.Signing() {
 		t.Fatalf("relay: keys %d signing %v", relay.TrustedKeyCount(), relay.Signing())
+	}
+
+	// Snapshot bootstrap: the node's normal command line selects no snapshot
+	// mode, and the boot guard is off, so it never even reads a block.
+	if snapshotModeRequested(nil) {
+		t.Fatal("no arguments must not select a snapshot mode")
+	}
+	if err := snapshotCheckpointGuard(cfg.SnapshotBootstrap, func(uint64) (*chain.Block, bool) {
+		t.Fatal("an off boot guard must not read the chain")
+		return nil, false
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	// Producer transition: the version 1 table keeps the state-root boundary
