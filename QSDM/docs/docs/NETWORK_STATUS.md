@@ -115,9 +115,10 @@ The [explorer](https://qsdm.tech/explorer.html) and the
   requests (one answer per peer every 2 s, 2 per second in total, duplicate
   blocks dropped before verification), built with Go 1.26.10 (GO-2026-6809)
   and klauspost/compress v1.18.7 (CVE-2026-63209). The base of this code is
-  `QSDM/source` in this repository; the release-only changes since rc1017
-  (the peer-to-peer limits and the block-request budget) are not yet mirrored
-  here. The other new features of the release candidates ship switched off.
+  `QSDM/source` in this repository, which also has the peer-to-peer limits
+  (opt-in with `p2p_limits_enabled`, switched on at the producer) and the
+  block-request budget ([P2P limits](P2P_LIMITS.md)). The other new
+  features of the release candidates ship switched off.
 - **Peer-to-peer.** Since 2026-11-02 the producer accepts libp2p peers from
   the internet on port 4001
   (`/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`,

@@ -86,7 +86,7 @@ network**; see the [rules of engagement](BUG_BOUNTY.md#2-rules-of-engagement).
 |---|---|---|
 | A1 Remote client | Steal funds, forge or replay transfers, crash or stall the producer, exhaust disk | ML-DSA-87 verification, nonces, Proof-of-Entanglement, the write allowlist, request-size limits, fail-stop on storage errors |
 | A2 Rogue or Sybil miner | Earn more than its share, be paid twice, spend another owner's quota, trip a global latch | The guard, durable de-duplication, per-owner buckets, operator-signature checks, the bond, I1–I7 |
-| A3 Malicious peer | Make followers accept a forged or unsigned block, vote or certificate; flood gossip | Signed-consensus gates, producer transition, reputation bans (connection limits are a known gap) |
+| A3 Malicious peer | Make followers accept a forged or unsigned block, vote or certificate; flood gossip | Signed-consensus gates, producer transition, reputation bans, the block-request budget, and opt-in connection, stream and gossip limits ([P2P limits](P2P_LIMITS.md)) |
 | A4 Rogue relay, worker or Mother Hive | Settle unpaid or duplicate work; redirect the ecosystem share | Settlement proof, manifest authorization, receipt root, replay maps |
 | A5 Determinism tripper | Make two honest nodes compute different state | Integer-only emission and dust accounting, canonical encodings, height-gated rules, replay tools (`cmd/qsdm/hl1_replay.go`, `cmd/hl-audit`) |
 | A6 Faulty or compromised producer | Over-issue, censor, rewrite history | Followers re-execute every block; the emission cap; the producer transition pins history. Censorship and reordering are accepted for the pilot |
@@ -249,7 +249,7 @@ at X and found nothing" is useful.
 
 **C10 P2P (optional)**
 - [ ] What happens with many connections or large gossip messages on each
-      topic, given that no connection limits are configured?
+      topic, with and without the opt-in [P2P limits](P2P_LIMITS.md)?
 - [ ] Can reputation bans be used to isolate an honest node?
 
 ## 6. How findings are tracked
