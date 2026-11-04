@@ -1,3 +1,4 @@
+import path from 'path';
 import { URL } from 'url';
 
 import { Endpoints } from 'config/endpoints';
@@ -5,8 +6,11 @@ import { Endpoints } from 'config/endpoints';
 import { app } from '../app';
 
 import {
+  getQsdmHiveReleaseWithEnvelopeCache,
+  RELEASE_ENVELOPE_CACHE_FOLDER_NAME,
+} from './qsdmReleaseEnvelopeCache';
+import {
   getQsdmHiveReleaseManifestUrl,
-  getVerifiedQsdmHiveRelease,
   QSDM_HIVE_RELEASE_BASE_URL,
 } from './qsdmReleaseManifest';
 
@@ -31,6 +35,10 @@ export type HiveVersionPolicyStatus = {
     | 'manifest-unavailable'
     | 'policy-disabled';
   error?: string;
+  // True when the required version comes from the signed release envelope
+  // Hive saved after an earlier successful check, because the release feed
+  // could not be used just now; `error` then says why.
+  fromCache?: boolean;
 };
 
 export type HiveVersionPolicyOptions = {
@@ -231,18 +239,23 @@ async function resolveHiveVersionPolicyStatus(): Promise<HiveVersionPolicyStatus
   }
 
   try {
-    const release = await getVerifiedQsdmHiveRelease({
+    // The feed's signed release, or during an outage the signed release saved
+    // after the last successful check, verified again in full.
+    const release = await getQsdmHiveReleaseWithEnvelopeCache({
       platform: process.platform,
       baseUrl: getHiveReleaseBaseUrl(),
-      forceRefresh: true,
+      cacheDirectory: getReleaseEnvelopeCacheDirectory(),
     });
 
-    return buildPolicyStatus({
+    const status = buildPolicyStatus({
       currentVersion,
       requiredVersion: release.manifest.version,
       manifestUrl: release.manifestUrl,
       downloadUrl: release.installerUrl || fallbackDownloadUrl,
     });
+    return release.source === 'cache'
+      ? { ...status, fromCache: true, error: release.feedError }
+      : status;
   } catch (error) {
     return {
       compatible: false,
@@ -300,6 +313,23 @@ function getHiveDownloadUrl() {
   }
 
   return process.env.QSDM_HIVE_DOWNLOAD_URL?.trim() || DEFAULT_DOWNLOAD_URL;
+}
+
+// <userData>/release-envelope-cache. Without a user-data folder Hive simply
+// keeps no saved envelope, and a failed feed check fails closed as before.
+function getReleaseEnvelopeCacheDirectory() {
+  try {
+    const userData = app.getPath('userData');
+    return userData
+      ? path.join(userData, RELEASE_ENVELOPE_CACHE_FOLDER_NAME)
+      : null;
+  } catch (error) {
+    console.warn(
+      'QSDM Hive cannot find its user-data folder, so it keeps no saved release envelope.',
+      error
+    );
+    return null;
+  }
 }
 
 function getHiveReleaseBaseUrl() {
