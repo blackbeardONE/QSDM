@@ -272,6 +272,12 @@ CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/bridge/ ./pkg/config/
   keys are merged and deduplicated; bad or missing inputs are errors and a
   missing signer key is not created; the signer loads; the consensus key is
   refused as signer; the key ID equals the key's validator address; metrics.
+- `pkg/bridge/relay_auth_fuzz_test.go`: `FuzzProcessRemoteBridgeEvent` feeds
+  peer messages to the relay the way they arrive (decode, verify, apply).
+  Nothing changes state without a valid signature by a trusted key inside the
+  age window, such an event is always accepted, and an applied event makes one
+  legal change. Its seeds run with the other tests; the nightly fuzz workflow
+  (`.github/workflows/go-fuzz-nightly.yml`) fuzzes it for five minutes.
 
 ## 7. Limits and remaining risks
 
