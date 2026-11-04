@@ -701,3 +701,62 @@ func snapDropAdvisory(t *testing.T, snap string) {
 		t.Fatal(err)
 	}
 }
+
+// TestSnapshotVerifyAppliesConsensusSettingsFirst: snapshotVerifyDir used to
+// recompute every block hash before it applied the consensus settings. The
+// content-root activation height changes block hashes from that height on,
+// so an offline export or import of a chain that crosses it failed with
+// "journal block <activation height> hash does not match its contents". An
+// offline run starts with the package defaults (content root off); the
+// settings must come first.
+func TestSnapshotVerifyAppliesConsensusSettingsFirst(t *testing.T) {
+	const act = 2
+	prev := chain.TxContentRootActivationHeight()
+	t.Cleanup(func() { chain.SetTxContentRootActivationHeight(prev) })
+	chain.SetTxContentRootActivationHeight(act)
+	f := snapBuildChain(t, 6, true)
+
+	// The fixture must make the setting matter: some block at or above the
+	// activation height has transactions, so its hash depends on the setting.
+	blocks, err := chain.LoadChainNDJSON(filepath.Join(f.src, hl1JournalName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	differs := false
+	for _, b := range blocks {
+		if b.Height < act || len(b.Transactions) == 0 {
+			continue
+		}
+		chain.SetTxContentRootActivationHeight(0)
+		legacy := chain.ComputeBlockHash(b)
+		chain.SetTxContentRootActivationHeight(act)
+		if legacy != b.Hash {
+			differs = true
+			break
+		}
+	}
+	if !differs {
+		t.Fatal("fixture: no block's hash depends on the content-root setting; the test would prove nothing")
+	}
+
+	settings := func() { chain.SetTxContentRootActivationHeight(act) }
+	cons := snapConsensus()
+	cons.ConsensusSettings = settings
+
+	chain.SetTxContentRootActivationHeight(0) // a fresh offline process: the package default
+	out := filepath.Join(t.TempDir(), "snap")
+	if _, err := snapshotRunExport(snapshotExportOptions{StateDir: f.src, OutDir: out, Consensus: cons}); err != nil {
+		t.Fatalf("export with the settings supplied by ConsensusSettings: %v", err)
+	}
+
+	chain.SetTxContentRootActivationHeight(0)
+	if _, err := snapImport(t, out, t.TempDir(), f.pinned(), func(o *snapshotImportOptions) { o.Consensus = cons }); err != nil {
+		t.Fatalf("import with the settings supplied by ConsensusSettings: %v", err)
+	}
+
+	// Without the settings the same snapshot is refused (the check is real).
+	chain.SetTxContentRootActivationHeight(0)
+	if _, err := snapImport(t, out, t.TempDir(), f.pinned(), nil); err == nil || !strings.Contains(err.Error(), "hash does not match its contents") {
+		t.Fatalf("import without the content-root setting: want a hash mismatch, got %v", err)
+	}
+}

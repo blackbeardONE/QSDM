@@ -201,6 +201,13 @@ func snapshotVerifyDir(dir, scratch string, c snapshotConsensus, pinned *config.
 	if log == nil {
 		log = hl1Logger()
 	}
+	// The package-level consensus settings first: the hash and signature
+	// checks below depend on them (the content-root activation height changes
+	// every block hash from that height on). Applied after them, a real chain
+	// that crosses an activation height fails at that height.
+	if c.ConsensusSettings != nil {
+		c.ConsensusSettings()
+	}
 	journal := filepath.Join(dir, hl1JournalName)
 	if err := c.Transition.ValidateJournalPrefix(journal); err != nil {
 		return res, fmt.Errorf("producer transition: %w", err)
@@ -268,9 +275,6 @@ func snapshotVerifyDir(dir, scratch string, c snapshotConsensus, pinned *config.
 		return res, err
 	}
 
-	if c.ConsensusSettings != nil {
-		c.ConsensusSettings()
-	}
 	restoreStart := time.Now()
 	st, err := hl1NewReplayStack(scratch, c.GovernanceAuthorities, c.AuthorizedBlockProducers, c.Transition, log)
 	if err != nil {
