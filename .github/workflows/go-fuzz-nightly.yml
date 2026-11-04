@@ -61,6 +61,9 @@ jobs:
           - { pkg: pkg/poe, target: FuzzPickParents }
           - { pkg: pkg/mining, target: FuzzVerifyProof }
           - { pkg: pkg/mining/attest/hmac, target: FuzzVerifyAttestation }
+          - { pkg: pkg/mining/enrollment, target: FuzzEnrollmentAdmission }
+          - { pkg: pkg/mining/slashing, target: FuzzSlashAdmission }
+          - { pkg: pkg/governance/chainparams, target: FuzzGovAdmission }
           - { pkg: internal/legacymining, target: FuzzDecodePayload }
           - { pkg: internal/legacymining, target: FuzzEncodePayload }
           - { pkg: internal/legacymining, target: FuzzOperatorSigAuth }
