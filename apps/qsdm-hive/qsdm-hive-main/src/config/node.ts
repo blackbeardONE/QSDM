@@ -12,6 +12,8 @@ export const RESTORE_QSDM_STATE = true;
 export const RESTORE_KOHAKU = RESTORE_QSDM_STATE;
 
 export const SERVER_PORT = 30017;
+// The legacy task server has no authentication: loopback only.
+export const SERVER_HOST = '127.0.0.1';
 
 export const ARWEAVE_GATEWAY_URL = 'https://arweave.net';
 export const IPFS_GATEWAY_URL = 'https://ipfs.io/ipfs';
@@ -70,6 +72,7 @@ export default {
   RESTORE_QSDM_STATE,
   RESTORE_KOHAKU,
   SERVER_PORT,
+  SERVER_HOST,
   ARWEAVE_GATEWAY_URL,
   IPFS_GATEWAY_URL,
   TASK_CONTRACT_ID,

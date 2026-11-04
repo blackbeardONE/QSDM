@@ -3,9 +3,9 @@
 > [!IMPORTANT]
 > **Historical build-from-source notes.** This page predates QSDM Hive 1.4.21
 > and is not how most people mine today. Hive ships the miner and CUDA solver
-> for you: follow [Mining today (Hive 1.4.22)](MINING_TODAY.md). New mining
-> enrollments are paused during the current recovery; enrolled GPUs mine in
-> 7-day canary windows.
+> for you: follow [Mining today (Hive 1.4.22)](MINING_TODAY.md). Mining is open
+> to every enrolled miner (since 19 October 2026), in 7-day windows that renew
+> automatically.
 
 > **Audience.** A home operator with an **NVIDIA GeForce RTX 3050** (or
 > any other Ampere card: RTX 30-series, A2/A4/A10) who wants to mine

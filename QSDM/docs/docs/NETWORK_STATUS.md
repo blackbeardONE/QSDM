@@ -84,7 +84,7 @@ How to read the fields that matter most:
 |---|---|
 | `version`, `git_sha` | The release the public node runs. `git_sha` is the base commit; the release adds the recovery and mining patches listed in the changelog. |
 | `chain_tip` | Current block height. It should rise by about 6 per minute. |
-| `peers` | Connected peer nodes. `0` is expected while a single producer runs the chain. |
+| `peers` | Peer-to-peer (libp2p) nodes connected to this node. Since 2 November 2026 other nodes can connect to the producer on port 4001, so the value can be above `0`. A full node that follows the chain over HTTPS is not counted. |
 | `consensus_auth.signed_consensus_active`, `signed_message_activation_height` | `true` from block 827,000: every consensus message must carry a valid ML-DSA signature. |
 | `consensus_auth.unsigned_consensus_traffic_accepted` | `false`: unsigned consensus traffic is refused. |
 | `consensus_auth.poe_activation_height`, `poe_active` | The block from which transfers must name committed parents, and whether that height has been reached. |
@@ -162,14 +162,15 @@ See the [Roadmap](ROADMAP.md) for the order of work and
 
 ## Service availability during recovery
 
-Some public services are limited while the network finishes its recovery:
+Some public services are limited while the network finishes its recovery. State
+on 2026-11-03:
 
 | Service | State |
 |---|---|
 | Status, blocks, transactions, balances (read) | Available |
 | Signed wallet transfers (`POST /api/v1/wallet/submit-signed`) | Available |
-| Mining (work, challenge, submit) on `api.qsdm.tech` | Open to enrolled QSDM Hive miners in 7-day (168-hour) canary windows, with caps per owner per 24-hour epoch and per-IP rate limits. The current window started 2026-10-15; the next change is expected around 2026-10-22. |
-| New mining enrollments | Paused during recovery |
+| Mining (work, challenge, submit) on `api.qsdm.tech` | Open to every enrolled miner (public mode since 2026-10-19) in 7-day (168-hour) windows that renew automatically, with caps per owner per 24-hour epoch and per-IP rate limits. The window open on 2026-11-03 ends 2026-11-08 07:32 UTC and the next one starts by itself. |
+| New mining enrollments | Open since 2026-10-17. QSDM Hive submits the signed enrollment; the 10 CELL bond is paid up front or from the first rewards. |
 | New account registration | Disabled during recovery (HTTP 503) |
 | Signed task actions (`POST /api/v1/tasks/actions/submit-signed`) | Open since 2026-10-15. Built-in system task IDs are reserved: only the project's owner key can register them. |
 | Paid resource work (Edge Pool CPU/GPU/RAM tasks) | Operator-only test; not yet open to other miners. From block 833,800 these tasks settle only through an authorized settlement relay. |

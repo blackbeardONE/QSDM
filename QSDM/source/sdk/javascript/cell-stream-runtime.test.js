@@ -255,6 +255,81 @@ test('CellStreamWallet legacy nonce fallback uses current, never transfer next',
     assert.equal(result.envelope.action.nonce, 4);
 });
 
+function receiptConfirmingClient(calls, receiptFor) {
+    return {
+        async getStreamActionNonce() {
+            return { sender: payer, action_nonce: 0, present: true };
+        },
+        async submitStreamAction(envelope) {
+            return { status: 'accepted', action_id: envelope.action.id };
+        },
+        async getTransaction() {
+            calls.push('transaction');
+            throw new Error('operator-only route');
+        },
+        async getReceipt(id) {
+            calls.push(`receipt ${id}`);
+            return receiptFor(id, calls.filter((call) => call.startsWith('receipt')).length);
+        },
+        async getStream() {
+            calls.push('stream');
+            return { stream: { stream_id: 'vpn-device-001', status: 'active', last_action_id: 'older' } };
+        },
+    };
+}
+
+test('CellStreamWallet confirms through the public receipt route, not /transactions', async () => {
+    const calls = [];
+    const client = receiptConfirmingClient(calls, (id, attempt) => {
+        if (attempt < 2) {
+            const error = new Error('receipt not found');
+            error.status = 404;
+            throw error;
+        }
+        return { tx_id: id, status: 1 };
+    });
+    const wallet = new CellStreamWallet({
+        client,
+        address: payer,
+        clock: () => 1800000000000,
+        sleep: async () => {},
+        idFactory: () => 'action-receipt',
+        async signAction() {
+            return { signature: 'aa', publicKey: 'bb' };
+        },
+    });
+    const result = await wallet.submitAction({ stream_id: 'vpn-device-001', action: 'pause' });
+    assert.equal(calls.includes('transaction'), false);
+    assert.deepEqual(
+        calls.filter((call) => call.startsWith('receipt')),
+        ['receipt action-receipt', 'receipt action-receipt']
+    );
+    assert.equal(result.stream.stream_id, 'vpn-device-001');
+});
+
+test('CellStreamWallet reports an action whose receipt failed on chain', async () => {
+    const calls = [];
+    const client = receiptConfirmingClient(calls, (id) => ({
+        tx_id: id,
+        status: 0,
+        error: 'insufficient escrow',
+    }));
+    const wallet = new CellStreamWallet({
+        client,
+        address: payer,
+        clock: () => 1800000000000,
+        sleep: async () => {},
+        idFactory: () => 'action-failed',
+        async signAction() {
+            return { signature: 'aa', publicKey: 'bb' };
+        },
+    });
+    await assert.rejects(
+        () => wallet.submitAction({ stream_id: 'vpn-device-001', action: 'pause' }),
+        /action-failed failed on chain: insufficient escrow/
+    );
+});
+
 test('service lifecycle counts only active time and emits cumulative receipts', async () => {
     let now = 1800000000000;
     const storage = new MemoryStorage();

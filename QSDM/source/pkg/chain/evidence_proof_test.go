@@ -8,7 +8,7 @@ import (
 )
 
 // signedExhibit builds an authenticated BFT exhibit from a real key.
-func signedExhibit(t *testing.T, signer *crypto.Dilithium, validator, kind string, h uint64, r uint32, value string) SignedVoteExhibit {
+func signedExhibit(t testing.TB, signer *crypto.Dilithium, validator, kind string, h uint64, r uint32, value string) SignedVoteExhibit {
 	t.Helper()
 	x := SignedVoteExhibit{Kind: kind, Height: h, Round: r, Validator: validator, BlockHash: value}
 	switch kind {

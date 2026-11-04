@@ -579,6 +579,7 @@ export const getQsdmTaskActionSignerStatus = (): QsdmTaskActionSignerStatus => {
     configured: mode === 'cli' && !!sender,
     ready: missing.length === 0,
     localLoopEnabled: getQsdmLocalSignedLoopEnabled(),
+    proofLoopEnabled: QSDM_ENABLE_LOCAL_SIGNED_LOOP,
     sender: sender || undefined,
     cliPath,
     keystorePath: keystorePath || undefined,

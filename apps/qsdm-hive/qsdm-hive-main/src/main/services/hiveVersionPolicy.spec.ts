@@ -61,7 +61,9 @@ describe('hiveVersionPolicy', () => {
       'https://example.invalid/latest.yml';
 
     expect(canUseLocalHiveVersionPolicyOverrides()).toBe(false);
-    expect(getHiveVersionManifestUrl()).toBe(
+    // Pin the platform: the default manifest name depends on the OS (see the
+    // next test), and this check must not depend on the host running jest.
+    expect(getHiveVersionManifestUrl('win32')).toBe(
       'https://qsdm.tech/downloads/hive-v2/latest.yml'
     );
   });

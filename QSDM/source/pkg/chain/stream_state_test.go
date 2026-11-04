@@ -19,7 +19,7 @@ type streamTestWallet struct {
 	address string
 }
 
-func newStreamTestWallet(t *testing.T) streamTestWallet {
+func newStreamTestWallet(t testing.TB) streamTestWallet {
 	t.Helper()
 	public, private, err := mldsa87.GenerateKey(rand.Reader)
 	if err != nil {
@@ -37,7 +37,7 @@ func newStreamTestWallet(t *testing.T) streamTestWallet {
 	}
 }
 
-func signedStreamTx(t *testing.T, wallet streamTestWallet, action StreamAction) *mempool.Tx {
+func signedStreamTx(t testing.TB, wallet streamTestWallet, action StreamAction) *mempool.Tx {
 	t.Helper()
 	action.Sender = wallet.address
 	payload, err := json.Marshal(action)
@@ -64,7 +64,7 @@ func signedStreamTx(t *testing.T, wallet streamTestWallet, action StreamAction) 
 	}
 }
 
-func signedUsageReceipt(t *testing.T, private ed25519.PrivateKey, receipt StreamUsageReceipt) StreamUsageReceipt {
+func signedUsageReceipt(t testing.TB, private ed25519.PrivateKey, receipt StreamUsageReceipt) StreamUsageReceipt {
 	t.Helper()
 	message, err := StreamUsageReceiptSigningBytes(receipt)
 	if err != nil {
@@ -74,7 +74,7 @@ func signedUsageReceipt(t *testing.T, private ed25519.PrivateKey, receipt Stream
 	return receipt
 }
 
-func openStreamAction(t *testing.T, payer, provider streamTestWallet, sessionPublic ed25519.PublicKey, budget uint64) StreamAction {
+func openStreamAction(t testing.TB, payer, provider streamTestWallet, sessionPublic ed25519.PublicKey, budget uint64) StreamAction {
 	t.Helper()
 	device := sha256.Sum256([]byte("test-device"))
 	return StreamAction{

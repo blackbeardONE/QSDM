@@ -69,13 +69,15 @@ network see [Network status](NETWORK_STATUS.md).
   consensus message must carry a valid ML-DSA signature, and unsigned
   consensus traffic is refused. This stops forged consensus messages; it does
   not add independent validators. Today the one producer signs them all.
-- Independent validators and BFT finality between them are the next step on
-  the [Roadmap](ROADMAP.md). The full list of rules in force is in
+- Block production by miners, in stages, is the next step on the
+  [Roadmap](ROADMAP.md) (decision of 19 October 2026). Multi-validator BFT is
+  in the code but no longer planned. The full list of rules in force is in
   [Consensus rules](CONSENSUS_RULES.md).
-- Mainnet needs the gates in [Treasury policy §9](TREASURY_POLICY.md#9-mainnet-release-gates):
-  independent validators, a published migration manifest
-  ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)) and an independent external
-  audit.
+- Mainnet needs the [mainnet gates](ROADMAP.md#mainnet-gates) and
+  [Treasury policy §9](TREASURY_POLICY.md#9-mainnet-release-gates):
+  decentralised block production, a published migration manifest
+  ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)) and a published security
+  review with its findings fixed. No independent audit has been completed.
 
 ## Mining
 
@@ -85,15 +87,15 @@ network see [Network status](NETWORK_STATUS.md).
 - `nvidia-hmac-v1` binds a GPU to an enrolled operator through a shared key and
   a 10 CELL bond, which can be paid up front or withheld from the first
   rewards. It is an economic control, not cryptographic proof of the hardware.
-  New enrollments are paused during recovery. The
-  [Mining protocol v2](MINING_PROTOCOL_V2.md) document explains its limits.
+  The [Mining protocol v2](MINING_PROTOCOL_V2.md) document explains its limits.
 - Since October 2026 the node stores accepted proofs and nonces durably, so a
   proof cannot be paid twice after a restart, and it stops producing blocks
   rather than continue after a storage failure. Pending rewards survive
   restarts.
-- Mining runs for enrolled Hive miners in 7-day (168-hour) canary windows,
-  with caps per owner per 24-hour epoch and per-IP rate limits. Hive 1.4.22
-  signs proofs with the miner's wallet (owner signature) automatically.
+- Mining is open to every enrolled miner (since 19 October 2026) in 7-day
+  (168-hour) windows that renew automatically, with caps per owner per 24-hour
+  epoch and per-IP rate limits. Every proof must carry the enrollment owner's
+  signature; Hive 1.4.22 adds it automatically.
 
 ## Software and releases
 

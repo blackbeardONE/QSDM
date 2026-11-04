@@ -21,7 +21,9 @@ jest.mock('config/qsdm', () => ({
     `http://127.0.0.1:8080/api/v1/${path.replace(/^\/+/, '')}`,
   buildQsdmApiUrl: (path: string) =>
     `http://localhost:8080/api/v1/${path.replace(/^\/+/, '')}`,
-  buildQsdmTaskReadUrls: (path: string) => [
+  // Stake reads (main/services/qsdmTaskStake) go through the task-action read
+  // URLs, so a signed stake is confirmed by the Core that accepted it.
+  buildQsdmTaskActionReadUrls: (path: string) => [
     `http://127.0.0.1:8080/api/v1/${path.replace(/^\/+/, '')}`,
     `http://localhost:8080/api/v1/${path.replace(/^\/+/, '')}`,
   ],

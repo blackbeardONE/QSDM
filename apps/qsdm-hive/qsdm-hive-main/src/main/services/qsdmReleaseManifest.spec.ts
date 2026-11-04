@@ -13,9 +13,9 @@ import {
 const TRUST_ROOT_MODULE =
   '../../../../../../QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json';
 
-// The repository ships a placeholder trust root until the operator drops in
-// the new public key. Tests use synthetic public key bytes of the right shape
-// (signature checks are stubbed); they are not a real signing key.
+// Tests replace the pinned v2 trust root with synthetic public key bytes of
+// the right shape (signature checks are stubbed); they are not a real
+// signing key.
 jest.mock(
   '../../../../../../QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json',
   () => {

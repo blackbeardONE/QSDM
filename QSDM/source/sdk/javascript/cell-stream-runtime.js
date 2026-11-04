@@ -272,9 +272,30 @@ class CellStreamWallet {
         const deadline = this.clock() + this.confirmationTimeoutMs;
         let lastError = null;
         while (this.clock() <= deadline) {
-            if (typeof this.client.getTransaction === 'function') {
+            // The receipt route is public (GET /api/v1/receipts/{tx_id});
+            // GET /api/v1/transactions/{id} needs an operator JWT, so it is
+            // used only by clients that have no getReceipt.
+            const lookup = typeof this.client.getReceipt === 'function'
+                ? (id) => this.client.getReceipt(id)
+                : (typeof this.client.getTransaction === 'function'
+                    ? (id) => this.client.getTransaction(id)
+                    : null);
+            if (lookup) {
+                let found = null;
                 try {
-                    await this.client.getTransaction(envelope.action.id);
+                    found = await lookup(envelope.action.id);
+                } catch (error) {
+                    lastError = error;
+                    // 404 until the action is in a block; transient gateway
+                    // errors are retried below.
+                }
+                if (found && found.status === 0 && found.tx_id === envelope.action.id) {
+                    throw new Error(
+                        `CELL Stream action ${envelope.action.id} failed on chain` +
+                        (found.error ? `: ${found.error}` : '')
+                    );
+                }
+                if (found) {
                     try {
                         const response = await this.client.getStream(
                             envelope.action.stream_id
@@ -282,13 +303,6 @@ class CellStreamWallet {
                         return stateFromResponse(response);
                     } catch (_streamError) {
                         return null;
-                    }
-                } catch (error) {
-                    lastError = error;
-                    if (error && error.status !== undefined &&
-                        error.status !== 404 &&
-                        error.status !== 501) {
-                        // Transient gateway errors are retried below.
                     }
                 }
             }

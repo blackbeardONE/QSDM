@@ -1,6 +1,11 @@
-## [Unreleased]
+## [1.4.22]
 
 - Proof-of-Entanglement parents: CELL transfers now sign the node's two newest committed transactions as `parent_cells` (from `GET /api/v1/chain/parents`, or the newest successful receipts on nodes that predate that route) instead of an empty list. Validators accept these parents today and will require them once the network's PoE activation height is reached. If the node refuses a transfer's parents (HTTP 422 `proof-of-entanglement`), Hive signs it again at the same nonce with fresh parents. A node that cannot supply parents still gets an empty list, which works until activation.
+- Miner enrollment: the enroll dialog now states the real unbonding period after unenrollment, 201,600 blocks (about 23 days at the 10-second block time), instead of "7 days". The re-enroll error for a miner that is still unbonding uses the same figure.
+- Local task server: the legacy task server on port 30017 has no authentication and now listens on 127.0.0.1 only, not on every network interface. Hive and the tasks it starts reach it on 127.0.0.1 as before.
+- Paid task work is paused, so the "Proof" button next to the RPC status (a fund, start, stake, submit and claim self-test) always failed with "Proof failed". It is now hidden unless the operator sets `QSDM_ENABLE_LOCAL_SIGNED_LOOP=1`.
+- Release signing is unchanged from 1.4.21: Hive trusts only the v2 release key (key_id `4081bf2c...`), pinned in `QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json`, and updates from `https://qsdm.tech/downloads/hive-v2/`. That file holds the real v2 public key, not a placeholder. Because the key and channel are unchanged, Hive 1.4.21 can update to 1.4.22 through its normal signed updater once 1.4.22 is published to hive-v2.
+- Release tooling: the publish scripts and the release-feed check now pin the v2 key and the hive-v2 channel instead of the rotated v1 key.
 
 ## [1.4.21]
 

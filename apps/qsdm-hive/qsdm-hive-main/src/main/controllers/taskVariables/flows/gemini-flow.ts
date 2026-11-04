@@ -103,7 +103,7 @@ export async function handleGeminiFlow(browser: Browser) {
       // Store Gemini API key
       try {
         const response = await axios.post(
-          'http://localhost:30017/api/task-variables',
+          'http://127.0.0.1:30017/api/task-variables',
           {
             label: 'GEMINI_API_KEY',
             value: apiKey,

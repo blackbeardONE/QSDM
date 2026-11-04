@@ -7,9 +7,9 @@ import path from 'path';
 import { URL } from 'url';
 
 // This public trust root is shared deliberately with the release publisher.
-// Hive 1.4.21+ trusts the v2 release key only. The repository ships a
-// placeholder; the operator replaces it with release-signing-public.json
-// before building (enforced by .erb/scripts/verify-release-trust-key.cjs).
+// Hive 1.4.21+ trusts the v2 release key only (key_id 4081bf2c...), pinned in
+// qsdm-hive-release-key-v2.json. A placeholder trust root is refused at build
+// time (.erb/scripts/verify-release-trust-key.cjs) and at runtime below.
 // eslint-disable-next-line import/no-relative-packages
 import releaseTrustKeyJson from '../../../../../../QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json';
 

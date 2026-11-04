@@ -1,11 +1,29 @@
 // Package qsdm provides an official Go client for the QSDM HTTP API.
 //
-// It wraps the `pkg/api` REST surface exposed by a running qsdm node:
-// wallet balance, transaction send/query, health probes, node metadata, peer listing,
-// and Prometheus/JSON metrics snapshots.
+// It wraps the public `pkg/api` REST surface of a qsdm node (for example
+// https://api.qsdm.tech): wallet balance and nonce, signed CELL transfers
+// with Proof-of-Entanglement parents, receipts, CELL Streams, health probes
+// and node status. Public routes need no credentials.
 //
-// The client is safe for concurrent use and does not embed any node-local state;
-// authentication is supplied through SetAPIKey or SetToken and forwarded as headers.
+// # Sending CELL
+//
+// Nodes accept a CELL transfer from a client only as an envelope signed with
+// ML-DSA-87 (POST /api/v1/wallet/submit-signed), and since block 816,600 the
+// envelope must name Proof-of-Entanglement parents (HTTP 422 otherwise). The
+// SDK never holds a private key: SendTransfer prepares the envelope (nonce
+// and parents from the node), has a caller-supplied TransferSigner sign
+// TransferEnvelope.SigningBytes, and submits it. PrepareTransfer,
+// SignTransfer and SubmitSignedTransfer are the same steps one by one, so an
+// envelope signed elsewhere (for example by `qsdmcli wallet sign-tx`) can be
+// submitted too. The unsigned SendTransaction is deprecated and fails
+// without contacting the node.
+//
+// A few deprecated methods call routes that public nodes do not serve
+// (operator-only or not registered); their doc comments say which.
+//
+// The client is safe for concurrent use and does not embed any node-local state.
+// Operator credentials, where a route needs them, are set with SetToken and
+// sent as an Authorization header.
 //
 // # Install
 //
@@ -47,10 +65,13 @@ func NewClient(baseURL string) *Client {
 	}
 }
 
-// SetAPIKey sets the API key for authentication (sent as X-API-Key header).
+// SetAPIKey sets an API key, sent as the X-API-Key header when no token is
+// set. QSDM nodes do not read this header (pkg/api authenticates operators
+// only with Authorization: Bearer); it is kept for gateways that do.
 func (c *Client) SetAPIKey(apiKey string) { c.APIKey = apiKey }
 
-// SetToken sets the JWT token for authentication (sent as Authorization: Bearer).
+// SetToken sets an operator JWT, sent as Authorization: Bearer. Public
+// routes do not need it.
 func (c *Client) SetToken(token string) { c.Token = token }
 
 // ErrAPI indicates the server returned a non-2xx response. Callers can use errors.As to
@@ -77,7 +98,8 @@ func IsUnauthorized(err error) bool {
 	return errors.As(err, &ae) && (ae.StatusCode == http.StatusUnauthorized || ae.StatusCode == http.StatusForbidden)
 }
 
-// GetBalance retrieves the balance for an address.
+// GetBalance returns the CELL balance of an address
+// (GET /api/v1/wallet/balance, public).
 func (c *Client) GetBalance(address string) (float64, error) {
 	return c.GetBalanceContext(context.Background(), address)
 }
@@ -95,13 +117,19 @@ func (c *Client) GetBalanceContext(ctx context.Context, address string) (float64
 	return resp.Balance, nil
 }
 
+// WalletNonceResponse is the body of GET /api/v1/wallet/nonce.
 type WalletNonceResponse struct {
 	Sender string `json:"sender"`
-	Nonce  uint64 `json:"nonce"`
-	Next   uint64 `json:"next"`
+	// Nonce is the last nonce already used by the wallet.
+	Nonce uint64 `json:"nonce"`
+	// Next is the nonce to sign the next transfer with (Nonce + 1).
+	Next uint64 `json:"next"`
 }
 
-// GetWalletNonce returns the last applied and next required nonce for a wallet.
+// GetWalletNonce returns the last applied and next required nonce for a
+// wallet (GET /api/v1/wallet/nonce?sender=, public). The node counts only
+// committed transfers, so a transfer still waiting for its block holds
+// Next until that block is sealed.
 func (c *Client) GetWalletNonce(address string) (*WalletNonceResponse, error) {
 	return c.GetWalletNonceContext(context.Background(), address)
 }
@@ -117,21 +145,29 @@ func (c *Client) GetWalletNonceContext(ctx context.Context, address string) (*Wa
 	return &response, nil
 }
 
-// SendTransaction sends a transaction and returns its ID.
+// SendTransaction always returns ErrUnsignedSendRemoved, without contacting
+// the node.
+//
+// Deprecated: it posted an unsigned {from, to, amount} body to
+// POST /api/v1/wallet/send, which no public client can use. That route is
+// not on the node's public allowlist: it needs an operator JWT plus
+// X-Timestamp/X-Nonce/X-Signature headers signed with the node's own
+// request-signing key (pkg/api RequestSigningMiddleware), read-only
+// followers refuse it with 503, it reads {recipient, amount, fee, geotag,
+// parent_cells} (so the SDK's {from, to} body never matched it), and it
+// spends from the node's own wallet, never from `from`. Since 2026-10-16 the
+// chain accepts only ML-DSA-87 signed transfers, and since block 816,600
+// they must carry Proof-of-Entanglement parents. Use SendTransfer with a
+// TransferSigner, or PrepareTransfer, SignTransfer and SubmitSignedTransfer.
 func (c *Client) SendTransaction(from, to string, amount float64) (string, error) {
 	return c.SendTransactionContext(context.Background(), from, to, amount)
 }
 
-// SendTransactionContext is SendTransaction with an explicit context.
+// SendTransactionContext always returns ErrUnsignedSendRemoved.
+//
+// Deprecated: see SendTransaction. Use SendTransfer.
 func (c *Client) SendTransactionContext(ctx context.Context, from, to string, amount float64) (string, error) {
-	body := map[string]interface{}{"from": from, "to": to, "amount": amount}
-	var resp struct {
-		TransactionID string `json:"transaction_id"`
-	}
-	if err := c.do(ctx, http.MethodPost, "/api/v1/wallet/send", body, &resp); err != nil {
-		return "", err
-	}
-	return resp.TransactionID, nil
+	return "", ErrUnsignedSendRemoved
 }
 
 // StreamUsageReceipt is a payer-session-signed cumulative active-use receipt.
@@ -296,10 +332,16 @@ func (c *Client) GetStreamContext(ctx context.Context, streamID string) (*Stream
 	return &response, nil
 }
 
+// SubmitStreamAction posts a wallet-signed CELL Stream action to
+// POST /api/v1/streams/actions/submit-signed. The route is public (the
+// signature is the authorization), but a node that admits only signed
+// wallet transfers answers 503; the public pilot pauses stream actions
+// during its recovery.
 func (c *Client) SubmitStreamAction(envelope StreamActionEnvelope) (*StreamActionSubmitResponse, error) {
 	return c.SubmitStreamActionContext(context.Background(), envelope)
 }
 
+// SubmitStreamActionContext is SubmitStreamAction with an explicit context.
 func (c *Client) SubmitStreamActionContext(ctx context.Context, envelope StreamActionEnvelope) (*StreamActionSubmitResponse, error) {
 	var response StreamActionSubmitResponse
 	if err := c.do(ctx, http.MethodPost, "/api/v1/streams/actions/submit-signed", envelope, &response); err != nil {
@@ -308,21 +350,24 @@ func (c *Client) SubmitStreamActionContext(ctx context.Context, envelope StreamA
 	return &response, nil
 }
 
-// GetTransaction retrieves a transaction by ID.
+// GetTransaction retrieves a transaction by ID from
+// GET /api/v1/transactions/{tx_id}.
+//
+// Deprecated: the route is not public. It is registered in pkg/api but not
+// on the public allowlist, so a public node answers 401 without an operator
+// JWT. Use GetReceipt (GET /api/v1/receipts/{tx_id}, public) to follow a
+// transaction.
 func (c *Client) GetTransaction(txID string) (map[string]interface{}, error) {
 	return c.GetTransactionContext(context.Background(), txID)
 }
 
 // GetTransactionContext is GetTransaction with an explicit context.
 //
-// The endpoint is GET /api/v1/transactions/{tx_id} (note the plural
-// "transactions"; the path uses the brace-syntax form in openapi.yaml
-// and the actual mux registration at pkg/api/handlers.go:269-270).
-// Earlier SDK builds (≤0.3.0) hit /api/v1/transaction/{id} (singular)
-// which returns 404 in production — the typo dated back to the
-// pre-rebrand scaffolding window and was not caught because the SDK
-// tests start a fake httptest server that accepts any URL. Fixed in
-// 0.3.1.
+// The endpoint is GET /api/v1/transactions/{tx_id} (plural, as registered
+// in pkg/api/handlers.go). SDK builds up to 0.3.0 called the singular
+// /api/v1/transaction/{id}, which no node serves; fixed in 0.3.1.
+//
+// Deprecated: operator-only route; use GetReceipt.
 func (c *Client) GetTransactionContext(ctx context.Context, txID string) (map[string]interface{}, error) {
 	var resp map[string]interface{}
 	if err := c.do(ctx, http.MethodGet, "/api/v1/transactions/"+url.PathEscape(txID), nil, &resp); err != nil {
@@ -484,18 +529,13 @@ func (c *Client) GetNodeStatus(ctx context.Context) (*NodeStatus, error) {
 	return ns, nil
 }
 
-// GetPeers returns the current peer list from the node.
+// GetPeers requests a peer list from /api/v1/network/peers.
 //
-// DEPRECATED in 0.3.1: this method targets /api/v1/network/peers,
-// which is not registered on the public pkg/api server (verified
-// against pkg/api/handlers.go's mux). The closest analogues are
-// /api/admin/peers (admin-only, mTLS-required, see
-// pkg/api/handlers_admin.go:54) and /api/topology on the operator
-// dashboard (cookie-or-bearer auth, internal/dashboard/dashboard.go:261).
-// Neither is reachable from a JWT-bearer SDK client. Calling this
-// method against a production node returns ApiError 404. Pending
-// removal in 0.4.0 once a public peer-summary endpoint exists or
-// callers migrate to GetNetworkTopology.
+// Deprecated: no QSDM node registers /api/v1/network/peers, so the call
+// always fails: 401 without credentials (the path is not on the public
+// allowlist), 404 with an operator JWT. Peer lists exist only on
+// administrative routes (/api/admin/peers, mTLS) and the operator
+// dashboard. For the number of connected peers use GetNodeStatus (Peers).
 func (c *Client) GetPeers(ctx context.Context) ([]map[string]interface{}, error) {
 	var resp struct {
 		Peers []map[string]interface{} `json:"peers"`
@@ -506,16 +546,12 @@ func (c *Client) GetPeers(ctx context.Context) ([]map[string]interface{}, error)
 	return resp.Peers, nil
 }
 
-// GetMetricsJSON returns the node's JSON metrics snapshot.
+// GetMetricsJSON requests the JSON metrics snapshot at /api/metrics.
 //
-// DEPRECATED in 0.3.1: /api/metrics is registered only on the
-// operator dashboard server (internal/dashboard/dashboard.go:258,
-// requireAuth-gated), not on the public pkg/api server the SDK
-// targets. Production calls against a pkg/api node return
-// ApiError 404. For Prometheus scrape access from the dashboard,
-// callers should hit the dashboard's /api/metrics/prometheus
-// endpoint directly with the appropriate dashboard credentials.
-// Pending removal in 0.4.0.
+// Deprecated: /api/metrics exists only on the operator dashboard server
+// (internal/dashboard, login required), not on the node API, so against a
+// node it always fails (401 without credentials, 404 with an operator JWT).
+// There is no public metrics endpoint.
 func (c *Client) GetMetricsJSON(ctx context.Context) (map[string]interface{}, error) {
 	var resp map[string]interface{}
 	if err := c.do(ctx, http.MethodGet, "/api/metrics", nil, &resp); err != nil {
@@ -524,11 +560,12 @@ func (c *Client) GetMetricsJSON(ctx context.Context) (map[string]interface{}, er
 	return resp, nil
 }
 
-// GetMetricsPrometheus returns the raw Prometheus text exposition.
+// GetMetricsPrometheus requests the Prometheus text exposition at
+// /api/metrics/prometheus.
 //
-// DEPRECATED in 0.3.1: see GetMetricsJSON. Same dashboard-vs-
-// public-API mismatch; production calls against a pkg/api node
-// return ApiError 404. Pending removal in 0.4.0.
+// Deprecated: like GetMetricsJSON, the route exists only on the operator
+// dashboard server (a scrape token or dashboard login is required), not on
+// the node API. There is no public metrics endpoint.
 func (c *Client) GetMetricsPrometheus(ctx context.Context) (string, error) {
 	req, err := c.newRequest(ctx, http.MethodGet, "/api/metrics/prometheus", nil)
 	if err != nil {

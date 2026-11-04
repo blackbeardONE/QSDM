@@ -107,6 +107,11 @@ export interface QsdmTaskActionSignerStatus {
   configured: boolean;
   ready: boolean;
   localLoopEnabled: boolean;
+  // True only when the operator explicitly set QSDM_ENABLE_LOCAL_SIGNED_LOOP=1.
+  // QSDM Core has no status field that says paid task work is enabled
+  // (task_actions_ready stays true while paid work is paused), so the
+  // fund/start/stake/submit/claim "Proof" self-test is offered only then.
+  proofLoopEnabled?: boolean;
   sender?: string;
   cliPath?: string;
   keystorePath?: string;

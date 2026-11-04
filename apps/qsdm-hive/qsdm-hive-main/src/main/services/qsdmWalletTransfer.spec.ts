@@ -2,12 +2,12 @@ import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
 
-import { setQsdmRuntimeCoreApiUrl } from 'config/qsdm';
-import { assertQsdmCanonicalChainSafety } from './qsdmCanonicalChain';
-import { fetchQsdmPoEParents } from './qsdmPoEParents';
-
 import axios from 'axios';
 
+import { setQsdmRuntimeCoreApiUrl } from 'config/qsdm';
+
+import { assertQsdmCanonicalChainSafety } from './qsdmCanonicalChain';
+import { fetchQsdmPoEParents } from './qsdmPoEParents';
 import { submitQsdmWalletTransferIntent } from './qsdmWalletTransfer';
 
 jest.mock('axios', () => ({

@@ -46,10 +46,10 @@ the next block. Use Hive 1.4.22 or newer, or the web wallet. Developers can do t
 
 ## 5. Mine (NVIDIA GPU)
 
-Mining runs in QSDM Hive on NVIDIA GPUs (Turing or newer). Enrolled miners
-mine in 7-day canary windows; new enrollments are paused during recovery. See
-[Mining today](MINING_TODAY.md) for the current state and the full
-walkthrough.
+Mining runs in QSDM Hive on NVIDIA GPUs (Turing or newer). It is open to every
+enrolled miner, in 7-day windows that renew automatically; Hive enrolls your
+GPU for you. See [Mining today](MINING_TODAY.md) for the current state and the
+full walkthrough.
 
 ## Before you store value
 

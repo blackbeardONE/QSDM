@@ -7,8 +7,8 @@ network (October 2026), trimmed for length.
 > [!NOTE]
 > QSDM is a pilot network (pre-mainnet) with a single block producer during
 > recovery. While the recovery lasts, the API accepts reads, signed wallet
-> transfers, signed task actions and mining submissions; other writes are paused. See
-> [Network status](NETWORK_STATUS.md).
+> transfers, signed task actions, miner enrollments and mining submissions;
+> other writes are paused. See [Network status](NETWORK_STATUS.md).
 
 ## Base URL
 
@@ -35,13 +35,14 @@ sometimes with a `Retry-After` header; wait and retry with backoff.
 
 | Group | Limit |
 |---|---|
-| `/status`, `/versions`, `/chain/blocks`, `/tasks*` | 600 requests per minute |
-| Most other read endpoints | 100 requests per minute |
+| `/status`, `/versions`, `/chain/blocks`, `/chain/parents`, `/tasks*` | 600 requests per minute |
+| Most other read endpoints | 30 requests per minute (the node's limit for callers without a login; the 100-per-minute default applies too) |
 | `POST /wallet/submit-signed` | 10 requests per minute |
 | Mining endpoints on `api.qsdm.tech` | Limited per IP at the edge (bursts allowed); `POST /mining/submit` about 60 per minute |
 
-Health endpoints are not rate-limited. Do not poll faster than you need: a new
-block arrives about every 10 seconds.
+Health endpoints and reads of `/trust/*` and `/audit/*` are not rate-limited by
+the node. Do not poll faster than you need: a new block arrives about every
+10 seconds.
 
 ### Errors
 
@@ -92,6 +93,7 @@ Some endpoints answer differently, so check the HTTP status first:
 | GET | `/mining/challenge` | Fresh signed challenge for attestation |
 | POST | `/mining/submit` | Submit a mining proof (`api.qsdm.tech` only) |
 | GET | `/mining/enrollments`, `/mining/enrollment/{node_id}` | Miner enrollment registry |
+| POST | `/mining/enroll`, `/mining/unenroll` | Submit a signed miner enrollment or unenrollment (QSDM Hive does this for you) |
 | GET | `/tasks`, `/tasks/state`, `/tasks/{task_id}`, `/tasks/actions` | Task registry (read) |
 | POST | `/tasks/actions/submit-signed` | Submit an ML-DSA signed task action (open since 2026-10-15) |
 | GET | `/streams`, `/streams/{stream_id}`, `/streams/nonce` | CELL Streams (read) |
@@ -379,8 +381,10 @@ Request body:
 | `signature` | string | Hex ML-DSA-87 signature |
 
 What is signed: the JSON encoding of the envelope with `signature` set to `""`
-and `public_key` removed, fields in the order of the table above (Go
-`encoding/json` output). Third-party signers must reproduce it byte for byte;
+and `public_key` removed, as Go `encoding/json` writes it, with the fields in
+this order: `id`, `sender`, `recipient`, `amount`, `fee`, `geotag`,
+`parent_cells`, `nonce` (left out when 0), `signature`, `timestamp`.
+Third-party signers must reproduce it byte for byte;
 see [Signed transfers](V040_WALLET_SEND_DESIGN.md) and
 [Replay protection](V041_REPLAY_PROTECTION_DESIGN.md).
 
@@ -419,7 +423,7 @@ format is defined in [Mining protocol v2](MINING_PROTOCOL_V2.md). Base URL:
 | GET | `/mining/challenge` | Live |
 | POST | `/mining/submit` | Live on `api.qsdm.tech` for enrolled miners |
 | GET | `/mining/enrollments`, `/mining/enrollment/{node_id}` | Live |
-| POST | `/mining/enroll`, `/mining/unenroll` | **Paused** during recovery |
+| POST | `/mining/enroll`, `/mining/unenroll` | Live: enrollment reopened on 2026-10-17 (QSDM Hive builds and submits both) |
 
 ### `GET /mining/work`
 
@@ -539,5 +543,13 @@ the pilot. They are listed so nobody builds on them by mistake:
 
 ## Machine-readable spec
 
-[`openapi.yaml`](openapi.yaml) is being brought in line with this page. Where
-they differ, this page and the live responses are correct.
+[`openapi.yaml`](openapi.yaml) describes every route the node in this
+repository registers under `/api/v1`, with parameters and request and
+response schemas taken from the handler code. Each operation carries
+`x-qsdm-access` (`public`, `authenticated` for routes that need a login,
+`operator` or `closed`), and `x-qsdm-follower: refused` marks the writes a
+read-only follower node answers with 503. The operator-only admin API under
+`/api/admin/` is left out. The test `TestOpenAPIMatchesRegisteredRoutes` in
+`QSDM/source/pkg/api` fails when the file and the registered routes drift
+apart. The file describes the code; for what the live pilot network accepts
+during recovery, this page is right.

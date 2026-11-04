@@ -25,6 +25,23 @@ describe('qsdmTaskActionSigner', () => {
     process.env = originalEnv;
   });
 
+  it('offers the paid-task Proof loop only with QSDM_ENABLE_LOCAL_SIGNED_LOOP=1', async () => {
+    process.env.QSDM_TASK_ACTION_SIGNER = 'cli';
+    process.env.QSDM_TASK_ACTION_CLI_PATH = 'qsdmcli';
+
+    const withoutFlag = await import('./qsdmTaskActionSigner');
+    expect(withoutFlag.getQsdmTaskActionSignerStatus().proofLoopEnabled).toBe(
+      false
+    );
+
+    jest.resetModules();
+    process.env.QSDM_ENABLE_LOCAL_SIGNED_LOOP = '1';
+    const withFlag = await import('./qsdmTaskActionSigner');
+    expect(withFlag.getQsdmTaskActionSignerStatus().proofLoopEnabled).toBe(
+      true
+    );
+  });
+
   it('uses the active CLI keystore address instead of a stale configured sender', async () => {
     const keystorePath = path.join(tmpDir, 'wallet.json');
     fs.writeFileSync(

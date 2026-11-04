@@ -240,7 +240,7 @@ export async function handleGitHubFlow(browser: Browser) {
         // Store GitHub username
         try {
           const usernameResponse = await axios.post(
-            'http://localhost:30017/api/task-variables',
+            'http://127.0.0.1:30017/api/task-variables',
             {
               label: 'GITHUB_USERNAME',
               value: username,
@@ -379,7 +379,7 @@ export async function handleGitHubFlow(browser: Browser) {
           // Store GitHub token
           try {
             const tokenResponse = await axios.post(
-              'http://localhost:30017/api/task-variables',
+              'http://127.0.0.1:30017/api/task-variables',
               {
                 label: 'GITHUB_TOKEN',
                 value: token,

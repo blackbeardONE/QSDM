@@ -24,17 +24,20 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   [`/api/v1/status`](https://api.qsdm.tech/api/v1/status) and
   [qsdm.tech/network.html](https://qsdm.tech/network.html).
 - CELL wallet transactions (Hive, web wallet, `qsdmcli`) are signed with
-  ML-DSA-87. The generic peer-to-peer transaction verifier still also accepts
-  Ed25519 signatures.
-- Signed consensus messages are supported in the node but not yet active
-  (`signed_consensus_active: false`).
+  ML-DSA-87; since 16 October 2026 only ML-DSA-87 signed transactions are
+  accepted. The Ed25519 code path of the generic peer-to-peer transaction
+  verifier still exists but cannot be reached on the live chain.
+- Signed consensus is enforced from block 827,000 (12 October 2026): every
+  BFT vote and consensus message must carry a valid ML-DSA signature
+  (`signed_consensus_active: true`).
 - Proof-of-Entanglement: every node checks each transfer's ML-DSA-87
   signature under the sender's own key. The parent rules (each transfer names
   committed earlier transactions) are enforced on the public pilot from block
   816,600 (11 October 2026; `consensus_auth.poe_active` in
   `/api/v1/status`). See
   [`PROOF_OF_ENTANGLEMENT.md`](QSDM/docs/docs/PROOF_OF_ENTANGLEMENT.md).
-- GPU mining (NVIDIA today) is open to enrolled QSDM Hive miners.
+- GPU mining (NVIDIA today) is open to every enrolled QSDM Hive miner (since
+  19 October 2026), in 7-day windows that renew automatically.
 - Block production by miners (in place of the earlier plan for independent
   validators), a published migration manifest for mainnet and a published
   security review are on the roadmap. The
@@ -49,22 +52,28 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   [`GENESIS_POLICY_v1.1.md`](QSDM/docs/docs/GENESIS_POLICY_v1.1.md)
   (approved in writing by the owner; v1.1 of 2026-11-01 drops the counsel review).
 
-### What is running (October 2026)
+### What is running (November 2026)
 
-- **Core:** release `hardened-legacy-20261002-d7ffcd4-hl2`, built from this
-  repository's `QSDM/source` (d7ffcd4 plus the recovery patches and the
-  HL1/HL2 hardened-legacy mining work listed in the
-  [changelog](CHANGELOG.md)). The chain was stopped on 2026-09-22 and
-  restarted on 2026-09-27; public mining reopened on 2026-10-02.
-- **Mining:** NVIDIA GPU miners enrolled through QSDM Hive, in time-boxed
-  public windows with per-owner limits. The node accepts owner-signed
-  (ML-DSA-87 `operator_sig`) proofs, and each window's configuration decides
-  whether the signature is required.
-- **Hive:** 1.4.21 for Windows and Linux, from
+- **Core:** release `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101`
+  since 2026-11-01, based on this repository's `QSDM/source` (d7ffcd4 plus
+  the recovery patches and the HL1/HL2 hardened-legacy mining work listed in
+  the [changelog](CHANGELOG.md)). Its peer-to-peer limits and block-request
+  budget are not yet mirrored here; see
+  [Network status](QSDM/docs/docs/NETWORK_STATUS.md#what-is-running). Since
+  2026-11-02 the producer accepts peer-to-peer connections on port 4001. The
+  chain was stopped on 2026-09-22 and restarted on 2026-09-27; public mining
+  reopened on 2026-10-02.
+- **Mining:** NVIDIA GPU miners enrolled through QSDM Hive, in 7-day public
+  windows that renew automatically, with per-owner limits. The node accepts
+  owner-signed (ML-DSA-87 `operator_sig`) proofs; each window's configuration
+  decides whether the signature is required, and since 2026-10-19 it is
+  required for every proof.
+- **Hive:** 1.4.22 for Windows and Linux, from
   [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/). Hive
-  1.4.21 signs mining proofs with the unlocked Hive wallet automatically.
-  Moving from 1.4.20 (Windows) or 1.4.17 (Linux) is a one-time manual install
-  from the [download page](https://qsdm.tech/download.html).
+  1.4.21 and newer sign mining proofs with the unlocked Hive wallet
+  automatically, and 1.4.22 adds Proof-of-Entanglement parents to every
+  transfer. Moving from 1.4.20 (Windows) or 1.4.17 (Linux) is a one-time
+  manual install from the [download page](https://qsdm.tech/download.html).
 
 > **Rebrand notice.** Folder names such as `apps/qsdm-landing/` and
 > configuration identifiers (`qsdm.*` configs, `QSDM_*` env vars,

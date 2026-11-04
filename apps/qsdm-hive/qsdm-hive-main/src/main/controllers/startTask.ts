@@ -28,6 +28,7 @@ import { assertQsdmCanonicalChainSafety } from 'main/services/qsdmCanonicalChain
 import { submitQsdmTaskActionIntent } from 'main/services/qsdmTaskActions';
 import qsdmHiveTasks from 'main/services/qsdmHiveTasks';
 import {
+  describeQsdmMinerUnbondWindow,
   enrollQsdmMiner,
   getQsdmMinerEnrollmentStatus,
   prepareQsdmMinerV2Config,
@@ -236,7 +237,7 @@ const startTask = async (
             (canBondFromRewards
               ? 'Use mining earnings starts at 0 CELL. Your protocol rewards fill the locked bond first; only rewards above the target become spendable.\n\n'
               : '') +
-            'The bond is slashable for invalid proofs. Unenrollment starts a 7-day unbonding period; it is not an extra Hive task stake.',
+            `The bond is slashable for invalid proofs. Unenrollment starts an unbonding period of ${describeQsdmMinerUnbondWindow()}; it is not an extra Hive task stake.`,
           buttons,
           defaultId: 0,
           cancelId,

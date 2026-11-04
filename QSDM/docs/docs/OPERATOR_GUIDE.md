@@ -68,10 +68,12 @@ initial sync.
    It limits connections and streams and answers block requests within a
    budget (one per peer every 2 s, 2 per second in total), so catch up over
    HTTPS (`QSDM_CHAIN_SYNC_URLS`, see [Run a full node](RUN_A_FULL_NODE.md))
-   rather than by P2P block requests alone. It is the only public peer;
-   independent validators and followers are planned; see
-   [`ROADMAP.md`](./ROADMAP.md) ("Independent validators") and
-   [`NODE_ROLES.md` §3.2](./NODE_ROLES.md).
+   rather than by P2P block requests alone. It is the only public peer.
+   Anyone can run a full node that verifies every block and follows the
+   chain over HTTPS ([Run a full node](RUN_A_FULL_NODE.md), since
+   19 October 2026). Block production by miners is the next step on the
+   [`ROADMAP.md`](./ROADMAP.md); [`NODE_ROLES.md` §3.2](./NODE_ROLES.md)
+   describes the multi-validator design.
 2. **Public REST endpoint.** Miners, wallets, and Hive call
    `/api/v1/*` on this hostname. Anyone can stand up their own
    validator, publish a competing REST hostname, and point traffic at
@@ -178,8 +180,9 @@ end-to-end. The critical bits:
    `/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`.
    It answers block requests within a budget (one per peer every 2 s), so
    keep `QSDM_CHAIN_SYNC_URLS` for catching up. It is the only public
-   peer; independent validators and followers are planned (see
-   [`ROADMAP.md`](./ROADMAP.md) and [`NODE_ROLES.md` §3.2](./NODE_ROLES.md)).
+   peer; full nodes follow the chain over HTTPS
+   ([Run a full node](RUN_A_FULL_NODE.md)), and block production by miners
+   is the next step (see [`ROADMAP.md`](./ROADMAP.md)).
    You can add nodes you operate yourself (see §2.3).
 3. Start `qsdm-validator` under systemd, expose `:4001/tcp` to the
    internet, put Caddy in front of `:8080` for TLS.
