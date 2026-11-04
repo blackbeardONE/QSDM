@@ -162,6 +162,7 @@
         { slug: "stage-b-blr1",         title: "Stage B deploy (BLR1)",          repoPath: DOCS_PREFIX_REPO + "/STAGE_B_DEPLOY_BLR1.md" },
         { slug: "dashboard-access",     title: "Dashboard access",               repoPath: DOCS_PREFIX_REPO + "/DASHBOARD_ACCESS.md" },
         { slug: "signed-consensus",     title: "Signed consensus rollout",       repoPath: DOCS_PREFIX_REPO + "/SIGNED_CONSENSUS_ROLLOUT.md" },
+        { slug: "bridge-relay-auth",    title: "Bridge relay authentication",    repoPath: DOCS_PREFIX_REPO + "/BRIDGE_RELAY_AUTH.md" },
       ],
     },
     {
