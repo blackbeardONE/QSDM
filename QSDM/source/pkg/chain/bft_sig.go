@@ -24,7 +24,7 @@ import (
 //
 // Identity model: self-certifying, matching the transaction path. A
 // validator's identity IS the hex SHA-256 of its ML-DSA-87 public key
-// (see Ed25519WalletAddress / verifyMLDSA in txsig.go). That means vote
+// (the same derivation verifyMLDSA applies in txsig.go). That means vote
 // verification needs no separate key registry and no key-distribution
 // ceremony: the message carries the public key, the signature proves
 // possession of the matching secret key, and the derived address must equal

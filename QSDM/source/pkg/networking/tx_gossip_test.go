@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/blackbeardONE/QSDM/pkg/chain"
@@ -25,20 +26,19 @@ func gossipDedupeReset(t *testing.T) {
 
 func TestTxGossipIngress_AcceptsValidPayload(t *testing.T) {
 	gossipDedupeReset(t)
+	signMLDSA, alice := mldsaTxSigner(t)
 	as := chain.NewAccountStore()
-	as.Credit("alice", 100)
+	as.Credit(alice, 100)
 	txv := chain.NewTxValidator(as)
 	sv := chain.NewSigVerifier()
-	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	sv.RegisterKey("alice", pub)
 	gv := chain.NewGossipValidator(sv, txv, chain.DefaultGossipValidationConfig())
 
 	pool := mempool.New(mempool.DefaultConfig())
 	rep := NewReputationTracker(DefaultReputationConfig())
 	ing := NewTxGossipIngress(gv, pool, rep)
 
-	stx := chain.NewTxSigner(priv).Sign(&mempool.Tx{
-		ID: "t1", Sender: "alice", Recipient: "bob", Amount: 1, Fee: 1, Nonce: 0,
+	stx := signMLDSA(&mempool.Tx{
+		ID: "t1", Sender: alice, Recipient: "bob", Amount: 1, Fee: 1, Nonce: 0,
 	})
 	raw, _ := json.Marshal(stx)
 	verdict, err := ing.HandlePeerMessage("peer-1", raw)
@@ -52,16 +52,15 @@ func TestTxGossipIngress_AcceptsValidPayload(t *testing.T) {
 
 func TestTxGossipIngress_AcceptedSharesIngressDedupeWithLegacyWalletPath(t *testing.T) {
 	gossipDedupeReset(t)
+	signMLDSA, alice := mldsaTxSigner(t)
 	as := chain.NewAccountStore()
-	as.Credit("alice", 100)
+	as.Credit(alice, 100)
 	txv := chain.NewTxValidator(as)
 	sv := chain.NewSigVerifier()
-	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	sv.RegisterKey("alice", pub)
 	gv := chain.NewGossipValidator(sv, txv, chain.DefaultGossipValidationConfig())
 	ing := NewTxGossipIngress(gv, mempool.New(mempool.DefaultConfig()), NewReputationTracker(DefaultReputationConfig()))
-	stx := chain.NewTxSigner(priv).Sign(&mempool.Tx{
-		ID: "gossip-dedupe-1", Sender: "alice", Recipient: "bob", Amount: 1, Fee: 1, Nonce: 0,
+	stx := signMLDSA(&mempool.Tx{
+		ID: "gossip-dedupe-1", Sender: alice, Recipient: "bob", Amount: 1, Fee: 1, Nonce: 0,
 	})
 	raw, _ := json.Marshal(stx)
 	verdict, err := ing.HandlePeerMessage("peer-1", raw)
@@ -70,6 +69,61 @@ func TestTxGossipIngress_AcceptedSharesIngressDedupeWithLegacyWalletPath(t *test
 	}
 	if walletp2p.Reserve("gossip-dedupe-1") {
 		t.Fatal("legacy wallet ingress Reserve should fail after gossip path ingested same tx id")
+	}
+}
+
+// mldsaTxSigner returns an ML-DSA-87 SignedTx signer and the wallet address
+// (SHA256 of the public key) it may spend from.
+func mldsaTxSigner(t *testing.T) (func(*mempool.Tx) *chain.SignedTx, string) {
+	t.Helper()
+	pk, sk, err := mldsa87.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, _ := pk.MarshalBinary()
+	sum := sha256.Sum256(pub)
+	return func(tx *mempool.Tx) *chain.SignedTx {
+		sig := make([]byte, mldsa87.SignatureSize)
+		if err := mldsa87.SignTo(sk, chain.TxSigningHash(tx), nil, true, sig); err != nil {
+			t.Fatal(err)
+		}
+		return &chain.SignedTx{Tx: tx, Signature: sig, PublicKey: pub, Algorithm: chain.SigMLDSA}
+	}, hex.EncodeToString(sum[:])
+}
+
+// The follower ingress drops a correctly signed Ed25519 gossip tx (Ed25519 is
+// retired) and scores the relaying peer for an invalid tx.
+func TestTxGossipIngress_RejectsEd25519SignedTx(t *testing.T) {
+	gossipDedupeReset(t)
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	sum := sha256.Sum256(pub)
+	sender := hex.EncodeToString(sum[:])
+	as := chain.NewAccountStore()
+	as.Credit(sender, 100)
+	gv := chain.NewGossipValidator(chain.NewSigVerifier(), chain.NewTxValidator(as), chain.DefaultGossipValidationConfig())
+	pool := mempool.New(mempool.DefaultConfig())
+	rep := NewReputationTracker(DefaultReputationConfig())
+	ing := NewTxGossipIngress(gv, pool, rep)
+
+	tx := &mempool.Tx{ID: "ed-gossip-1", Sender: sender, Recipient: "bob", Amount: 1, Fee: 1, Nonce: 0}
+	stx := &chain.SignedTx{Tx: tx, Signature: ed25519.Sign(priv, chain.TxSigningHash(tx)), PublicKey: pub, Algorithm: chain.SigEd25519}
+	raw, _ := json.Marshal(stx)
+	before := rep.GetScore("peer-ed")
+	verdict, err := ing.HandlePeerMessage("peer-ed", raw)
+	if verdict != chain.GossipRejected || !errors.Is(err, chain.ErrEd25519Retired) {
+		t.Fatalf("expected ed25519 gossip tx rejected, verdict=%s err=%v", verdict, err)
+	}
+	if pool.Size() != 0 {
+		t.Fatal("ed25519 gossip tx entered the mempool")
+	}
+	if after := rep.GetScore("peer-ed"); after >= before {
+		t.Fatalf("relaying peer not scored for an invalid tx: %v -> %v", before, after)
+	}
+	if ing.TryConsumeGossip("peer-ed", raw) {
+		t.Fatal("live ingress must not admit an ed25519 gossip tx")
+	}
+	if pool.Size() != 0 {
+		t.Fatal("ed25519 gossip tx entered the mempool via TryConsumeGossip")
 	}
 }
 
