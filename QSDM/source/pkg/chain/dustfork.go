@@ -86,10 +86,15 @@ func CellToDust(cell float64) (uint64, error) {
 		return 0, fmt.Errorf("%w: %v overflows uint64 dust", ErrDustConversionRange, cell)
 	}
 	rounded := math.Round(scaled)
-	// Accept only values that land on (or within half a ULP of) an exact
-	// dust boundary. Beyond ~9e7 CELL, float64's ULP exceeds one dust and
-	// exactness is no longer decidable from the float alone.
-	if math.Abs(scaled-rounded) > 0.5 {
+	// Accept only values that land on an exact dust boundary up to float
+	// noise from the scaling multiply (a few ULPs of scaled, at least 1e-6
+	// dust). The previous test, |scaled-rounded| > 0.5, could never fire
+	// because math.Round is always within 0.5, so every in-range value was
+	// silently rounded to the nearest dust. Beyond 2^53 dust (~90.07 M CELL)
+	// float64's ULP exceeds one dust and exactness is no longer decidable
+	// from the float alone; those values are accepted as rounded.
+	ulp := math.Nextafter(scaled, math.Inf(1)) - scaled
+	if math.Abs(scaled-rounded) > math.Max(1e-6, 4*ulp) {
 		return 0, fmt.Errorf("%w: %v is not a whole number of dust", ErrDustConversionRange, cell)
 	}
 	return uint64(rounded), nil

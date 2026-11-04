@@ -290,3 +290,26 @@ func TestSupplyLedger_fullScheduleFitsPolicyCap(t *testing.T) {
 	}
 	t.Logf("genesis seed + emission would reach the 90 M cap only at height %d (~%.0f years)", lo, years)
 }
+
+func TestCellToDust_refusesSubDustFraction(t *testing.T) {
+	for _, bad := range []float64{0.000000005, 1.000000004, 3.564909875, 0.123456789} {
+		if _, err := CellToDust(bad); !errors.Is(err, ErrDustConversionRange) {
+			t.Fatalf("CellToDust(%v) should be refused as not a whole number of dust, got %v", bad, err)
+		}
+	}
+	for _, ok := range []float64{0.1, 0.3, 3.56490987, 1e-8, 89_999_999.99999999} {
+		if _, err := CellToDust(ok); err != nil {
+			t.Fatalf("CellToDust(%v) should be accepted: %v", ok, err)
+		}
+	}
+}
+
+func TestAccountStoreCredit_floorsSubDustUnderDust(t *testing.T) {
+	SetForkDustHeight(1)
+	t.Cleanup(func() { SetForkDustHeight(math.MaxUint64) })
+	as := atHeight(10)
+	as.Credit("a", 1.000000009)
+	if got := as.accounts["a"].BalanceDust; got != 100_000_000 {
+		t.Fatalf("credit of 1.000000009 CELL = %d dust, want floor 100000000", got)
+	}
+}
