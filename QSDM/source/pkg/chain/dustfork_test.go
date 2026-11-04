@@ -63,7 +63,7 @@ func TestCellToDust_rejectsUnrepresentable(t *testing.T) {
 }
 
 func TestDustToCell_roundTripsExactlyAcrossFullSupply(t *testing.T) {
-	// Every value up to the 100 M cap must survive dust -> CELL -> dust.
+	// Every value up to the 90 M cap must survive dust -> CELL -> dust.
 	for _, dust := range []uint64{
 		0, 1, 100_000_000, 356_490_000,
 		CellSupplyCapDust / 2, CellSupplyCapDust,
@@ -102,7 +102,7 @@ func TestDustAccounting_preservesAmountsFloat64Destroyed(t *testing.T) {
 func TestSupplyLedger_enforcesCap(t *testing.T) {
 	s := NewSupplyLedger()
 	if s.Cap() != CellSupplyCapDust {
-		t.Fatalf("cap should be 100M CELL in dust, got %d", s.Cap())
+		t.Fatalf("cap should be 90M CELL in dust, got %d", s.Cap())
 	}
 
 	if err := s.Mint(s.Cap()); err != nil {
@@ -192,4 +192,101 @@ func TestNewSupplyLedgerWithCap_rejectsZero(t *testing.T) {
 	if _, err := NewSupplyLedgerWithCap(0); err == nil {
 		t.Fatal("a zero supply cap is a configuration error")
 	}
+}
+
+// QSDM Genesis Policy v1.1, clause 1 (decision D1-a, 2026-10-16): the maximum
+// supply is 90,000,000 CELL, all of it from mining, with no genesis treasury.
+func TestCellSupplyCap_matchesGenesisPolicy(t *testing.T) {
+	if CellSupplyCapDust != 9_000_000_000_000_000 {
+		t.Fatalf("supply cap = %d dust, want 9e15 (90 M CELL)", CellSupplyCapDust)
+	}
+	if CellSupplyCapDust != CellMiningCapDust {
+		t.Fatalf("supply cap %d != mining cap %d: the policy has no genesis treasury",
+			CellSupplyCapDust, CellMiningCapDust)
+	}
+	if s := DefaultEmissionSchedule(); s.MiningCapDust != CellSupplyCapDust {
+		t.Fatalf("default schedule cap %d != supply cap %d", s.MiningCapDust, CellSupplyCapDust)
+	}
+	// The whole supply now fits below 2^53 dust, so DustToCell is exact for
+	// every reachable amount.
+	if CellSupplyCapDust >= 1<<53 {
+		t.Fatalf("supply cap %d is not below 2^53", CellSupplyCapDust)
+	}
+}
+
+// Liveness evidence for the 100 M -> 90 M change, on a ledger shaped like the
+// public chain: the pinned canonical genesis moves 100 CELL out of the funder
+// at height 0, and the pilot had emitted about 3.05 M CELL by mid-October 2026
+// (height ~856,000 at 3.56490988 CELL per block). The test counts BOTH as
+// issuance -- stricter than any production path, because SupplyLedger has no
+// production caller -- and shows that the full schedule for decades stays
+// under the new cap.
+//
+// What it does NOT count, and why: the synthetic qsdm-system-funder bookkeeping
+// balance (~1e15 CELL) is not issuance; it is 1e23 dust and cannot even be
+// represented (TestSupplyLedger_refusesHistoricalGenesisOverAllocation), and it
+// was equally far over the old 100 M cap. Development credits made with
+// AccountStore.Credit never touch SupplyLedger either.
+func TestSupplyLedger_liveShapedChainStaysUnderPolicyCap(t *testing.T) {
+	const genesisSeedDust = 100 * DustPerCellInt // qsdmCanonicalGenesisAmount
+	const liveTip = uint64(856_000)
+
+	s := DefaultEmissionSchedule()
+	ledger := NewSupplyLedger()
+	if err := ledger.Mint(genesisSeedDust); err != nil {
+		t.Fatalf("genesis seed: %v", err)
+	}
+	emitted := s.CumulativeEmittedDust(liveTip)
+	if emitted < 3_000_000*DustPerCellInt || emitted > 3_100_000*DustPerCellInt {
+		t.Fatalf("live-shaped tip emitted %d dust, expected about 3.05 M CELL", emitted)
+	}
+	if err := ledger.Mint(emitted); err != nil {
+		t.Fatalf("live-shaped emission refused under the 90 M cap: %v", err)
+	}
+	// Every block reward for the next five emission epochs (20 years, 87%
+	// of the mining schedule) still fits.
+	horizon := 5 * s.BlocksPerEpoch
+	more := s.CumulativeEmittedDust(horizon) - emitted
+	if err := ledger.Mint(more); err != nil {
+		t.Fatalf("schedule to height %d refused: %v", horizon, err)
+	}
+	if ledger.Issued() > CellSupplyCapDust {
+		t.Fatalf("issued %d > cap %d", ledger.Issued(), CellSupplyCapDust)
+	}
+}
+
+// Mining alone can never exceed the cap: the integer schedule converges to
+// at most CellMiningCapDust, which is now the whole supply. The 100 CELL
+// genesis seed is the only non-mining issuance on the public chain; under the
+// policy (clause 5(a)/(b)) the migration removes or classifies it. If it were
+// kept AND SupplyLedger were wired, the cap would bind only once cumulative
+// emission passes cap - 100 CELL, which this test pins as more than 75 years
+// out (height ~250.65 M, ~79 years), long after the migration that must
+// precede any wiring.
+func TestSupplyLedger_fullScheduleFitsPolicyCap(t *testing.T) {
+	s := DefaultEmissionSchedule()
+	ledger := NewSupplyLedger()
+	if err := ledger.Mint(s.UltimateCumulativeEmissionDust()); err != nil {
+		t.Fatalf("full mining schedule refused under the 90 M cap: %v", err)
+	}
+
+	const genesisSeedDust = 100 * DustPerCellInt
+	limit := CellSupplyCapDust - genesisSeedDust
+	lo, hi := uint64(0), uint64(MaxHalvings)*s.BlocksPerEpoch
+	for lo < hi { // first height whose cumulative emission exceeds limit
+		mid := lo + (hi-lo)/2
+		if s.CumulativeEmittedDust(mid) > limit {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+	if s.CumulativeEmittedDust(lo) <= limit {
+		return // the seed plus the whole schedule fits: nothing can bind
+	}
+	years := float64(lo) * float64(s.TargetBlockTimeSeconds) / 31_557_600
+	if years < 75 {
+		t.Fatalf("genesis seed + emission would reach the cap at height %d (~%.0f years)", lo, years)
+	}
+	t.Logf("genesis seed + emission would reach the 90 M cap only at height %d (~%.0f years)", lo, years)
 }

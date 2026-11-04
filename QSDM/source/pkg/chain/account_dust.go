@@ -90,7 +90,7 @@ func (as *AccountStore) MigrateToDust() (droppedDust uint64, err error) {
 			// silent clamp here would mint or destroy an unbounded amount.
 			return 0, fmt.Errorf(
 				"chain: account %s holds %v CELL, which exceeds the representable dust range; "+
-					"genesis must be re-derived to the 90M/10M split before activating the dust fork",
+					"genesis must be re-derived to the 90M cap with no genesis treasury before activating the dust fork",
 				addr, acc.Balance)
 		}
 		dust := uint64(math.Floor(scaled))

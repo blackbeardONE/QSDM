@@ -225,7 +225,8 @@ type Config struct {
 	// Zero (the default) means never active, leaving the legacy float64
 	// behaviour bit-for-bit intact. This is a CONSENSUS parameter: every
 	// validator must configure the same height, and genesis must first be
-	// re-derived to the documented 90M/10M split — the historical 1e15 CELL
+	// re-derived to the documented 90M cap with no genesis treasury
+	// (QSDM Genesis Policy v1.1) — the historical 1e15 CELL
 	// funder allocation is 1e23 dust, which overflows uint64 and will make
 	// the migration refuse to run.
 	//

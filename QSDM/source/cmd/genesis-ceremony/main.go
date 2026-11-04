@@ -70,14 +70,16 @@ type Params struct {
 	HalvingEveryYears     uint8  `json:"halving_every_years"`
 }
 
-// DefaultParams encodes the values ratified per Phase 0 recommendation
-// in Major Update.md §11.1 and pinned in CELL_TOKENOMICS.md /
-// REBRAND_NOTES.md §4. Any change requires the "mining-audit-rerun-
-// required" label per AUDIT_PACKET_MINING.md §5.
+// DefaultParams encodes QSDM Genesis Policy v1.1, clause 1 (decision D1-a,
+// 2026-10-16): a 90,000,000 CELL hard cap, all of it from mining, and no
+// genesis treasury allocation (the earlier 10 M treasury proposal is
+// withdrawn). TreasuryAllocationCell stays in the bundle schema and must
+// be zero. Any change requires a new policy version and the "mining-audit-
+// rerun-required" label per AUDIT_PACKET_MINING.md §5.
 func DefaultParams() Params {
 	return Params{
-		TotalSupplyCell:        100_000_000,
-		TreasuryAllocationCell: 10_000_000,
+		TotalSupplyCell:        90_000_000,
+		TreasuryAllocationCell: 0,
 		MiningEmissionCell:     90_000_000,
 		CoinDecimals:           8,
 		SmallestUnitName:       "dust",
@@ -137,7 +139,7 @@ func main() {
 		mode         = flag.String("mode", "run", "One of: run, verify, schema.")
 		participants = flag.Int("participants", 5, "Number of simulated ceremony participants (run mode only).")
 		network      = flag.String("network", "qsdm-dryrun-local", "Network identifier embedded in the bundle.")
-		treasury     = flag.String("treasury-addr", "qsdm-treasury-DRYRUN-0000000000000000000000", "Treasury address the bundle commits to.")
+		treasury     = flag.String("treasury-addr", "qsdm-treasury-DRYRUN-0000000000000000000000", "Address the bundle commits to (bundle schema field; Genesis Policy v1.1 allocates nothing to it).")
 		outPath      = flag.String("out", "", "File to write the bundle JSON to (default: stdout).")
 		inPath       = flag.String("in", "", "Bundle JSON to read (verify / schema mode).")
 		showVersion  = flag.Bool("version", false, "Print build metadata (release tag, git SHA, build date, runtime) and exit.")
@@ -222,6 +224,10 @@ func RunCeremony(n int, network, treasuryAddr string, params Params) (*Bundle, e
 	if params.TotalSupplyCell != params.TreasuryAllocationCell+params.MiningEmissionCell {
 		return nil, fmt.Errorf("params invariant: total %d != treasury %d + mining %d",
 			params.TotalSupplyCell, params.TreasuryAllocationCell, params.MiningEmissionCell)
+	}
+	if params.TreasuryAllocationCell != 0 {
+		return nil, fmt.Errorf("policy invariant: treasury allocation %d != 0 (Genesis Policy v1.1 has no genesis treasury)",
+			params.TreasuryAllocationCell)
 	}
 
 	startedAt := time.Now().UTC()
@@ -356,6 +362,9 @@ func VerifyBundle(b *Bundle) error {
 	}
 	if b.Params.TotalSupplyCell != b.Params.TreasuryAllocationCell+b.Params.MiningEmissionCell {
 		return errors.New("tokenomics invariant: total != treasury + mining")
+	}
+	if b.Params.TreasuryAllocationCell != 0 {
+		return errors.New("policy invariant: treasury allocation must be 0 (Genesis Policy v1.1 has no genesis treasury)")
 	}
 
 	// Participants sorted.

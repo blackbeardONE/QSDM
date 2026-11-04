@@ -28,7 +28,10 @@ Anyone with the bundle can:
 - Recompute the genesis seed and genesis hash.
 - Verify every signature against each participant's published pubkey.
 - Confirm the tokenomics invariant
-  `TotalSupplyCell == TreasuryAllocationCell + MiningEmissionCell`.
+  `TotalSupplyCell == TreasuryAllocationCell + MiningEmissionCell`
+  and the policy invariant `TreasuryAllocationCell == 0` (Genesis
+  Policy v1.1: a 90,000,000 CELL cap, all from mining, no genesis
+  treasury).
 
 Run `genesis-ceremony -mode verify -in bundle.json` to execute all of
 the above in one step.
@@ -73,6 +76,7 @@ Verification fails (exit code 2) on any of:
 - tampered commit / reveal / signature
 - participant list not in ID order
 - `TotalSupplyCell != TreasuryAllocationCell + MiningEmissionCell`
+- `TreasuryAllocationCell != 0`
 - schema version drift
 - `dry_run != true` (the tool refuses to verify production bundles — use
   the production verifier for those)
@@ -98,8 +102,8 @@ pin the expected shape in its own tests.
   "finished_at": "<RFC3339 nanos>",
   "network": "qsdm-dryrun-local",
   "params": {
-    "total_supply_cell": 100000000,
-    "treasury_allocation_cell": 10000000,
+    "total_supply_cell": 90000000,
+    "treasury_allocation_cell": 0,
     "mining_emission_cell": 90000000,
     "coin_decimals": 8,
     "smallest_unit_name": "dust",
@@ -132,8 +136,9 @@ pin the expected shape in its own tests.
 - [`Major Update.md`](../../../docs/docs/history/MAJOR_UPDATE_EXECUTED.md)
   §9 Phase 0 (counsel sign-off) and the "mainnet genesis ceremony" row
   in [`NEXT_STEPS.md`](../../../../NEXT_STEPS.md).
-- [`CELL_TOKENOMICS.md`](../../../docs/docs/CELL_TOKENOMICS.md) for the
-  supply parameters embedded in every bundle.
+- [`CELL_TOKENOMICS.md`](../../../docs/docs/CELL_TOKENOMICS.md) and
+  [`GENESIS_POLICY_v1.1.md`](../../../docs/docs/GENESIS_POLICY_v1.1.md)
+  for the supply parameters embedded in every bundle.
 - [`REBRAND_NOTES.md`](../../../docs/docs/REBRAND_NOTES.md) §4 for the
   Phase-0 working values this dry-run pins.
 - [`AUDIT_PACKET_MINING.md`](../../../docs/docs/AUDIT_PACKET_MINING.md) §6

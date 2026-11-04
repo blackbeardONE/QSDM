@@ -97,14 +97,23 @@ func CellToDust(cell float64) (uint64, error) {
 
 // DustToCell converts integer dust to whole-CELL float for legacy surfaces.
 // Exact for every value below 2^53 dust (~90.07 M CELL), which covers the
-// entire 100 M supply.
+// entire 90 M supply (CellSupplyCapDust = 9e15 dust < 2^53).
 func DustToCell(dust uint64) float64 {
 	return float64(dust) / float64(DustPerCellInt)
 }
 
 // CellSupplyCapDust is the protocol maximum total supply in dust:
-// 90 M mining emission + 10 M genesis treasury = 100 M CELL.
-const CellSupplyCapDust uint64 = 100_000_000 * 100_000_000
+// 90,000,000 CELL, all of it issued by mining (equal to CellMiningCapDust).
+// There is no genesis treasury allocation: decision D1-a (2026-10-16) of the
+// QSDM Genesis Policy withdrew the earlier 10 M treasury proposal (v1.0,
+// unchanged in v1.1, clause 1; QSDM/docs/docs/GENESIS_POLICY_v1.1.md).
+//
+// Lowering this from 100 M to 90 M does not change block production or
+// mining rewards. Only two places read it: SupplyLedger, which has no
+// production caller (see account_supply.go), and the offline
+// cmd/qsdm-ledger-fork-plan analyzer. Rewards are bounded by
+// EmissionSchedule.MiningCapDust, which was already 90 M and is unchanged.
+const CellSupplyCapDust uint64 = 90_000_000 * 100_000_000
 
 // SupplyLedger tracks total issued dust so no path — mining reward, faucet,
 // genesis seeding or a future contract — can mint past the cap.

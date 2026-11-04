@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"golang.org/x/crypto/sha3"
+
+	"github.com/blackbeardONE/QSDM/pkg/chain"
 )
 
 func TestRunCeremony_RoundTripVerifies(t *testing.T) {
@@ -160,5 +162,37 @@ func TestDefaultParams_AddUpToTotal(t *testing.T) {
 	}
 	if p.SmallestUnitName != "dust" {
 		t.Errorf("default smallest unit drift: %q", p.SmallestUnitName)
+	}
+}
+
+// QSDM Genesis Policy v1.1, clause 1 (decision D1-a): 90 M CELL hard cap,
+// all from mining, no genesis treasury. A bundle that allocates a treasury
+// is refused even when its totals add up.
+func TestDefaultParams_MatchGenesisPolicy(t *testing.T) {
+	p := DefaultParams()
+	if p.TotalSupplyCell != 90_000_000 || p.MiningEmissionCell != 90_000_000 || p.TreasuryAllocationCell != 0 {
+		t.Fatalf("default params %+v do not match the 90 M cap / no-treasury policy", p)
+	}
+	if p.TotalSupplyCell*100_000_000 != chain.CellSupplyCapDust {
+		t.Fatalf("ceremony total %d CELL != chain supply cap %d dust", p.TotalSupplyCell, chain.CellSupplyCapDust)
+	}
+	if p.MiningEmissionCell != chain.CellMiningCapWhole {
+		t.Fatalf("ceremony mining %d != chain mining cap %d", p.MiningEmissionCell, chain.CellMiningCapWhole)
+	}
+
+	bad := DefaultParams()
+	bad.TotalSupplyCell = 100_000_000
+	bad.TreasuryAllocationCell = 10_000_000
+	if _, err := RunCeremony(2, "qsdm-test", "addr", bad); err == nil || !strings.Contains(err.Error(), "policy invariant") {
+		t.Fatalf("a 10 M treasury bundle must be refused, got %v", err)
+	}
+
+	b, err := RunCeremony(2, "qsdm-test", "addr", DefaultParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Params = bad
+	if err := VerifyBundle(b); err == nil || !strings.Contains(err.Error(), "policy invariant") {
+		t.Fatalf("verifier must refuse a bundle that allocates a genesis treasury, got %v", err)
 	}
 }
