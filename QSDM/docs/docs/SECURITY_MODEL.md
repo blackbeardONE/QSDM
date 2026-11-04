@@ -64,12 +64,17 @@ network see [Network status](NETWORK_STATUS.md).
 - Today one block producer creates every block, with a backup node that follows
   the chain. Since 2 November 2026 its peer-to-peer port is public, with
   connection, stream and block-request limits; the status API's `peers` counts
-  the connected peers.
+  the connected peers. The code of those limits is in this repository: the
+  block-request budget is always on, and the connection, stream and gossip
+  limits are opt-in for other nodes ([P2P limits](P2P_LIMITS.md)). A node
+  that only follows a known producer can run in private peer-to-peer mode,
+  which accepts and dials only listed peer IDs over private addresses
+  ([Private P2P mode](PRIVATE_P2P.md)).
 - On 3 November 2026 fuzzing found that one block with a null transaction entry
   stopped a node before any signature was checked. The producer's peer-to-peer
   port was closed while a fixed build went in, and it reopened on 4 November.
   The decoders that read peer messages, public API request bodies and mining
-  submissions are fuzzed every night (39 targets in
+  submissions are fuzzed every night (44 targets in
   `.github/workflows/go-fuzz-nightly.yml`).
 - Bridge events on the `qsdm-bridge` topic are applied only when they are
   signed by a relayer key on the operator's allowlist, which is empty by
