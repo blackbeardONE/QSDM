@@ -82,14 +82,21 @@ func CellToDust(cell float64) (uint64, error) {
 		return 0, fmt.Errorf("%w: %v is negative", ErrDustConversionRange, cell)
 	}
 	scaled := cell * float64(DustPerCellInt)
-	if scaled > float64(math.MaxUint64) {
+	// float64(math.MaxUint64) rounds up to 2^64, which does not fit in a
+	// uint64 either: converting it would wrap instead of failing.
+	if scaled >= float64(math.MaxUint64) {
 		return 0, fmt.Errorf("%w: %v overflows uint64 dust", ErrDustConversionRange, cell)
 	}
 	rounded := math.Round(scaled)
-	// Accept only values that land on (or within half a ULP of) an exact
-	// dust boundary. Beyond ~9e7 CELL, float64's ULP exceeds one dust and
-	// exactness is no longer decidable from the float alone.
-	if math.Abs(scaled-rounded) > 0.5 {
+	// Accept only values that land on an exact dust boundary up to float
+	// noise from the scaling multiply (a few ULPs of scaled, at least 1e-6
+	// dust). The previous test, |scaled-rounded| > 0.5, could never fire
+	// because math.Round is always within 0.5, so every in-range value was
+	// silently rounded to the nearest dust. Beyond 2^53 dust (~90.07 M CELL)
+	// float64's ULP exceeds one dust and exactness is no longer decidable
+	// from the float alone; those values are accepted as rounded.
+	ulp := math.Nextafter(scaled, math.Inf(1)) - scaled
+	if math.Abs(scaled-rounded) > math.Max(1e-6, 4*ulp) {
 		return 0, fmt.Errorf("%w: %v is not a whole number of dust", ErrDustConversionRange, cell)
 	}
 	return uint64(rounded), nil
@@ -97,14 +104,23 @@ func CellToDust(cell float64) (uint64, error) {
 
 // DustToCell converts integer dust to whole-CELL float for legacy surfaces.
 // Exact for every value below 2^53 dust (~90.07 M CELL), which covers the
-// entire 100 M supply.
+// entire 90 M supply (CellSupplyCapDust = 9e15 dust < 2^53).
 func DustToCell(dust uint64) float64 {
 	return float64(dust) / float64(DustPerCellInt)
 }
 
 // CellSupplyCapDust is the protocol maximum total supply in dust:
-// 90 M mining emission + 10 M genesis treasury = 100 M CELL.
-const CellSupplyCapDust uint64 = 100_000_000 * 100_000_000
+// 90,000,000 CELL, all of it issued by mining (equal to CellMiningCapDust).
+// There is no genesis treasury allocation: decision D1-a (2026-10-16) of the
+// QSDM Genesis Policy withdrew the earlier 10 M treasury proposal (v1.0,
+// unchanged in v1.1, clause 1; QSDM/docs/docs/GENESIS_POLICY_v1.1.md).
+//
+// Lowering this from 100 M to 90 M does not change block production or
+// mining rewards. Only two places read it: SupplyLedger, which has no
+// production caller (see account_supply.go), and the offline
+// cmd/qsdm-ledger-fork-plan analyzer. Rewards are bounded by
+// EmissionSchedule.MiningCapDust, which was already 90 M and is unchanged.
+const CellSupplyCapDust uint64 = 90_000_000 * 100_000_000
 
 // SupplyLedger tracks total issued dust so no path — mining reward, faucet,
 // genesis seeding or a future contract — can mint past the cap.

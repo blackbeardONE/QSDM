@@ -75,7 +75,7 @@ func producerAllowlistAdvice(authorized []string, t *producerpolicy.Transition) 
 	if t == nil {
 		return ""
 	}
-	final := strings.TrimSpace(t.ReplacementProducer)
+	final := strings.TrimSpace(t.FinalEpoch().ProducerID)
 	if final == "" {
 		return ""
 	}

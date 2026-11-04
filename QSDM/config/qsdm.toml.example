@@ -147,6 +147,23 @@ poe_activation_height = 0
 # 0 = never (the default). Every validator must use the same value.
 # stream_ed25519_retirement_height = 0  # env QSDM_STREAM_ED25519_RETIREMENT_HEIGHT
 signer_key_path = "qsdm_consensus_signer.json"
+# Producer transition: which consensus key may sign each block height. Off
+# unless configured (then authorized_block_producers decides). Copy the table
+# exactly as the block producer publishes it; every node must use the same one.
+# Version 1 names one hand-over (historical_producer, checkpoint_height,
+# checkpoint_hash, effective_height, replacement_producer); version 2 lists
+# every producer epoch in order. See QSDM/docs/docs/PRODUCER_TRANSITION.md.
+# [consensus.producer_transition]
+# version = 2
+# historical_prefix_bytes = 0                 # journal prefix pin: byte length
+# historical_prefix_sha256 = "<64 hex>"       # journal prefix pin: SHA-256
+# [[consensus.producer_transition.epochs]]    # epoch 0: no checkpoint_hash
+# from_height = 1                             # first signed height
+# producer_id = "<64 hex consensus address>"
+# [[consensus.producer_transition.epochs]]    # one table per hand-over
+# from_height = 1001                          # checkpoint height + 1
+# producer_id = "<64 hex consensus address>"  # never reused
+# checkpoint_hash = "<64 hex hash of block from_height - 1>"
 
 # Performance Configuration
 [performance]
@@ -173,3 +190,21 @@ disabled = false              # true -> /api/v1/trust/attestations/* returns 404
 fresh_within = "15m"          # attestations older than this are treated as stale
 refresh_interval = "10s"      # background cache rebuild cadence
 region_hint = ""              # "eu" | "us" | "apac" | "other" | "" (coarse bucket)
+
+# -----------------------------------------------------------------------------
+# Verified snapshot bootstrap (QSDM/docs/docs/SNAPSHOT_BOOTSTRAP.md).
+#
+# Off by default. When enabled, `qsdm --snapshot-import --from <dir>` may fill
+# an empty follower state directory from a snapshot whose tip is exactly the
+# checkpoint pinned here (height, block hash and state root, signed by an
+# authorized producer), and every start refuses a restored chain whose block
+# at checkpoint_height is another block. Take the values from a source
+# independent of the snapshot. A checkpoint key set while enabled is false is
+# refused. Uncommented as shown, the table changes nothing.
+# -----------------------------------------------------------------------------
+# [snapshot_bootstrap]
+# enabled = false                # env QSDM_SNAPSHOT_BOOTSTRAP
+# checkpoint_height = 0          # N, at least 1 when enabled (env QSDM_SNAPSHOT_CHECKPOINT_HEIGHT)
+# checkpoint_block_hash = ""     # 64 lower-case hex (env QSDM_SNAPSHOT_CHECKPOINT_BLOCK_HASH)
+# checkpoint_state_root = ""     # 64 lower-case hex (env QSDM_SNAPSHOT_CHECKPOINT_STATE_ROOT)
+# checkpoint_producer_id = ""    # optional: the ML-DSA-87 producer address (env QSDM_SNAPSHOT_CHECKPOINT_PRODUCER_ID)

@@ -263,8 +263,8 @@ func TestAlternateBlockTime_PreservesCap(t *testing.T) {
 
 func TestApproxAnnualInflationRate_Monotone(t *testing.T) {
 	s := DefaultEmissionSchedule()
-	// Inflation at height 1 (before any prior emission) is computed against
-	// the treasury denominator; it should be positive and finite.
+	// Inflation at height 1 is computed against the first block reward
+	// (CumulativeEmittedDust(1)); it should be positive and finite.
 	r := s.ApproxAnnualInflationRate(1)
 	if r <= 0 {
 		t.Errorf("inflation at height 1 = %g, want > 0", r)
@@ -274,5 +274,14 @@ func TestApproxAnnualInflationRate_Monotone(t *testing.T) {
 	r2 := s.ApproxAnnualInflationRate(s.BlocksPerEpoch + 1)
 	if !(r2 < r) {
 		t.Errorf("inflation at epoch 1 (%g) not less than epoch 0 (%g)", r2, r)
+	}
+}
+
+// No genesis treasury exists (QSDM Genesis Policy v1.1), so nothing
+// circulates at height 0 and the display-only rate is reported as 0.
+func TestApproxAnnualInflationRate_zeroBeforeEmission(t *testing.T) {
+	s := DefaultEmissionSchedule()
+	if r := s.ApproxAnnualInflationRate(0); r != 0 {
+		t.Fatalf("inflation at height 0 = %g, want 0", r)
 	}
 }

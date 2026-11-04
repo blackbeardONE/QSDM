@@ -33,6 +33,14 @@ The file is mode `0600` and contains private signing material. Back it up with
 the validator state. Losing or replacing it changes the node's validator
 address. Never copy one validator's key to another validator.
 
+To create the key before the first start, for example to know the validator
+address in advance, run `qsdm-valkey generate --out <file>` (from
+`QSDM/source`: `go run -tags dilithium_circl ./cmd/qsdm-valkey generate --out
+<file>`). It writes the same file the node would create, refuses to overwrite
+an existing path, and prints only the validator address and a public-key
+fingerprint. `qsdm-valkey show --in <file>` checks a key file the way the node
+loads it and prints its address.
+
 An explicit path is optional:
 
 ```toml

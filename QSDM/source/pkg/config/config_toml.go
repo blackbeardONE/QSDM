@@ -14,6 +14,8 @@ type ConfigTOML struct {
 	Consensus   ConsensusConfigTOML `toml:"consensus" yaml:"consensus"`
 	Performance PerformanceConfig   `toml:"performance"`
 	Trust       TrustConfigTOML     `toml:"trust" yaml:"trust"`
+	// SnapshotBootstrap is the verified snapshot bootstrap (snapshot_bootstrap.go).
+	SnapshotBootstrap SnapshotBootstrapTOML `toml:"snapshot_bootstrap" yaml:"snapshot_bootstrap"`
 }
 
 // TrustConfigTOML controls the opt-in attestation transparency surface

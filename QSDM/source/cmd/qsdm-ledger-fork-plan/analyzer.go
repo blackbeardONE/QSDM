@@ -233,7 +233,14 @@ func analyze(opts analyzeOptions) (manifest, error) {
 		s.check(c.Name, c.Passed, c.Detail)
 	}
 
-	const treasuryCapDust = chain.CellSupplyCapDust - chain.CellMiningCapDust
+	// QSDM Genesis Policy v1.1, clause 1 (decision D1-a): the 90 M supply is
+	// all mining and there is no genesis treasury, so the allowance for
+	// height-0 (treasury or genesis) funder issuance is zero. Any such
+	// issuance, for example the pinned 100 CELL canonical genesis seed, fails
+	// this check until the migration burns or classifies it (policy clause
+	// 5(b)). The manifest keeps the treasury_cap_dust field (now "0") for
+	// schema compatibility.
+	const treasuryCapDust uint64 = 0
 	issued := chainData.totalIssuedDust
 	accounted, overflow := addMany(
 		accounts.liquidDust,
@@ -254,7 +261,8 @@ func analyze(opts analyzeOptions) (manifest, error) {
 	s.check("mining-issuance-under-cap", chainData.miningDust <= chain.CellMiningCapDust,
 		fmt.Sprintf("issued=%s cap=%s dust", dustString(chainData.miningDust), dustString(chain.CellMiningCapDust)))
 	s.check("treasury-issuance-under-cap", chainData.treasuryDust <= treasuryCapDust,
-		fmt.Sprintf("issued=%s cap=%s dust", dustString(chainData.treasuryDust), dustString(treasuryCapDust)))
+		fmt.Sprintf("issued=%s cap=%s dust (no genesis treasury under Genesis Policy v1.1; burn or classify per clause 5(b))",
+			dustString(chainData.treasuryDust), dustString(treasuryCapDust)))
 	s.check("total-issuance-under-cap", issued <= chain.CellSupplyCapDust,
 		fmt.Sprintf("issued=%s cap=%s dust", dustString(issued), dustString(chain.CellSupplyCapDust)))
 	s.check("accounted-supply-not-above-issued", !overflow && accounted <= issued,

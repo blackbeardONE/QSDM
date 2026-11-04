@@ -8,6 +8,7 @@ for availability only. It needs no inbound port and no peer-to-peer connection.
 A new node starts from a **verified snapshot**, checked against a **checkpoint you pin**, and then catches up. The
 whole procedure was tested end to end on 2026-10-19: a fresh machine imported the snapshot, caught up with the
 producer within minutes, and its block hashes and state roots equalled the producer's at every height compared.
+[Verified snapshot bootstrap](SNAPSHOT_BOOTSTRAP.md) explains how the import checks the snapshot and what you trust.
 
 ## Quick install (one command)
 
@@ -139,7 +140,7 @@ echo "exit $?"
 
 The import verifies everything again against your pinned checkpoint: the hash chain from genesis, the producer's
 signature on the checkpoint block, the producer transition and the state root. It takes several minutes and about
-10 GB of RAM.
+10 GB of RAM. [Verified snapshot bootstrap](SNAPSHOT_BOOTSTRAP.md#3-trust-model) lists every check.
 
 - **Exit 0** prints a report with `"authorized_by": "producer_transition"` and three installed files. Then delete
   `/srv/qsdm-snapshot` and the downloaded archive.

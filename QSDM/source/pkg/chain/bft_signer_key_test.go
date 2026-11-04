@@ -150,3 +150,118 @@ func TestLoadBFTSignerRejectsOversizedFileAndDirectory(t *testing.T) {
 		t.Fatal("a directory should be rejected")
 	}
 }
+
+func TestCreateBFTSignerMatchesNodeLoader(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "validator.json")
+	created, err := CreateBFTSigner(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, wasCreated, err := LoadOrCreateBFTSigner(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wasCreated {
+		t.Fatal("node loader must reuse the key written by CreateBFTSigner")
+	}
+	if loaded.Address() != created.Address() {
+		t.Fatalf("address mismatch: %s != %s", loaded.Address(), created.Address())
+	}
+	viaLoad, err := LoadBFTSigner(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if viaLoad.Address() != created.Address() {
+		t.Fatalf("LoadBFTSigner address mismatch: %s != %s", viaLoad.Address(), created.Address())
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("consensus signer permissions = %o, want 600", got)
+		}
+	}
+}
+
+func TestCreateBFTSignerRefusesExistingPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "validator.json")
+	first, err := CreateBFTSigner(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CreateBFTSigner(path); err == nil {
+		t.Fatal("CreateBFTSigner must refuse to overwrite an existing key")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("existing key file was modified")
+	}
+	again, err := LoadBFTSigner(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Address() != first.Address() {
+		t.Fatal("existing key identity changed")
+	}
+	// Any existing path is refused, not only a key file.
+	if _, err := CreateBFTSigner(dir); err == nil {
+		t.Fatal("CreateBFTSigner must refuse an existing directory")
+	}
+	if _, err := CreateBFTSigner(" "); err == nil {
+		t.Fatal("an empty path should be an error")
+	}
+	if _, err := CreateBFTSigner(filepath.Join(dir, "missing", "validator.json")); err == nil {
+		t.Fatal("a missing parent directory should be an error")
+	}
+}
+
+func TestLoadBFTSignerRejectsWrongVersionOrAlgorithm(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		version   int
+		algorithm string
+	}{
+		{name: "version", version: persistentBFTSignerKeyVersion + 1, algorithm: "ml-dsa-87"},
+		{name: "algorithm", version: persistentBFTSignerKeyVersion, algorithm: "ml-dsa-65"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "validator.json")
+			if _, err := CreateBFTSigner(path); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var stored persistentBFTSignerKeyFile
+			if err := json.Unmarshal(raw, &stored); err != nil {
+				t.Fatal(err)
+			}
+			stored.Version = tc.version
+			stored.Algorithm = tc.algorithm
+			tampered, err := json.Marshal(stored)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, tampered, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadBFTSigner(path); err == nil {
+				t.Fatal("LoadBFTSigner accepted an unsupported key file")
+			}
+			if _, _, err := LoadOrCreateBFTSigner(path); err == nil {
+				t.Fatal("LoadOrCreateBFTSigner accepted an unsupported key file")
+			}
+		})
+	}
+}

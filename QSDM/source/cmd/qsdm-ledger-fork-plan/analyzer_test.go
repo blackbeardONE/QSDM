@@ -33,7 +33,7 @@ func TestAnalyzeValidLegacySnapshot(t *testing.T) {
 	if result.Activation.Ready || result.Activation.RuntimeTransitionReady {
 		t.Fatal("analysis-only tool must never authorize activation")
 	}
-	if result.Accounts.LiquidNonFunderDust != "250000000" {
+	if result.Accounts.LiquidNonFunderDust != "150000000" {
 		t.Fatalf("liquid dust=%s", result.Accounts.LiquidNonFunderDust)
 	}
 	if result.Locked.EnrollmentLockedDust != "100000000" {
@@ -42,7 +42,7 @@ func TestAnalyzeValidLegacySnapshot(t *testing.T) {
 	if result.Chain.MiningRewardDust != "250000000" {
 		t.Fatalf("reward dust=%s", result.Chain.MiningRewardDust)
 	}
-	if result.Chain.TotalFunderIssuedDust != "350000000" {
+	if result.Chain.TotalFunderIssuedDust != "250000000" {
 		t.Fatalf("issued dust=%s", result.Chain.TotalFunderIssuedDust)
 	}
 }
@@ -80,25 +80,31 @@ func TestAnalyzeCountsTaskLockedSupply(t *testing.T) {
 	enrollmentPath := filepath.Join(dir, "qsdm_enrollment.json")
 	stakingPath := filepath.Join(dir, "qsdm_staking.json")
 
-	genesisTx := &mempool.Tx{ID: "genesis", Sender: chain.MiningRewardFunderAddress, Recipient: "operator", Amount: 6, Nonce: 0}
+	// No genesis treasury (Genesis Policy v1.1): the operator's 6 CELL come
+	// from two mining rewards, each inside the schedule's per-block reward.
+	genesisTx := &mempool.Tx{ID: "genesis", Sender: chain.MiningRewardFunderAddress, Recipient: chain.MiningRewardFunderAddress, Amount: 1, Nonce: 0}
 	genesis := fixtureBlock(0, "", genesisTx)
+	reward1 := &mempool.Tx{ID: "solo-reward-1-operator", Sender: chain.MiningRewardFunderAddress, Recipient: "operator", Amount: 3, Nonce: 1, ContractID: chain.MiningRewardContractID}
+	block1 := fixtureBlock(1, genesis.Hash, reward1)
+	reward2 := &mempool.Tx{ID: "solo-reward-2-operator", Sender: chain.MiningRewardFunderAddress, Recipient: "operator", Amount: 3, Nonce: 2, ContractID: chain.MiningRewardContractID}
+	block2 := fixtureBlock(2, block1.Hash, reward2)
 	action := chain.TaskAction{
 		ID:        "fund-task",
 		Sender:    "operator",
 		TaskID:    "task",
 		Action:    "fund",
 		Amount:    5,
-		Timestamp: time.Unix(2, 0).UTC().Format(time.RFC3339Nano),
+		Timestamp: time.Unix(4, 0).UTC().Format(time.RFC3339Nano),
 	}
 	payload, err := json.Marshal(action)
 	if err != nil {
 		t.Fatal(err)
 	}
 	fundTx := &mempool.Tx{ID: action.ID, Sender: action.Sender, Nonce: 0, ContractID: chain.TaskContractID, Payload: payload}
-	second := fixtureBlock(1, genesis.Hash, fundTx)
-	writeNDJSON(t, chainPath, genesis, second)
+	block3 := fixtureBlock(3, block2.Hash, fundTx)
+	writeNDJSON(t, chainPath, genesis, block1, block2, block3)
 	writeJSON(t, accountsPath, []chain.Account{
-		{Address: chain.MiningRewardFunderAddress, Balance: 1e15, Nonce: 1},
+		{Address: chain.MiningRewardFunderAddress, Balance: 1e15, Nonce: 3},
 		{Address: "operator", Balance: 1, Nonce: 1},
 	})
 	writeJSON(t, enrollmentPath, map[string]any{"records": []any{}})
@@ -122,6 +128,55 @@ func TestAnalyzeCountsTaskLockedSupply(t *testing.T) {
 	}
 }
 
+// Genesis Policy v1.1, clause 1 (decision D1-a): 90 M cap, all mining, no
+// genesis treasury. The manifest reports a zero treasury allowance, and
+// height-0 funder issuance (the shape of the public chain's 100 CELL
+// canonical genesis seed) fails the treasury check until the migration burns
+// or classifies it.
+func TestAnalyzePolicyCapAndGenesisIssuance(t *testing.T) {
+	if chain.CellSupplyCapDust != chain.CellMiningCapDust {
+		t.Fatalf("supply cap %d != mining cap %d", chain.CellSupplyCapDust, chain.CellMiningCapDust)
+	}
+	dir := t.TempDir()
+	accountsPath := filepath.Join(dir, "qsdm_accounts.json")
+	chainPath := filepath.Join(dir, "qsdm_chain.ndjson")
+	enrollmentPath := filepath.Join(dir, "qsdm_enrollment.json")
+	stakingPath := filepath.Join(dir, "qsdm_staking.json")
+
+	seed := &mempool.Tx{ID: "genesis-seed", Sender: chain.MiningRewardFunderAddress, Recipient: "operator", Amount: 100, Nonce: 0}
+	genesis := fixtureBlock(0, "", seed)
+	writeNDJSON(t, chainPath, genesis)
+	writeJSON(t, accountsPath, []chain.Account{
+		{Address: chain.MiningRewardFunderAddress, Balance: 1e15, Nonce: 1},
+		{Address: "operator", Balance: 100},
+	})
+	writeJSON(t, enrollmentPath, map[string]any{"records": []any{}})
+	writeJSON(t, stakingPath, map[string]any{"v": 1, "bonds": []any{}, "unbond": []any{}})
+
+	result, err := analyze(analyzeOptions{
+		AccountsPath: accountsPath, ChainPath: chainPath,
+		EnrollmentPath: enrollmentPath, StakingPath: stakingPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Supply.SupplyCapDust != "9000000000000000" || result.Supply.MiningCapDust != "9000000000000000" {
+		t.Fatalf("supply cap=%s mining cap=%s, want 9e15 each", result.Supply.SupplyCapDust, result.Supply.MiningCapDust)
+	}
+	if result.Supply.TreasuryCapDust != "0" {
+		t.Fatalf("treasury cap=%s, want 0", result.Supply.TreasuryCapDust)
+	}
+	if result.Chain.TreasuryOrGenesisIssueDust != "10000000000" {
+		t.Fatalf("genesis issue dust=%s", result.Chain.TreasuryOrGenesisIssueDust)
+	}
+	assertCheck(t, result, "treasury-issuance-under-cap", false)
+	assertCheck(t, result, "total-issuance-under-cap", true)
+	assertCheck(t, result, "accounted-supply-not-above-issued", true)
+	if result.LedgerChecksPass {
+		t.Fatal("genesis issuance must keep the ledger checks from passing")
+	}
+}
+
 type fixturePaths struct{ accounts, chain, enrollment, staking string }
 
 func writeFixture(t *testing.T, dir string, breakContinuity, overflowAccount bool) fixturePaths {
@@ -132,7 +187,9 @@ func writeFixture(t *testing.T, dir string, breakContinuity, overflowAccount boo
 	stakingPath := filepath.Join(dir, "qsdm_staking.json")
 
 	reward := &mempool.Tx{ID: "solo-reward-1-miner", Sender: chain.MiningRewardFunderAddress, Recipient: "miner", Amount: 2.5, Nonce: 1, ContractID: chain.MiningRewardContractID}
-	genesisTx := &mempool.Tx{ID: "genesis", Sender: chain.MiningRewardFunderAddress, Recipient: "treasury", Amount: 1, Nonce: 0}
+	// No genesis treasury (Genesis Policy v1.1): the genesis block carries a
+	// funder self-transaction, which is bookkeeping, not issuance.
+	genesisTx := &mempool.Tx{ID: "genesis", Sender: chain.MiningRewardFunderAddress, Recipient: chain.MiningRewardFunderAddress, Amount: 1, Nonce: 0}
 	genesis := fixtureBlock(0, "", genesisTx)
 	height := uint64(1)
 	prev := genesis.Hash
@@ -149,7 +206,6 @@ func writeFixture(t *testing.T, dir string, breakContinuity, overflowAccount boo
 	}
 	writeJSON(t, accountsPath, []chain.Account{
 		{Address: chain.MiningRewardFunderAddress, Balance: 1e15, Nonce: 2},
-		{Address: "treasury", Balance: 1},
 		{Address: "miner", Balance: minerBalance},
 	})
 	writeJSON(t, enrollmentPath, map[string]any{"records": []map[string]any{{"node_id": "node", "owner": "miner", "stake_dust": uint64(100_000_000)}}})

@@ -10,8 +10,8 @@
 
 N participants run an N-of-N commit-reveal randomness beacon:
 
-1. Each participant generates a fresh keypair and a 32-byte secret
-   `reveal`.
+1. Each participant generates a fresh ML-DSA-87 keypair and a 32-byte
+   secret `reveal`.
 2. Each participant publishes `sha3-256(reveal)` as their *commit*
    (revealing nothing yet).
 3. Once all commits are in, every participant publishes their `reveal`.
@@ -28,7 +28,10 @@ Anyone with the bundle can:
 - Recompute the genesis seed and genesis hash.
 - Verify every signature against each participant's published pubkey.
 - Confirm the tokenomics invariant
-  `TotalSupplyCell == TreasuryAllocationCell + MiningEmissionCell`.
+  `TotalSupplyCell == TreasuryAllocationCell + MiningEmissionCell`
+  and the policy invariant `TreasuryAllocationCell == 0` (Genesis
+  Policy v1.1: a 90,000,000 CELL cap, all from mining, no genesis
+  treasury).
 
 Run `genesis-ceremony -mode verify -in bundle.json` to execute all of
 the above in one step.
@@ -37,7 +40,7 @@ the above in one step.
 
 | Surface | Dry-run | Production |
 |---------|---------|------------|
-| Signing | ed25519 (stdlib) | ML-DSA-87 via liboqs (matches validator signing) |
+| Signing | ML-DSA-87 (FIPS 204, pure-Go `cloudflare/circl`, empty context), freshly generated keys | ML-DSA-87 with the participants' registered validator keys |
 | Phases | single round commit→reveal | commit → timelock-encrypted reveal → open |
 | Participant set | synthetic `participant-01 .. -NN` | on-chain validator set at snapshot height |
 | Private keys | generated ephemerally in one process | generated on air-gapped hardware per participant |
@@ -73,7 +76,11 @@ Verification fails (exit code 2) on any of:
 - tampered commit / reveal / signature
 - participant list not in ID order
 - `TotalSupplyCell != TreasuryAllocationCell + MiningEmissionCell`
-- schema version drift
+- `TreasuryAllocationCell != 0`
+- schema version drift (version 1 bundles, which used Ed25519, are
+  refused)
+- a `signature_algorithm` other than `ML-DSA-87`, or a public key or
+  signature that is not ML-DSA-87 sized (2592 and 4627 bytes)
 - `dry_run != true` (the tool refuses to verify production bundles — use
   the production verifier for those)
 
@@ -87,19 +94,20 @@ Emits an empty skeleton bundle with the current schema version and
 default tokenomics params. Useful for downstream tooling that wants to
 pin the expected shape in its own tests.
 
-## Bundle shape (`schema_version = 1`)
+## Bundle shape (`schema_version = 2`)
 
 ```json
 {
   "dry_run": true,
-  "schema_version": 1,
+  "schema_version": 2,
+  "signature_algorithm": "ML-DSA-87",
   "ceremony_id": "<sha3-256 hex of ceremony identity>",
   "started_at": "<RFC3339 nanos>",
   "finished_at": "<RFC3339 nanos>",
   "network": "qsdm-dryrun-local",
   "params": {
-    "total_supply_cell": 100000000,
-    "treasury_allocation_cell": 10000000,
+    "total_supply_cell": 90000000,
+    "treasury_allocation_cell": 0,
     "mining_emission_cell": 90000000,
     "coin_decimals": 8,
     "smallest_unit_name": "dust",
@@ -109,10 +117,10 @@ pin the expected shape in its own tests.
   "participants": [
     {
       "id": "participant-01",
-      "pubkey_hex": "...",
+      "pubkey_hex": "ML-DSA-87 public key (2592 bytes)",
       "commit_hex": "sha3-256(reveal)",
       "reveal_hex": "32 random bytes",
-      "signature_hex": "ed25519.Sign(genesis_hash)"
+      "signature_hex": "ML-DSA-87 signature over genesis_hash (4627 bytes)"
     }
     // ...
   ],
@@ -132,8 +140,9 @@ pin the expected shape in its own tests.
 - [`Major Update.md`](../../../docs/docs/history/MAJOR_UPDATE_EXECUTED.md)
   §9 Phase 0 (counsel sign-off) and the "mainnet genesis ceremony" row
   in [`NEXT_STEPS.md`](../../../../NEXT_STEPS.md).
-- [`CELL_TOKENOMICS.md`](../../../docs/docs/CELL_TOKENOMICS.md) for the
-  supply parameters embedded in every bundle.
+- [`CELL_TOKENOMICS.md`](../../../docs/docs/CELL_TOKENOMICS.md) and
+  [`GENESIS_POLICY_v1.1.md`](../../../docs/docs/GENESIS_POLICY_v1.1.md)
+  for the supply parameters embedded in every bundle.
 - [`REBRAND_NOTES.md`](../../../docs/docs/REBRAND_NOTES.md) §4 for the
   Phase-0 working values this dry-run pins.
 - [`AUDIT_PACKET_MINING.md`](../../../docs/docs/AUDIT_PACKET_MINING.md) §6

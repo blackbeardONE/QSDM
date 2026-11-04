@@ -105,11 +105,13 @@ the file to set up a follower.
 The node therefore logs `Stale external block producer allowlist` at WARN
 when it starts, if a producer transition is configured and
 `authorized_block_producers` is not empty but does not contain the
-transition's `replacement_producer`. The message names the producer to
-pin. Which blocks are accepted does not change.
+transition's current producer: `replacement_producer` in a version 1 table,
+the last epoch's `producer_id` in a version 2 table (see
+[Producer transition](PRODUCER_TRANSITION.md)). The message names the
+producer to pin. Which blocks are accepted does not change.
 
 A follower should pin `authorized_block_producers` to the transition's
-`replacement_producer` and carry the producer's
+current producer and carry the producer's
 `[consensus.producer_transition]` table unchanged.
 
 ## 5. Setting up a follower in private mode
@@ -124,7 +126,8 @@ node B follows it.
 2. **The follower (B).** Copy A's `[consensus]` table, so that every
    activation height is identical, but keep B's own `signer_key_path`. Set
    `authorized_block_producers` to the current producer (the transition's
-   `replacement_producer`). In `[network]`, set `bind_address` to B's
+   `replacement_producer`, or the last epoch's `producer_id` in a version 2
+   table). In `[network]`, set `bind_address` to B's
    private address, one bootstrap peer with A's private address and peer
    ID, `private_p2p = true`, and `private_p2p_allowed_peers` to A's peer
    ID. Keep HTTP sync configured (`QSDM_CHAIN_SYNC_URLS`) as a fallback,
@@ -186,7 +189,9 @@ CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/privatenet/ ./pkg/con
   that list each other exchanging a `qsdm-blocks` message through the
   node's own GossipSub setup while a third host cannot connect to either.
 - `cmd/qsdm` `TestResolveP2PStartupMode_*`,
-  `TestSetupNetworkPrivate_requiresPeers` and `TestProducerAllowlistAdvice`.
+  `TestSetupNetworkPrivate_requiresPeers`, `TestProducerAllowlistAdvice` and
+  `TestProducerAllowlistAdviceVersion2` (the warning names the last epoch's
+  producer of a version 2 table).
 - `pkg/config/live_shape_test.go` and `cmd/qsdm/live_shape_test.go`: a
   config shaped like the block producer's from before private mode keeps
   private mode off and the historical host mode, and gets the stale-list

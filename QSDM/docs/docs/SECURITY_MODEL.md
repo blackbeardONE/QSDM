@@ -73,9 +73,20 @@ network see [Network status](NETWORK_STATUS.md).
 - On 3 November 2026 fuzzing found that one block with a null transaction entry
   stopped a node before any signature was checked. The producer's peer-to-peer
   port was closed while a fixed build went in, and it reopened on 4 November.
-  The decoders that read peer messages, public API request bodies and mining
-  submissions are fuzzed every night (44 targets in
+  The decoders that read peer messages, public API request bodies, mining
+  submissions and snapshot files are fuzzed every night, and so are the
+  producer transition rules (53 targets in
   `.github/workflows/go-fuzz-nightly.yml`).
+- A new full node can start from a verified snapshot instead of replaying the
+  chain from genesis. It trusts only a checkpoint its operator pins (height,
+  block hash and state root) and the producer's ML-DSA-87 signature on that
+  block, and it rebuilds the state root before it installs anything
+  ([Verified snapshot bootstrap](SNAPSHOT_BOOTSTRAP.md)).
+- A second producer hand-over, for example to a standby producer, is written
+  as a version 2 producer transition table. Each hand-over is pinned to the
+  last block of the previous producer, so it cannot be scheduled in advance,
+  and only the final producer can produce
+  ([Producer transition](PRODUCER_TRANSITION.md)).
 - Bridge events on the `qsdm-bridge` topic are applied only when they are
   signed by a relayer key on the operator's allowlist, which is empty by
   default. See [Bridge relay authentication](BRIDGE_RELAY_AUTH.md).

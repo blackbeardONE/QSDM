@@ -91,7 +91,7 @@ network**; see the [rules of engagement](BUG_BOUNTY.md#2-rules-of-engagement).
 | A5 Determinism tripper | Make two honest nodes compute different state | Integer-only emission and dust accounting, canonical encodings, height-gated rules, replay tools (`cmd/qsdm/hl1_replay.go`, `cmd/hl-audit`) |
 | A6 Faulty or compromised producer | Over-issue, censor, rewrite history | Followers re-execute every block; the emission cap; the producer transition pins history. Censorship and reordering are accepted for the pilot |
 | A7 Supply chain | Ship a binary that differs from the source | Pinned toolchain, offline module cache, reproducible builds, overlay manifest |
-| A8 Key theft on a host | Sign as producer, relay or owner | File modes, key separation, the producer-transition procedure. No HSM: common HSMs do not support ML-DSA |
+| A8 Key theft on a host | Sign as producer, relay or owner | File modes, key separation, the [producer-transition procedure](PRODUCER_TRANSITION.md), keys created offline with `qsdm-valkey`. No HSM: common HSMs do not support ML-DSA |
 
 ### 2.5 Payout-ledger invariants (I1–I7)
 
@@ -246,6 +246,10 @@ at X and found nothing" is useful.
 - [ ] Do two builds give identical `SHA256SUMS`, and do they match the
       published release?
 - [ ] Does the follower verifier refuse every tampered file and a wrong key?
+- [ ] Does `qsdm --snapshot-import` refuse a snapshot that does not match the
+      pinned checkpoint or that the producer did not sign, and install
+      nothing when it refuses? See
+      [Verified snapshot bootstrap](SNAPSHOT_BOOTSTRAP.md).
 
 **C10 P2P (optional)**
 - [ ] What happens with many connections or large gossip messages on each

@@ -9,6 +9,9 @@ import (
 // SetProducerTransition installs an immutable policy before any blocks are
 // restored or received. It cannot be replaced or cleared in a running producer.
 // Restart with a reviewed configuration is required for a subsequent transition.
+//
+// A version 1 policy is enforced as its equivalent two-epoch schedule; a
+// version 2 policy as its ordered epoch list (producerpolicy.Transition.Schedule).
 func (bp *BlockProducer) SetProducerTransition(p *producerpolicy.Transition) error {
 	if bp == nil {
 		return fmt.Errorf("chain: nil producer")
@@ -25,39 +28,52 @@ func (bp *BlockProducer) SetProducerTransition(p *producerpolicy.Transition) err
 	}
 	if p != nil {
 		copy := *p
+		copy.Epochs = append([]producerpolicy.Epoch(nil), p.Epochs...)
 		bp.producerTransition = &copy
+		bp.producerEpochs = copy.Schedule()
 	}
 	return nil
 }
 
-// validateTransitionBlock verifies the height-specific identity, checkpoint,
+// validateTransitionBlock verifies the height-specific identity, checkpoints,
 // and signatures without relying on the process-wide signed-vote rollout flag.
-func validateTransitionBlock(p *producerpolicy.Transition, b *Block) error {
+// Block h is authorized iff it is signed by the producer of the epoch that
+// contains h. Below the first epoch a block may be unsigned, but a signed one
+// must come from the first epoch's producer. Every hand-over is pinned: block
+// from_height-1 must carry the epoch's checkpoint hash and block from_height
+// must extend it.
+func validateTransitionBlock(epochs []producerpolicy.Epoch, b *Block) error {
 	if b == nil {
 		return fmt.Errorf("chain: nil transition block")
 	}
-	if b.Height == p.CheckpointHeight && b.Hash != p.CheckpointHash {
-		return fmt.Errorf("chain: producer transition checkpoint hash mismatch at height %d", b.Height)
+	if len(epochs) == 0 {
+		return fmt.Errorf("chain: producer transition has no epochs")
 	}
-	if b.Height == p.EffectiveHeight && b.PrevHash != p.CheckpointHash {
-		return fmt.Errorf("chain: producer transition first replacement block does not extend checkpoint")
+	for _, e := range epochs[1:] {
+		if b.Height == e.FromHeight-1 && b.Hash != e.CheckpointHash {
+			return fmt.Errorf("chain: producer transition checkpoint hash mismatch at height %d", b.Height)
+		}
+		if b.Height == e.FromHeight && b.PrevHash != e.CheckpointHash {
+			return fmt.Errorf("chain: producer transition first replacement block does not extend checkpoint")
+		}
 	}
-	if b.Height >= p.HistoricalSignatureHeight {
+	if want, inSchedule := producerpolicy.ProducerAt(epochs, b.Height); inSchedule {
 		if !b.ProducerAuth.Signed() {
 			return fmt.Errorf("chain: producer transition at height %d: %w", b.Height, ErrBlockUnsigned)
-		}
-		want := p.HistoricalProducer
-		if b.Height >= p.EffectiveHeight {
-			want = p.ReplacementProducer
 		}
 		if b.ProducerID != want {
 			return fmt.Errorf("%w: transition height %d producer %q", ErrExternalProducerNotAuthorized, b.Height, b.ProducerID)
 		}
-	}
-	if b.Height < p.HistoricalSignatureHeight && b.ProducerAuth.Signed() && b.ProducerID != p.HistoricalProducer {
+	} else if b.ProducerAuth.Signed() && b.ProducerID != epochs[0].ProducerID {
 		return fmt.Errorf("%w: signed historical producer %q", ErrExternalProducerNotAuthorized, b.ProducerID)
 	}
 	return VerifyBlockSignature(b)
+}
+
+// finalCheckpointHeight is the last pinned hand-over checkpoint (version 1:
+// checkpoint_height). Epochs come from a validated policy (len >= 2).
+func finalCheckpointHeight(epochs []producerpolicy.Epoch) uint64 {
+	return epochs[len(epochs)-1].FromHeight - 1
 }
 
 // ValidateProducerTransitionChain authenticates a complete genesis-to-tip
@@ -70,14 +86,14 @@ func (bp *BlockProducer) ValidateProducerTransitionChain(blocks []*Block) error 
 }
 
 func (bp *BlockProducer) validateProducerTransitionChainLocked(blocks []*Block) error {
-	p := bp.producerTransition
-	if p == nil {
+	if bp.producerTransition == nil {
 		return nil
 	}
+	epochs := bp.producerEpochs
 	if len(blocks) == 0 || blocks[0] == nil || blocks[0].Height != 0 || blocks[0].PrevHash != "" {
 		return fmt.Errorf("chain: producer transition requires history starting at genesis")
 	}
-	if blocks[len(blocks)-1] == nil || blocks[len(blocks)-1].Height < p.CheckpointHeight {
+	if blocks[len(blocks)-1] == nil || blocks[len(blocks)-1].Height < finalCheckpointHeight(epochs) {
 		return fmt.Errorf("chain: producer transition requires the complete approved checkpoint")
 	}
 	for i, b := range blocks {
@@ -90,7 +106,7 @@ func (bp *BlockProducer) validateProducerTransitionChainLocked(blocks []*Block) 
 		if i > 0 && b.PrevHash != blocks[i-1].Hash {
 			return fmt.Errorf("chain: producer transition broken linkage at height %d", b.Height)
 		}
-		if err := validateTransitionBlock(p, b); err != nil {
+		if err := validateTransitionBlock(epochs, b); err != nil {
 			return err
 		}
 	}
@@ -98,35 +114,43 @@ func (bp *BlockProducer) validateProducerTransitionChainLocked(blocks []*Block) 
 }
 
 // checkTransitionExtensionLocked prevents any suffix from being accepted unless
-// this producer already holds the approved checkpoint in its contiguous history.
+// this producer already holds every approved hand-over checkpoint at or below
+// height in its contiguous history.
 func (bp *BlockProducer) checkTransitionExtensionLocked(height uint64) error {
-	p := bp.producerTransition
-	if p == nil || height < p.EffectiveHeight {
+	if bp.producerTransition == nil {
 		return nil
 	}
-	if uint64(len(bp.chain)) <= p.CheckpointHeight || bp.chain[p.CheckpointHeight] == nil || bp.chain[p.CheckpointHeight].Hash != p.CheckpointHash {
-		return fmt.Errorf("chain: producer transition checkpoint is not established")
+	for _, e := range bp.producerEpochs[1:] {
+		if height < e.FromHeight {
+			break
+		}
+		cp := e.FromHeight - 1
+		if uint64(len(bp.chain)) <= cp || bp.chain[cp] == nil || bp.chain[cp].Hash != e.CheckpointHash {
+			return fmt.Errorf("chain: producer transition checkpoint is not established")
+		}
 	}
 	return nil
 }
 
 // checkTransitionSealLocked runs before mempool drain or state mutation. Only
-// the replacement key may produce, and only after the checkpoint was restored.
+// the final epoch's producer may produce, and only after its hand-over
+// checkpoint (and every earlier one) was restored. Earlier epochs are closed
+// history: their producers can never seal again under this policy.
 func (bp *BlockProducer) checkTransitionSealLocked(signer BFTSigner) error {
-	p := bp.producerTransition
-	if p == nil {
+	if bp.producerTransition == nil {
 		return nil
 	}
-	if len(bp.chain) == 0 || bp.chain[len(bp.chain)-1].Height < p.CheckpointHeight {
+	final := bp.producerEpochs[len(bp.producerEpochs)-1]
+	if len(bp.chain) == 0 || bp.chain[len(bp.chain)-1].Height < final.FromHeight-1 {
 		return fmt.Errorf("chain: local production requires approved transition checkpoint")
 	}
-	if err := bp.checkTransitionExtensionLocked(p.EffectiveHeight); err != nil {
+	if err := bp.checkTransitionExtensionLocked(final.FromHeight); err != nil {
 		return err
 	}
 	if signer == nil {
 		return ErrBlockUnsigned
 	}
-	if BFTValidatorAddress(signer.GetPublicKey()) != p.ReplacementProducer {
+	if BFTValidatorAddress(signer.GetPublicKey()) != final.ProducerID {
 		return fmt.Errorf("%w: local transition signer is not replacement producer", ErrExternalProducerNotAuthorized)
 	}
 	return nil

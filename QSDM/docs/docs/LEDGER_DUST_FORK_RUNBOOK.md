@@ -56,6 +56,12 @@ escrow, and the 90 million CELL mining cap. Task and stream state is replayed
 from the chain journal. Wallet, node, GPU, and key identifiers are omitted from
 the output.
 
+The supply cap is the same 90 million CELL: Genesis Policy v1.1 has no genesis
+treasury, so the manifest's `treasury_cap_dust` is `0` and any funder issuance
+at height 0 fails `treasury-issuance-under-cap`. On the pilot chain that is the
+100 CELL canonical genesis seed; the check stays failed until the migration
+burns or classifies it (policy clause 5(b)).
+
 The planner writes the manifest before returning a status. Exit code `2` means
 one or more ledger checks failed. Exit code `3` means the ledger checks passed,
 but activation is still blocked. Exit code `0` is reserved for a future state

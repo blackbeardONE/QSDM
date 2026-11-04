@@ -10,8 +10,12 @@
 > height: not yet published (they will be recorded here). Audit row `tok-01`
 > is **closed by the owner's decision** of 2026-11-01 (no counsel engagement).
 >
-> A few code constants and tools outside the emission schedule still carry the
-> withdrawn treasury figure; aligning them is a separate, reviewed code change.
+> The code outside the emission schedule follows the policy too: the protocol
+> supply cap (`chain.CellSupplyCapDust`) equals the 90,000,000 CELL mining cap,
+> the `genesis-ceremony` dry-run allocates no treasury and refuses a bundle that
+> does, and `qsdm-ledger-fork-plan` allows no genesis issuance, so the pilot
+> chain's 100 CELL genesis seed stays flagged until the migration burns or
+> classifies it (clause 5(b)).
 >
 > The values in this document are the
 > authoritative in-repo numbers used by `pkg/branding` constants,

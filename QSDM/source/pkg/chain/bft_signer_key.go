@@ -90,26 +90,54 @@ func LoadOrCreateBFTSigner(path string) (*PersistentBFTSigner, bool, error) {
 		return nil, false, fmt.Errorf("chain: stat consensus signer key %q: %w", path, err)
 	}
 
+	signer, err := createBFTSigner(path)
+	if err != nil {
+		return nil, false, err
+	}
+	return signer, true, nil
+}
+
+// CreateBFTSigner generates a new validator consensus key in the node's
+// on-disk format (version 1, ml-dsa-87, hex keys, mode 0600), through the
+// same code the node uses on first start. It refuses a path that already
+// exists, whatever it is. It is meant for offline tooling that provisions a
+// key deliberately instead of relying on the node's first start.
+func CreateBFTSigner(path string) (*PersistentBFTSigner, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, errors.New("chain: consensus signer key path is empty")
+	}
+	if _, err := os.Lstat(path); err == nil {
+		return nil, fmt.Errorf("chain: consensus signer key %q already exists; refusing to overwrite", path)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("chain: stat consensus signer key %q: %w", path, err)
+	}
+	return createBFTSigner(path)
+}
+
+// createBFTSigner writes a new key to path. The parent directory must
+// already exist. Callers check that path does not exist yet.
+func createBFTSigner(path string) (*PersistentBFTSigner, error) {
 	parent := filepath.Dir(path)
 	parentInfo, err := os.Stat(parent)
 	if err != nil {
-		return nil, false, fmt.Errorf("chain: consensus signer key parent %q is unavailable: %w", parent, err)
+		return nil, fmt.Errorf("chain: consensus signer key parent %q is unavailable: %w", parent, err)
 	}
 	if !parentInfo.IsDir() {
-		return nil, false, fmt.Errorf("chain: consensus signer key parent %q is not a directory", parent)
+		return nil, fmt.Errorf("chain: consensus signer key parent %q is not a directory", parent)
 	}
 
 	publicKey, privateKey, err := mldsa87.GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, false, fmt.Errorf("chain: generate validator ML-DSA-87 key: %w", err)
+		return nil, fmt.Errorf("chain: generate validator ML-DSA-87 key: %w", err)
 	}
 	publicBytes, err := publicKey.MarshalBinary()
 	if err != nil {
-		return nil, false, fmt.Errorf("chain: marshal validator public key: %w", err)
+		return nil, fmt.Errorf("chain: marshal validator public key: %w", err)
 	}
 	privateBytes, err := privateKey.MarshalBinary()
 	if err != nil {
-		return nil, false, fmt.Errorf("chain: marshal validator private key: %w", err)
+		return nil, fmt.Errorf("chain: marshal validator private key: %w", err)
 	}
 	defer zeroSignerBytes(privateBytes)
 
@@ -120,16 +148,16 @@ func LoadOrCreateBFTSigner(path string) (*PersistentBFTSigner, bool, error) {
 		PrivateKey: hex.EncodeToString(privateBytes),
 	}, "", "  ")
 	if err != nil {
-		return nil, false, fmt.Errorf("chain: encode validator signing key: %w", err)
+		return nil, fmt.Errorf("chain: encode validator signing key: %w", err)
 	}
 	encoded = append(encoded, '\n')
 	if err := fileutil.WriteFileAtomic(path, encoded, 0o600); err != nil {
-		return nil, false, fmt.Errorf("chain: persist validator signing key %q: %w", path, err)
+		return nil, fmt.Errorf("chain: persist validator signing key %q: %w", path, err)
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
-		return nil, false, fmt.Errorf("chain: protect validator signing key %q: %w", path, err)
+		return nil, fmt.Errorf("chain: protect validator signing key %q: %w", path, err)
 	}
-	return newPersistentBFTSigner(privateKey, publicBytes), true, nil
+	return newPersistentBFTSigner(privateKey, publicBytes), nil
 }
 
 func loadBFTSigner(path string) (*PersistentBFTSigner, error) {

@@ -36,9 +36,10 @@ const (
 	// in one whole CELL.
 	DustPerCell uint64 = 100_000_000
 
-	// CellMiningCapWhole is the mining-emission cap in whole CELL (i.e.
-	// excluding the 10 M treasury). The full 100 M total supply is
-	// (mining cap + treasury) = 90 M + 10 M = 100 M.
+	// CellMiningCapWhole is the mining-emission cap in whole CELL. It is
+	// also the whole maximum supply: there is no genesis treasury
+	// (QSDM Genesis Policy v1.1, decision D1-a), so CellSupplyCapDust in
+	// dustfork.go equals CellMiningCapDust.
 	CellMiningCapWhole uint64 = 90_000_000
 
 	// CellMiningCapDust is the mining cap expressed in dust. Computed at
@@ -333,9 +334,11 @@ func (s EmissionSchedule) ApproxAnnualInflationRate(height uint64) float64 {
 	annualEmission := float64(reward) * blocksPerYear
 	emittedSoFar := float64(s.CumulativeEmittedDust(height))
 	if emittedSoFar <= 0 {
-		// Before any emission, denominator is the fixed 10 M treasury in dust.
-		const treasuryDust = 10_000_000 * float64(100_000_000)
-		return annualEmission / treasuryDust
+		// Before any emission nothing circulates. There is no genesis
+		// treasury (QSDM Genesis Policy v1.1, decision D1-a), so the rate is
+		// undefined here; report 0 instead of dividing by zero or by a
+		// supply that does not exist.
+		return 0
 	}
 	return annualEmission / emittedSoFar
 }
