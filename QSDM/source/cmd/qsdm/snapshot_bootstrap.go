@@ -312,8 +312,8 @@ func snapshotVerifyDir(dir, scratch string, c snapshotConsensus, pinned *config.
 	}
 	if c.Transition != nil {
 		// transitionStateRootHeight: the root commits the enrollment registry
-		// from effective_height on.
-		res.EnrollmentRootChecked = tip.Height >= c.Transition.EffectiveHeight
+		// from the first hand-over on (version 1: effective_height).
+		res.EnrollmentRootChecked = tip.Height >= c.Transition.FirstHandoverHeight()
 	} else if act := chain.EnrollmentStateRootActivationHeight(); act > 0 && tip.Height >= act {
 		// The boot restore leaves the root height at 0 without a transition;
 		// the next appended block commits the enrollment registry, so check
@@ -350,13 +350,14 @@ func snapshotAuthorizeTip(tip *chain.Block, c snapshotConsensus, pinnedProducer 
 	}
 	switch {
 	case c.Transition != nil:
-		// The producer the transition authorizes at this height, as
-		// validateTransitionBlock (pkg/chain) enforces it: the replacement
-		// producer from effective_height on, the historical producer below it
-		// (a signed block below historical_signature_height included).
-		want := c.Transition.HistoricalProducer
-		if tip.Height >= c.Transition.EffectiveHeight {
-			want = c.Transition.ReplacementProducer
+		// The producer the schedule authorizes at this height, as
+		// validateTransitionBlock (pkg/chain) enforces it: the producer of the
+		// epoch that contains the height. A signed block below the first epoch
+		// must come from the first epoch's producer.
+		epochs := c.Transition.Schedule()
+		want, inSchedule := producerpolicy.ProducerAt(epochs, tip.Height)
+		if !inSchedule && len(epochs) > 0 {
+			want = epochs[0].ProducerID // a signed historical block: the first epoch's producer
 		}
 		if tip.ProducerID != want {
 			return "", fmt.Errorf("%w: checkpoint block %d producer %s, the producer transition expects %s", chain.ErrExternalProducerNotAuthorized, tip.Height, tip.ProducerID, want)

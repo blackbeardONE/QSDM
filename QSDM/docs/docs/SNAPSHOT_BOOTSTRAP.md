@@ -127,8 +127,11 @@ installed) unless every check below passes:
    external blocks get. Then:
    - if `checkpoint_producer_id` is set, the producer must be that address;
    - if a producer transition is configured, the producer must also be the
-     one the transition names at N: the replacement producer from
-     `effective_height` on, the historical producer below it;
+     one the transition names at N: the producer of the epoch that contains N
+     (for a version 1 table, the replacement producer from `effective_height`
+     on and the historical producer below it), or the first epoch's producer
+     for a signed block below the first epoch (see
+     [Producer transition](PRODUCER_TRANSITION.md));
    - without a transition, the producer must be listed in
      `authorized_block_producers` or be the pinned `checkpoint_producer_id`.
 
@@ -142,7 +145,8 @@ installed) unless every check below passes:
    from the accounts and enrollment files and the task, stream and recovery
    state it replays from the journal. Once the enrollment root is active at N,
    the enrollment registry is part of that check; with a producer transition
-   that is from `effective_height` on. The report then says
+   that is from the first hand-over on (version 1: `effective_height`). The
+   report then says
    `"enrollment_root_checked": true`.
 9. Nothing that the state root does not commit is imported:
    - The journal must hold no governance parameter transaction
@@ -376,7 +380,9 @@ CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/ledgersnapshot/ ./pkg
   - `TestSnapshotImportUnderProducerTransition`: with a version 1 producer
     transition, the replacement producer is authorized from `effective_height`
     on and the historical producer below it, and a transition that names
-    another producer is refused.
+    another producer is refused. With a version 2 schedule after a second
+    hand-over, the final epoch's producer is authorized, and the version 1
+    table refuses the same snapshot.
   - `TestSnapshotVerifyAppliesConsensusSettingsFirst`: a chain sealed with the
     content root active from block 2 exports and imports only when the
     consensus settings apply before the hash checks (see section 8).

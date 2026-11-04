@@ -8,6 +8,8 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -22,6 +24,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/governance/chainparams"
 	"github.com/blackbeardONE/QSDM/pkg/ledgersnapshot"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
+	"github.com/blackbeardONE/QSDM/pkg/producerpolicy"
 )
 
 type snapFixture struct {
@@ -489,7 +492,8 @@ func TestSnapshotImportRefusesUnsignedCheckpoint(t *testing.T) {
 // effective_height on, the historical producer below it. The pinned journal
 // prefix is checked on the staged copy, and above effective_height the
 // enrollment registry is part of the verified root. A transition that names
-// another producer is refused.
+// another producer is refused. Under a version 2 schedule the producer of the
+// epoch that contains the checkpoint authorizes it.
 func TestSnapshotImportUnderProducerTransition(t *testing.T) {
 	stakingAndPin := func(t *testing.T, dir string) config.SnapshotBootstrapConfig {
 		t.Helper()
@@ -563,6 +567,59 @@ func TestSnapshotImportUnderProducerTransition(t *testing.T) {
 		if res.AuthorizedBy != "producer_transition" || res.EnrollmentInRoot || res.Checkpoint.ProducerID != policy.HistoricalProducer {
 			t.Fatalf("import result %+v", res)
 		}
+	})
+
+	// A version 2 schedule with a second hand-over: A seals 0..2, B (the
+	// version 1 replacement) seals 3..5, C seals 6..8 under A@1, B@3, C@6. The
+	// checkpoint block is C's, and only the schedule authorizes it: the
+	// version 1 policy (whose replacement is B) refuses the same snapshot.
+	t.Run("final epoch's producer under a version 2 schedule", func(t *testing.T) {
+		src := t.TempDir()
+		v1, signerB := hl1rTransitionPrefix(t, src, 2)
+		b := hl1rStartCore(t, src, v1, signerB)
+		for b.st.producer.TipHeight() < 5 {
+			b.seal()
+		}
+		cp, ok := b.st.producer.GetBlock(5)
+		if !ok {
+			t.Fatal("checkpoint block missing")
+		}
+		b.crash()
+		data, err := os.ReadFile(filepath.Join(src, hl1JournalName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(data)
+		signerC := hl1rSigner(t)
+		v2 := &producerpolicy.Transition{Version: 2, HistoricalPrefixBytes: int64(len(data)), HistoricalPrefixSHA256: hex.EncodeToString(sum[:]),
+			Epochs: append(v1.Schedule(), producerpolicy.Epoch{FromHeight: 6, ProducerID: signerC.Address(), CheckpointHash: cp.Hash})}
+		if err := v2.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		c := hl1rStartCore(t, src, v2, signerC)
+		for c.st.producer.TipHeight() < 8 {
+			c.seal()
+		}
+		c.crash()
+		pinned := stakingAndPin(t, src)
+		cons := snapConsensus()
+		cons.Transition = v2
+		snap := exportUnder(t, src, cons)
+
+		res, err := snapImport(t, snap, filepath.Join(t.TempDir(), "follower"), pinned, func(o *snapshotImportOptions) { o.Consensus = cons })
+		if err != nil {
+			t.Fatalf("import: %v", err)
+		}
+		if res.AuthorizedBy != "producer_transition" || !res.EnrollmentInRoot || res.Checkpoint.ProducerID != signerC.Address() {
+			t.Fatalf("import result %+v", res)
+		}
+
+		stateDir := filepath.Join(t.TempDir(), "follower")
+		_, err = snapImport(t, snap, stateDir, pinned, func(o *snapshotImportOptions) { o.Consensus.Transition = v1 })
+		if err == nil || !errors.Is(err, chain.ErrExternalProducerNotAuthorized) {
+			t.Fatalf("import under the version 1 policy: %v", err)
+		}
+		snapRequireUntouched(t, stateDir)
 	})
 }
 
