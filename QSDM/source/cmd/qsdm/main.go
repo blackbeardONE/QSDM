@@ -746,6 +746,14 @@ func main() {
 		hl1ReplayMain(cfg, os.Args[1:])
 		return
 	}
+	// Snapshot bootstrap (snapshot_bootstrap.go): qsdm --snapshot-export and
+	// --snapshot-import are offline modes. Import runs before the transition
+	// journal preflight because it fills an empty state directory; both take
+	// the state lock themselves and exit 0 or 78; neither starts the node.
+	if snapshotModeRequested(os.Args[1:]) {
+		snapshotMain(cfg, os.Args[1:])
+		return
+	}
 
 	if err := cfg.ProducerTransition.ValidateJournalPrefix(filepath.Join(filepath.Dir(cfg.SQLitePath), "qsdm_chain.ndjson")); err != nil {
 		log.Fatalf("producer transition preflight: %v", err)
@@ -2503,6 +2511,12 @@ func main() {
 	} else {
 		logger.Info("No persisted chain found; genesis seal will run on a fresh chain",
 			"chain_path", chainStatePath)
+	}
+	// Snapshot bootstrap: with [snapshot_bootstrap] enabled, a restored chain
+	// that reaches the trusted checkpoint height must hold the checkpoint
+	// block (off: no-op).
+	if err := snapshotCheckpointGuard(cfg.SnapshotBootstrap, adminProducer.GetBlock); err != nil {
+		fatalRestore("snapshot bootstrap checkpoint: %v", err)
 	}
 
 	var journalTip *chain.Block
