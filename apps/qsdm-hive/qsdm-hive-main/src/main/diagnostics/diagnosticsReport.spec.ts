@@ -51,7 +51,7 @@ const JWT_TOKEN = [
   base64url('signature-bytes-for-the-test'),
 ].join('.');
 const EMAIL = 'alice@example.com';
-const PASSWORD = 'pw-Correct-Horse-1';
+const PASSWORD = 'fake-pw-Correct-Horse-1';
 const HOME = os.homedir();
 const SECRETS = [
   PHRASE,

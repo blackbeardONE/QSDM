@@ -66,8 +66,8 @@ const JWT_TOKEN = [
   base64url(sha('sha256', 'jwt signature')),
 ].join('.');
 const BEARER_TOKEN = base64url(sha('sha256', 'bearer token').subarray(0, 24));
-const PASSWORD = 'hunter2-Correct-Horse';
-const PASSPHRASE = 'Tr0ub4dor&3 battery staple';
+const PASSWORD = 'fake-hunter2-Correct-Horse';
+const PASSPHRASE = 'fake Tr0ub4dor&3 battery staple';
 const PIN = '482916';
 const EMAIL = 'alice.example+hive@example.co.uk';
 

@@ -35,7 +35,7 @@ const PRIVATE_KEY_HEX = crypto
   .update('crash recorder key')
   .digest('hex');
 const EMAIL = 'alice@example.com';
-const PASSWORD = 'hunter2-Correct-Horse';
+const PASSWORD = 'fake-hunter2-Correct-Horse';
 const SECRETS = [PHRASE, PRIVATE_KEY_HEX, EMAIL, PASSWORD, 'sausage'];
 
 const FILE_NAME =
