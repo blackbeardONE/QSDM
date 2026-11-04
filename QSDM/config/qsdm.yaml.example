@@ -69,6 +69,10 @@ wallet:
 governance:
   proposal_file: "proposals.json"
 
+# Consensus (see the [consensus] section of qsdm.toml.example).
+# consensus:
+#   stream_ed25519_retirement_height: 0  # CELL stream opens (Ed25519 session keys) refused from this height; 0 = never; same value on every validator; env QSDM_STREAM_ED25519_RETIREMENT_HEIGHT
+
 # Performance Configuration
 performance:
   transaction_interval: "30s"      # Duration between transaction checks

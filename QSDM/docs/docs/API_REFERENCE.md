@@ -180,6 +180,8 @@ in one table: [Consensus rules](CONSENSUS_RULES.md).
 | `edge_relay_only_activation_height`, `edge_relay_only_active` | `833800`, `true` | Paid edge tasks settle only through an authorized settlement relay. |
 | `task_action_signatures_active` | `true` | Task actions must carry a valid ML-DSA signature (from block 625,000). |
 | `tx_content_root_active` | `true` | The block's transaction root commits transaction contents, not only IDs (from block 625,000). |
+| `ed25519_tx_accepted` | `false` | Transactions signed with Ed25519 are refused; ML-DSA-87 is the only accepted transaction signature. |
+| `stream_ed25519_retirement_height`, `stream_ed25519_session_keys_retired` | `0`, `false` | From this height a CELL stream open, which registers an Ed25519 session key, is refused; streams opened earlier can still take receipts, settle and close. `0`: no height is set. |
 
 ### `GET /health`, `GET /health/live`, `GET /health/ready`
 

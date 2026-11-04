@@ -107,6 +107,11 @@ enrollment_state_root_activation_height = 625000
 # (the default). Set the same future height on every validator only after the
 # wallets that send real parents (GET /api/v1/chain/parents) are released.
 poe_activation_height = 0
+# Ed25519 stream session keys: from this height a CELL stream open
+# (qsdm/streams/v1), which registers an Ed25519 usage-receipt session key, is
+# refused; streams opened below it can still take receipts, settle and close.
+# 0 = never (the default). Every validator must use the same value.
+# stream_ed25519_retirement_height = 0  # env QSDM_STREAM_ED25519_RETIREMENT_HEIGHT
 signer_key_path = "qsdm_consensus_signer.json"
 
 # Performance Configuration

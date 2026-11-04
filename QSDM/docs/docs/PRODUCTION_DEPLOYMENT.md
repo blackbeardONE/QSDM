@@ -154,6 +154,7 @@ SCYLLADB_HOSTS=localhost       # ScyllaDB hosts (comma-separated)
 
 # Consensus Configuration
 QSDM_POE_ACTIVATION_HEIGHT=0   # Proof-of-Entanglement parent rules; 0 = not enforced, same value on every validator (PROOF_OF_ENTANGLEMENT.md)
+QSDM_STREAM_ED25519_RETIREMENT_HEIGHT=0   # refuse CELL stream opens (Ed25519 session keys) from this height; 0 = never, same value on every validator (CONSENSUS_RULES.md)
 QUANTUM_SAFE_ENABLED=true      # Enable quantum-safe crypto
 
 # Monitoring Configuration
@@ -188,6 +189,10 @@ consensus:
   # transfer) apply from this height; 0 = not enforced. Every validator
   # must use the same value. See PROOF_OF_ENTANGLEMENT.md.
   poe_activation_height: 0
+  # A CELL stream open registers an Ed25519 session key; from this height
+  # stream opens are refused (streams opened earlier can still settle and
+  # close). 0 = never. Every validator must use the same value.
+  stream_ed25519_retirement_height: 0
   quantum_safe: true
 
 monitoring:

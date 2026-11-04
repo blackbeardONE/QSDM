@@ -15,7 +15,7 @@ network see [Network status](NETWORK_STATUS.md).
 | Area | Protected today | Not yet / what you trust |
 |---|---|---|
 | Wallet keys | Generated and kept on your device; private keys are stored encrypted | Your device, your passphrase, and the software you installed |
-| Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL); nonces stop replays; transfers must name committed parents (Proof-of-Entanglement, from block 816,600) | The generic peer-to-peer transaction-gossip verifier code still accepts Ed25519. It cannot be reached on the live chain today because the producer has no transaction gossip ingress; retiring it is planned |
+| Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL); nonces stop replays; transfers must name committed parents (Proof-of-Entanglement, from block 816,600) | Ed25519 transaction signatures are refused (`ed25519_tx_accepted: false`). CELL stream session keys are still Ed25519 until a stream retirement height is set |
 | Block production | One producer runs the chain; every block is stored and served publicly | You trust that producer to include valid transactions and not to censor or reorder them |
 | Consensus | **Signed consensus enforced from block 827,000** (`signed_consensus_active: true`): every BFT vote and consensus message must carry a valid ML-DSA signature; unsigned consensus traffic is refused | There is only one producer and no independent validators yet, so there is no multi-validator BFT today |
 | Mining | Enrollment needs a signed enrollment and a 10 CELL bond; proofs carry NVIDIA attestation; duplicate proofs and nonces are rejected durably | Consumer-GPU attestation (`nvidia-hmac-v1`) is an economic control tied to the enrollment and its bond, not a hardware proof |
@@ -48,11 +48,13 @@ network see [Network status](NETWORK_STATUS.md).
   category 5). It is designed to resist known quantum attacks on signatures.
   It does not make the rest of the system "quantum-proof": transport (TLS)
   and some peer-to-peer traffic still use classical cryptography.
-- The generic peer-to-peer transaction-gossip verifier code still accepts
-  Ed25519 signatures. The producer runs without transaction gossip ingress, so
-  no Ed25519 transaction can reach the live chain today. Wallets, task actions
-  and consensus use ML-DSA. Retiring the Ed25519 path is on the
-  [Roadmap](ROADMAP.md).
+- Ed25519 transaction signatures are retired: since 16 October 2026 the
+  generic peer-to-peer transaction-gossip verifier refuses them, and
+  ML-DSA-87 is the only accepted transaction signature (status API
+  `ed25519_tx_accepted: false`). Wallets, task actions and consensus use
+  ML-DSA. CELL stream session keys, which sign stream usage receipts, are
+  still Ed25519 until a stream retirement height
+  (`stream_ed25519_retirement_height`) is set; see the [Roadmap](ROADMAP.md).
 - From block 816,600 every transfer must name committed parent transactions
   ([Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md)). The parents are part of
   the signed bytes.

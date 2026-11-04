@@ -90,6 +90,8 @@ How to read the fields that matter most:
 | `consensus_auth.poe_activation_height`, `poe_active` | The block from which transfers must name committed parents, and whether that height has been reached. |
 | `consensus_auth.edge_relay_only_activation_height`, `edge_relay_only_active` | From block 833,800, paid edge tasks settle only through an authorized settlement relay. |
 | `consensus_auth.task_action_signatures_active`, `tx_content_root_active` | `true`: task actions must carry a valid signature, and the block's transaction root commits transaction contents (both from block 625,000). |
+| `consensus_auth.ed25519_tx_accepted` | `false`: transactions signed with Ed25519 are refused; ML-DSA-87 is the only accepted transaction signature. |
+| `consensus_auth.stream_ed25519_retirement_height`, `stream_ed25519_session_keys_retired` | The block from which a CELL stream open (which registers an Ed25519 session key) is refused, and whether the next block is at or above it. `0` and `false`: no height is set. |
 | `tokenomics.*` | Supply cap, amount mined so far, current block reward and the next halving height. Amounts are also given in dust (1 CELL = 100,000,000 dust). |
 | `mining.protocol_versions_accepted` | Only mining protocol v2 proofs are accepted. |
 | `mining.attestation_types_required` | The NVIDIA attestation types a proof may carry. |
@@ -148,9 +150,10 @@ docs.
   the code but no longer planned: since 2026-10-19 the plan is for miners to
   produce blocks, in stages (see the [Roadmap](ROADMAP.md)). Today one
   producer signs every consensus message.
-- Retirement of the Ed25519 code path in the generic peer-to-peer
-  transaction-gossip verifier. It cannot be reached on the live chain today
-  (the producer has no transaction gossip ingress), but the code still exists.
+- Retirement of Ed25519 CELL stream session keys. The rule is in the code
+  (`stream_ed25519_retirement_height`), but no height is set
+  (`stream_ed25519_session_keys_retired: false`). Ed25519 transactions are
+  already refused (`ed25519_tx_accepted: false`).
 - The published mainnet migration manifest and fork height
   ([Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) §5).
 - A published security review with its findings fixed. The current path is

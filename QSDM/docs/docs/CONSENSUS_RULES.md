@@ -124,11 +124,18 @@ See [Signed transfers](V040_WALLET_SEND_DESIGN.md) and
 
 ## Not yet
 
-- **Ed25519 retirement.** The generic peer-to-peer transaction-gossip verifier
-  code still accepts Ed25519 signatures. The producer runs without transaction
-  gossip ingress, so no Ed25519 transaction can reach the live chain today.
-  Wallets, task actions and consensus use ML-DSA. Removing the Ed25519 path is
-  planned and is not a consensus rule yet.
+- **Ed25519 stream session keys.** Ed25519 transactions are refused since
+  16 October 2026 (`ed25519_tx_accepted: false`). That is an admission rule,
+  not a block rule: a block does not record a transaction's signature
+  algorithm. CELL stream session keys are still Ed25519. The block rule that
+  retires them is in the code but has no height yet: in a block at or above
+  `[consensus] stream_ed25519_retirement_height` (env
+  `QSDM_STREAM_ED25519_RETIREMENT_HEIGHT`), a stream open, which registers an
+  Ed25519 session key, MUST be refused; streams opened below it can still take
+  receipts, settle and close. Today `stream_ed25519_retirement_height` is `0`
+  and `stream_ed25519_session_keys_retired` is `false`. Metrics:
+  `qsdm_tx_gossip_ed25519_rejected_total` (Ed25519 transactions refused) and
+  `qsdm_stream_ed25519_retirement_height`.
 - **Independent validators.** There is one block producer and no independent
   validators. Multi-validator BFT voting is the next step and has not started
   publicly.
