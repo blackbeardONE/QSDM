@@ -86,6 +86,10 @@ type NetworkConfig struct {
 	// line of base64(proto.Marshal(libp2p PrivKey)), mode 0600; see
 	// pkg/networking/hostkey.go. Env override: QSDM_NETWORK_HOST_KEY_PATH.
 	HostKeyPath string `toml:"host_key_path" yaml:"host_key_path"`
+	// BridgeRelayTOML holds the qsdm-bridge gossip authentication keys
+	// (bridge_relay_*). Embedded so its keys live directly under [network];
+	// see bridge_relay.go.
+	BridgeRelayTOML `yaml:",inline"`
 }
 
 type StorageConfig struct {

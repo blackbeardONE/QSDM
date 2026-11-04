@@ -1270,15 +1270,30 @@ func main() {
 	}
 	_ = bridgeAutoSaver
 
-	// Bridge P2P relay — propagate lock/swap events across the network
+	// Bridge P2P relay — propagate lock/swap events across the network.
+	// Remote events are applied only when signed by a trusted bridge relayer
+	// key ([network] bridge_relay_*); by default none are
+	// (docs/docs/BRIDGE_RELAY_AUTH.md).
 	var bridgeRelay *bridge.P2PRelay
 	if bridgeProto != nil || atomicSwap != nil {
+		relayAuth, authErr := bridgeRelayAuthFromConfig(cfg.BridgeRelay, consensusSigner.GetPublicKey())
+		if authErr != nil {
+			log.Fatalf("bridge relay authentication config: %v", authErr)
+		}
 		var relayErr error
-		bridgeRelay, relayErr = bridge.NewP2PRelay(net, bridgeProto, atomicSwap, net.Host.ID().String())
+		bridgeRelay, relayErr = bridge.NewP2PRelayWithAuth(net, bridgeProto, atomicSwap, net.Host.ID().String(), relayAuth)
 		if relayErr != nil {
 			logger.Warn("Bridge P2P relay not available", "error", relayErr)
 		} else {
-			logger.Info("Bridge P2P relay started on topic " + bridge.BridgeTopicName)
+			remote := "ignored (no trusted bridge relayer keys)"
+			if bridgeRelay.TrustedKeyCount() > 0 {
+				remote = "applied only when signed by a trusted bridge relayer key"
+			}
+			logger.Info("Bridge P2P relay started on topic "+bridge.BridgeTopicName,
+				"trusted_relayer_keys", bridgeRelay.TrustedKeyCount(),
+				"signing", bridgeRelay.Signing(),
+				"remote_events", remote)
+			monitoring.GlobalScrapePrometheusExporter().RegisterCollector("bridge_relay", bridgeRelayMetricsCollector(bridgeRelay))
 		}
 	}
 	_ = bridgeRelay
