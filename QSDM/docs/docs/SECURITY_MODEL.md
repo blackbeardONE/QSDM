@@ -63,6 +63,15 @@ network see [Network status](NETWORK_STATUS.md).
   the chain. Since 2 November 2026 its peer-to-peer port is public, with
   connection, stream and block-request limits; the status API's `peers` counts
   the connected peers.
+- On 3 November 2026 fuzzing found that one block with a null transaction entry
+  stopped a node before any signature was checked. The producer's peer-to-peer
+  port was closed while a fixed build went in, and it reopened on 4 November.
+  The decoders that read peer messages, public API request bodies and mining
+  submissions are fuzzed every night (39 targets in
+  `.github/workflows/go-fuzz-nightly.yml`).
+- Bridge events on the `qsdm-bridge` topic are applied only when they are
+  signed by a relayer key on the operator's allowlist, which is empty by
+  default. See [Bridge relay authentication](BRIDGE_RELAY_AUTH.md).
 - That producer can, in principle, delay or leave out transactions. It cannot
   forge your ML-DSA-87 signature, so it cannot spend from your wallet.
 - Since block 827,000 (12 October 2026, 18:11 UTC) every BFT vote and
@@ -103,6 +112,11 @@ network see [Network status](NETWORK_STATUS.md).
   Releases since Hive 1.4.21 use the **v2 release key**; the previous key was
   rotated. How to check a download by hand is in
   [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).
+- From the first Hive release after 1.4.22, Hive keeps working through a
+  qsdm.tech outage with the last signed release envelope it verified, until
+  that envelope's own expiry. It ignores an envelope issued before one it has
+  already verified, so an old envelope cannot roll it back. See
+  [QSDM-native release signing](QSDM_NATIVE_RELEASE_SIGNING.md#website-outages).
 - Source code is public in this repository. The live release name and base
   commit are in `/api/v1/status` (`version`, `git_sha`).
 

@@ -1,7 +1,9 @@
 package chain
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -104,5 +106,47 @@ func TestLoadOrCreateBFTSignerRejectsOversizedFile(t *testing.T) {
 	}
 	if _, _, err := LoadOrCreateBFTSigner(path); err == nil {
 		t.Fatal("oversized consensus signer file should be rejected")
+	}
+}
+
+func TestLoadBFTSignerNeverCreates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "relayer.json")
+	if _, err := LoadBFTSigner(path); err == nil {
+		t.Fatal("a missing key file should be an error")
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("LoadBFTSigner created %s (stat error %v)", path, err)
+	}
+	if _, err := LoadBFTSigner("  "); err == nil {
+		t.Fatal("an empty path should be an error")
+	}
+}
+
+func TestLoadBFTSignerLoadsWhatLoadOrCreateWrote(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "relayer.json")
+	created, isNew, err := LoadOrCreateBFTSigner(path)
+	if err != nil || !isNew {
+		t.Fatalf("create: new=%v err=%v", isNew, err)
+	}
+	loaded, err := LoadBFTSigner(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !bytes.Equal(loaded.GetPublicKey(), created.GetPublicKey()) {
+		t.Fatal("LoadBFTSigner returned a different key")
+	}
+}
+
+func TestLoadBFTSignerRejectsOversizedFileAndDirectory(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "relayer.json")
+	if err := os.WriteFile(path, make([]byte, maxBFTSignerKeyFileSize+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadBFTSigner(path); err == nil {
+		t.Fatal("an oversized key file should be rejected")
+	}
+	if _, err := LoadBFTSigner(dir); err == nil {
+		t.Fatal("a directory should be rejected")
 	}
 }

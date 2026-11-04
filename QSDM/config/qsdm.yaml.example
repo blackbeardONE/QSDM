@@ -17,6 +17,11 @@ network:
   # submesh_config: "config/micropayments.yml"  # optional; env QSDM_SUBMESH_CONFIG overrides
     # - "127.0.0.1:4001"
     # - "192.168.1.100:4001"
+  # Bridge relay authentication (QSDM/docs/docs/BRIDGE_RELAY_AUTH.md); leave unset on public nodes.
+  # bridge_relay_trusted_keys: []  # hex ML-DSA-87 public keys whose signed bridge events are applied
+  # bridge_relay_trusted_keys_file: "/opt/qsdm/bridge_relayers.txt"  # one hex key per line
+  # bridge_relay_signer_key_path: "/opt/qsdm/bridge_relayer_key.json"  # signs local events; never the consensus key
+  # bridge_relay_max_event_age: "10m"
 
 # Storage Configuration
 storage:

@@ -36,6 +36,14 @@ bootstrap_peers = [
     # "192.168.1.100:4001"
 ]
 # submesh_config = "config/micropayments.toml"  # optional: seed DynamicSubmeshManager (env QSDM_SUBMESH_CONFIG); multi-profile TOML uses [[submeshes]] tables
+# Bridge relay authentication (QSDM/docs/docs/BRIDGE_RELAY_AUTH.md). Events from
+# peers on the qsdm-bridge topic are applied only when signed by a trusted bridge
+# relayer key; with no trusted keys (the default) none are. Leave all four unset
+# on public nodes.
+# bridge_relay_trusted_keys = []  # hex ML-DSA-87 public keys (env QSDM_BRIDGE_RELAY_TRUSTED_KEYS, comma-separated)
+# bridge_relay_trusted_keys_file = "/opt/qsdm/bridge_relayers.txt"  # one hex key per line, # comments (env QSDM_BRIDGE_RELAY_TRUSTED_KEYS_FILE)
+# bridge_relay_signer_key_path = "/opt/qsdm/bridge_relayer_key.json"  # signs local events; never the consensus key (env QSDM_BRIDGE_RELAY_SIGNER_KEY_PATH)
+# bridge_relay_max_event_age = "10m"  # oldest accepted remote event (env QSDM_BRIDGE_RELAY_MAX_EVENT_AGE)
 
 # Storage Configuration
 [storage]

@@ -8,6 +8,7 @@ import {
   QSDM_HIVE_RELEASE_BASE_URL,
   QsdmReleaseArtifact,
   resetVerifiedQsdmHiveReleaseCacheForTests,
+  verifyQsdmHiveReleaseEnvelope,
 } from './qsdmReleaseManifest';
 
 const TRUST_ROOT_MODULE =
@@ -240,6 +241,85 @@ describe('QSDM signed release manifest', () => {
     ]);
     expect(release.installerUrl).toBe(
       'https://qsdm.tech/downloads/hive-v2/qsdm-hive-1.3.96-win-x64.exe'
+    );
+  });
+
+  it('keeps the exact envelope bytes it verified', async () => {
+    const manifestBytes = Buffer.from(JSON.stringify(buildManifest()));
+    const envelope = Buffer.from(
+      JSON.stringify(
+        {
+          schema: 'qsdm.signed-release.v1',
+          algorithm: 'ML-DSA-87',
+          key_id: getQsdmReleaseTrustKey().key_id,
+          manifest_base64: manifestBytes.toString('base64'),
+          signature: '00'.repeat(4627),
+        },
+        null,
+        2
+      )
+    );
+
+    const release = await getVerifiedQsdmHiveRelease({
+      platform: 'win32',
+      forceRefresh: true,
+      dependencies: {
+        fetchBytes: jest
+          .fn()
+          .mockResolvedValueOnce(envelope)
+          .mockResolvedValueOnce(updaterMetadata),
+        verifySignature: async () => undefined,
+        now: new Date('2026-07-19T00:00:00.000Z'),
+      },
+    });
+
+    expect(release.envelope.equals(envelope)).toBe(true);
+  });
+
+  it('verifies a held envelope with the same checks as a fetched one', async () => {
+    const manifestBytes = Buffer.from(JSON.stringify(buildManifest()));
+    const envelope = Buffer.from(
+      JSON.stringify({
+        schema: 'qsdm.signed-release.v1',
+        algorithm: 'ML-DSA-87',
+        key_id: getQsdmReleaseTrustKey().key_id,
+        manifest_base64: manifestBytes.toString('base64'),
+        signature: '00'.repeat(4627),
+      })
+    );
+    const verifySignature = jest.fn(async () => undefined);
+    const verifyAt = (platform: NodeJS.Platform, now: string) =>
+      verifyQsdmHiveReleaseEnvelope(envelope, {
+        platform,
+        dependencies: { verifySignature, now: new Date(now) },
+      });
+
+    const release = await verifyAt('win32', '2026-07-19T00:00:00.000Z');
+    expect(verifySignature).toHaveBeenCalledWith(
+      manifestBytes,
+      '00'.repeat(4627),
+      undefined
+    );
+    expect(release.manifest.version).toBe('1.3.96');
+    expect(release.envelope).toBe(envelope);
+    expect(release.manifestUrl).toBe(
+      'https://qsdm.tech/downloads/hive-v2/qsdm-hive-release-windows-v2.json'
+    );
+    expect(release.installerUrl).toBe(
+      'https://qsdm.tech/downloads/hive-v2/qsdm-hive-1.3.96-win-x64.exe'
+    );
+
+    await expect(verifyAt('linux', '2026-07-19T00:00:00.000Z')).rejects.toThrow(
+      'targets windows, not linux'
+    );
+    await expect(verifyAt('win32', '2026-09-01T00:00:00.000Z')).rejects.toThrow(
+      'expired'
+    );
+    verifySignature.mockRejectedValueOnce(
+      new Error('QSDM release signature verification failed: bad signature')
+    );
+    await expect(verifyAt('win32', '2026-07-19T00:00:00.000Z')).rejects.toThrow(
+      'signature verification failed'
     );
   });
 

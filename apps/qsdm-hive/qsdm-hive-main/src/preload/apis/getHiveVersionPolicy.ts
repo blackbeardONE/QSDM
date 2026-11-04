@@ -15,6 +15,9 @@ export type HiveVersionPolicyStatus = {
     | 'manifest-unavailable'
     | 'policy-disabled';
   error?: string;
+  // True when the required version comes from the signed release envelope
+  // Hive saved earlier, because the release feed could not be used just now.
+  fromCache?: boolean;
 };
 
 export default (

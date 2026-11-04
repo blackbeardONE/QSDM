@@ -34,6 +34,35 @@ type PersistentBFTSigner struct {
 	publicKey  []byte
 }
 
+// LoadBFTSigner loads an existing key file in the consensus signer format and
+// never creates one: a missing file is an error. It makes the same file checks
+// as LoadOrCreateBFTSigner (not a symlink, a regular file, within the size
+// limit, a matching key pair). Keys the node must not create on its own, such
+// as the bridge relayer key, are loaded with it.
+func LoadBFTSigner(path string) (*PersistentBFTSigner, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, errors.New("chain: consensus signer key path is empty")
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("chain: consensus signer key %q does not exist", path)
+		}
+		return nil, fmt.Errorf("chain: inspect consensus signer key %q: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("chain: consensus signer key %q must not be a symlink", path)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("chain: consensus signer key %q is not a regular file", path)
+	}
+	if info.Size() > maxBFTSignerKeyFileSize {
+		return nil, fmt.Errorf("chain: consensus signer key %q exceeds %d bytes", path, maxBFTSignerKeyFileSize)
+	}
+	return loadBFTSigner(path)
+}
+
 // LoadOrCreateBFTSigner loads a validator consensus key or creates it once.
 // The parent directory must already exist. The file is private signing
 // material and is written with mode 0600.

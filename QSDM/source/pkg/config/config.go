@@ -59,6 +59,10 @@ type Config struct {
 	// format: single line of base64(proto.Marshal(libp2p PrivKey)),
 	// mode 0600; see pkg/networking/hostkey.go.
 	NetworkHostKeyPath string
+	// BridgeRelay authenticates qsdm-bridge gossip events. With no trusted
+	// keys (the default) remote bridge events are never applied.
+	// TOML/YAML: bridge_relay_* under [network]; env: QSDM_BRIDGE_RELAY_*.
+	BridgeRelay BridgeRelayConfig
 	// SubmeshConfigPath: optional file (e.g. config/micropayments.toml) loaded into DynamicSubmeshManager at startup.
 	SubmeshConfigPath string
 	// ConfigFileUsed is the absolute path to the main config file when one was loaded; used to resolve relative submesh_config.
@@ -397,6 +401,11 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.BootstrapPeers = tomlCfg.Network.BootstrapPeers
 		cfg.SubmeshConfigPath = strings.TrimSpace(tomlCfg.Network.SubmeshConfig)
 		cfg.NetworkHostKeyPath = strings.TrimSpace(tomlCfg.Network.HostKeyPath)
+		if br, err := tomlCfg.Network.BridgeRelayTOML.toConfig(); err != nil {
+			return err
+		} else {
+			cfg.BridgeRelay = br
+		}
 		cfg.StorageType = tomlCfg.Storage.Type
 		cfg.SQLitePath = tomlCfg.Storage.SQLitePath
 		cfg.ScyllaHosts = tomlCfg.Storage.ScyllaHosts
@@ -498,6 +507,11 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.BootstrapPeers = yamlCfg.Network.BootstrapPeers
 		cfg.SubmeshConfigPath = strings.TrimSpace(yamlCfg.Network.SubmeshConfig)
 		cfg.NetworkHostKeyPath = strings.TrimSpace(yamlCfg.Network.HostKeyPath)
+		if br, err := yamlCfg.Network.BridgeRelayTOML.toConfig(); err != nil {
+			return err
+		} else {
+			cfg.BridgeRelay = br
+		}
 		cfg.StorageType = yamlCfg.Storage.Type
 		cfg.SQLitePath = yamlCfg.Storage.SQLitePath
 		cfg.ScyllaHosts = yamlCfg.Storage.ScyllaHosts
@@ -768,6 +782,7 @@ func applyEnvOverrides(cfg *Config) {
 	if val := strings.TrimSpace(envPreferred("QSDM_NETWORK_HOST_KEY_PATH", "QSDM_NETWORK_HOST_KEY_PATH")); val != "" {
 		cfg.NetworkHostKeyPath = val
 	}
+	applyBridgeRelayEnv(&cfg.BridgeRelay)
 	if val := strings.TrimSpace(envPreferred("QSDM_NGC_PROOF_PERSIST_PATH", "QSDM_NGC_PROOF_PERSIST_PATH")); val != "" {
 		cfg.NGCProofPersistPath = val
 	}
@@ -1017,6 +1032,9 @@ func (c *Config) Validate() error {
 
 	if c.NetworkPort < 1 || c.NetworkPort > 65535 {
 		return fmt.Errorf("invalid network port: %d", c.NetworkPort)
+	}
+	if err := c.BridgeRelay.Validate(c.ConsensusSignerKeyPath); err != nil {
+		return err
 	}
 
 	if c.DashboardPort < 1 || c.DashboardPort > 65535 {

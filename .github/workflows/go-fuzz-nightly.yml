@@ -48,6 +48,9 @@ jobs:
           - { pkg: pkg/chain, target: FuzzVerifyBFTWire }
           - { pkg: pkg/chain, target: FuzzVerifyBlockSignature }
           - { pkg: pkg/chain, target: FuzzMerkleProof }
+          - { pkg: pkg/chain, target: FuzzHandleGossipSignedTx }
+          - { pkg: pkg/chain, target: FuzzApplyWalletTransferTx }
+          - { pkg: pkg/chain, target: FuzzBlockRequestWindow }
           - { pkg: pkg/edgepool, target: FuzzDecodeFederationContext }
           - { pkg: pkg/edgepool, target: FuzzDecodeMotherContext }
           - { pkg: pkg/edgepool, target: FuzzVerifyRequestSignature }
@@ -56,9 +59,22 @@ jobs:
           - { pkg: pkg/api, target: FuzzValidateAddressAndTxID }
           - { pkg: pkg/api, target: FuzzValidateHexAndSignature }
           - { pkg: pkg/api, target: FuzzValidateAmountAndTimestamp }
+          - { pkg: pkg/api, target: FuzzValidatePasswordAndStrings }
+          - { pkg: pkg/api, target: FuzzTaskActionEnvelope }
+          - { pkg: pkg/api, target: FuzzReferralRegistrationEnvelope }
           - { pkg: pkg/consensus, target: FuzzValidateSignedTransaction }
           - { pkg: pkg/poe, target: FuzzCheckShape }
           - { pkg: pkg/poe, target: FuzzPickParents }
+          - { pkg: pkg/mesh3d, target: FuzzMeshPubsubWire }
+          - { pkg: pkg/bridge, target: FuzzProcessRemoteBridgeEvent }
+          - { pkg: pkg/mining, target: FuzzVerifyProof }
+          - { pkg: pkg/mining/attest/hmac, target: FuzzVerifyAttestation }
+          - { pkg: pkg/mining/enrollment, target: FuzzEnrollmentAdmission }
+          - { pkg: pkg/mining/slashing, target: FuzzSlashAdmission }
+          - { pkg: pkg/governance/chainparams, target: FuzzGovAdmission }
+          - { pkg: internal/legacymining, target: FuzzDecodePayload }
+          - { pkg: internal/legacymining, target: FuzzEncodePayload }
+          - { pkg: internal/legacymining, target: FuzzOperatorSigAuth }
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

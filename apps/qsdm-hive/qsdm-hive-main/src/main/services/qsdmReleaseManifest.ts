@@ -24,6 +24,9 @@ const RELEASE_CACHE_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_REDIRECTS = 3;
 const MAX_MANIFEST_BYTES = 1024 * 1024;
+// The largest signed release envelope Hive accepts from the feed, and so the
+// largest saved copy it reads back (see qsdmReleaseEnvelopeCache.ts).
+export const QSDM_HIVE_RELEASE_ENVELOPE_MAX_BYTES = MAX_MANIFEST_BYTES;
 const MAX_UPDATER_MANIFEST_BYTES = 2 * 1024 * 1024;
 const CLOCK_SKEW_MS = 5 * 60 * 1000;
 
@@ -74,9 +77,19 @@ export type VerifiedQsdmHiveRelease = {
   installerUrl: string;
   updaterManifest: Buffer;
   installer: QsdmReleaseArtifact;
+  // The exact signed envelope bytes the manifest was verified from.
+  envelope: Buffer;
 };
 
-type VerificationDependencies = {
+// A signed release envelope that passed every envelope and manifest check.
+export type VerifiedQsdmHiveReleaseEnvelope = {
+  manifest: QsdmHiveReleaseManifest;
+  manifestUrl: string;
+  installerUrl: string;
+  envelope: Buffer;
+};
+
+export type VerificationDependencies = {
   fetchBytes?: typeof fetchReleaseBytes;
   verifySignature?: (
     manifestBytes: Buffer,
@@ -189,19 +202,13 @@ export async function getVerifiedQsdmHiveRelease({
   }
 
   const fetchBytes = dependencies.fetchBytes || fetchReleaseBytes;
-  const verifySignature =
-    dependencies.verifySignature || verifyManifestWithBundledQsdmCli;
   const envelopeBytes = await fetchBytes(manifestUrl, MAX_MANIFEST_BYTES);
-  const { manifestBytes, signatureHex } =
-    parseSignedReleaseEnvelope(envelopeBytes);
-
-  await verifySignature(manifestBytes, signatureHex, qsdmCliPath);
-  const releasePlatform = normalizePlatform(platform);
-  const manifest = parseAndValidateQsdmHiveReleaseManifest(
-    manifestBytes,
-    releasePlatform,
-    now
-  );
+  const manifest = await verifySignedReleaseEnvelope(envelopeBytes, {
+    platform,
+    now,
+    qsdmCliPath,
+    verifySignature: dependencies.verifySignature,
+  });
   const updaterArtifact = requireSingleArtifact(manifest, 'updater-manifest');
   const installer = requireSingleArtifact(manifest, 'installer');
   const updaterManifestUrl = resolveArtifactUrl(
@@ -227,11 +234,80 @@ export async function getVerifiedQsdmHiveRelease({
     installerUrl,
     updaterManifest,
     installer,
+    envelope: envelopeBytes,
   };
   cachedRelease = verified;
   cachedReleaseUrl = manifestUrl;
   cachedReleaseAt = now.getTime();
   return verified;
+}
+
+/**
+ * Verifies signed release envelope bytes that Hive already holds (the saved
+ * copy of the last envelope it verified) with the same envelope and manifest
+ * checks a freshly fetched envelope passes: the pinned key, the ML-DSA-87
+ * signature, and the manifest's schema, product, channel, platform, version,
+ * commit, key, artifacts and signed validity window (with the usual clock
+ * skew). Nothing is fetched, so the updater metadata is not checked here.
+ */
+export async function verifyQsdmHiveReleaseEnvelope(
+  envelopeBytes: Buffer,
+  {
+    platform = process.platform,
+    baseUrl = DEFAULT_RELEASE_BASE_URL,
+    qsdmCliPath,
+    dependencies = {},
+  }: {
+    platform?: NodeJS.Platform;
+    baseUrl?: string;
+    qsdmCliPath?: string;
+    dependencies?: VerificationDependencies;
+  } = {}
+): Promise<VerifiedQsdmHiveReleaseEnvelope> {
+  getQsdmReleaseTrustKey();
+  const manifestUrl = getQsdmHiveReleaseManifestUrl(platform, baseUrl);
+  if (!envelopeBytes.length || envelopeBytes.length > MAX_MANIFEST_BYTES) {
+    throw new Error('QSDM signed release envelope size is invalid.');
+  }
+  const manifest = await verifySignedReleaseEnvelope(envelopeBytes, {
+    platform,
+    now: dependencies.now || new Date(),
+    qsdmCliPath,
+    verifySignature: dependencies.verifySignature,
+  });
+  const installer = requireSingleArtifact(manifest, 'installer');
+  return {
+    manifest,
+    manifestUrl,
+    installerUrl: resolveArtifactUrl(installer.name, manifestUrl),
+    envelope: envelopeBytes,
+  };
+}
+
+// The checks every signed release envelope passes before Hive uses it, whether
+// it was just fetched or read back from the saved copy.
+async function verifySignedReleaseEnvelope(
+  envelopeBytes: Buffer,
+  {
+    platform,
+    now,
+    qsdmCliPath,
+    verifySignature = verifyManifestWithBundledQsdmCli,
+  }: {
+    platform: NodeJS.Platform;
+    now: Date;
+    qsdmCliPath?: string;
+    verifySignature?: VerificationDependencies['verifySignature'];
+  }
+) {
+  const { manifestBytes, signatureHex } =
+    parseSignedReleaseEnvelope(envelopeBytes);
+  await verifySignature(manifestBytes, signatureHex, qsdmCliPath);
+  return parseAndValidateQsdmHiveReleaseManifest(
+    manifestBytes,
+    normalizePlatform(platform),
+    now
+  );
 }
 
 function parseSignedReleaseEnvelope(envelopeBytes: Buffer) {

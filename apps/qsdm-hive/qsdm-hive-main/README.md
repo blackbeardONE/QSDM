@@ -62,6 +62,27 @@ Windows packages remain development artifacts. The repository
 and manual-approval flow; the [privacy policy](../../../PRIVACY.md) documents
 Hive's local and network data boundaries.
 
+## Updates
+
+Hive runs only the exact version named by the current signed QSDM release, and
+it updates itself to that version. It reads the signed release envelope from
+`https://qsdm.tech/downloads/hive-v2/` and checks its ML-DSA-87 signature
+against the release key built into Hive; see
+[QSDM-native release signing](../../../QSDM/docs/docs/QSDM_NATIVE_RELEASE_SIGNING.md).
+
+Hive keeps working when qsdm.tech is down or the computer is offline. After
+every successful check it saves the signed envelope in a
+`release-envelope-cache` folder in its application-data directory. When a later
+check fails, Hive checks that saved envelope again in full, signature included,
+and uses it until the envelope's own expiry date (`expires_at`). There is no
+other time limit. If the saved envelope names a different version, the update
+is still required. Once the envelope has expired, or if the saved copy is
+missing or damaged, Hive stays locked until it can check the website again.
+
+Hive never goes back to an older envelope: one issued before the envelope Hive
+saved is ignored. Every new release, renewal, or rollback must therefore be a
+newly signed envelope with a later `issued_at`.
+
 ## Support
 
 - Documentation: https://qsdm.tech/docs
