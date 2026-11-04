@@ -324,9 +324,9 @@ derive_names() {
 # proto_args URL: curl may only use the URL's own scheme, also after a redirect.
 proto_args() {
   if [[ $1 == https://* ]]; then
-    PROTO=(--proto =https --proto-redir =https --tlsv1.2)
+    PROTO=(--proto '=https' --proto-redir '=https' --tlsv1.2)
   else
-    PROTO=(--proto =http --proto-redir =http)
+    PROTO=(--proto '=http' --proto-redir '=http')
   fi
 }
 
