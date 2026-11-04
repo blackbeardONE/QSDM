@@ -255,6 +255,19 @@ Tests:
   node.
 - `cmd/qsdm/private_p2p_test.go`: the stale-allowlist warning names the final
   epoch's producer.
+- Fuzz targets, whose seeds run with the other tests and which the nightly
+  fuzz workflow fuzzes for five minutes each:
+  - `FuzzTransitionValidate` (`pkg/producerpolicy`) builds tables with any
+    version, any mix of version 1 and version 2 fields and up to 66 epochs.
+    `Validate` must accept exactly the tables that an independent restatement
+    of the rules in sections 1 and 2 accepts, and every accepted table must
+    give a usable schedule.
+  - `FuzzProducerTransitionBlockRule` (`pkg/chain`) gives the block rule
+    blocks around every boundary, signed by each producer, forged, unsigned
+    or changed after signing. The rule as written before version 2, version 1
+    as its schedule and the same table written as version 2 must agree, error
+    text included, and both a version 1 policy and a three-epoch schedule must
+    accept exactly the blocks that section 3 allows.
 
 ## 8. Not yet known
 

@@ -54,6 +54,9 @@ jobs:
           - { pkg: pkg/chain, target: FuzzBlockRequestWindow }
           - { pkg: pkg/chain, target: FuzzBlockResponseBudget }
           - { pkg: pkg/chain, target: FuzzBlockPropagatorMessage }
+          - { pkg: pkg/chain, target: FuzzProducerTransitionBlockRule }
+          - { pkg: pkg/chain, target: FuzzCellToDust }
+          - { pkg: pkg/producerpolicy, target: FuzzTransitionValidate }
           - { pkg: pkg/networking, target: FuzzGossipGuardValidate }
           - { pkg: pkg/networking, target: FuzzPrivateGaterAddress }
           - { pkg: pkg/edgepool, target: FuzzDecodeFederationContext }
@@ -80,6 +83,7 @@ jobs:
           - { pkg: internal/legacymining, target: FuzzDecodePayload }
           - { pkg: internal/legacymining, target: FuzzEncodePayload }
           - { pkg: internal/legacymining, target: FuzzOperatorSigAuth }
+          - { pkg: cmd/genesis-ceremony, target: FuzzVerifyBundle }
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
