@@ -25,13 +25,45 @@ To check a download yourself, see
 6. After download, Hive verifies the installer filename, size, and SHA-256
    before allowing installation.
 
-Any missing, expired, malformed, mismatched, or incorrectly signed input fails
-closed. Older clients and unapproved higher-version clients remain blocked by
-the exact-version policy.
+Any missing, expired, malformed, mismatched, or incorrectly signed input is
+rejected. Hive then falls back only to the last envelope it verified (see
+[Website outages](#website-outages)); without one it fails closed. Older
+clients and unapproved higher-version clients remain blocked by the
+exact-version policy.
 
 Signed manifests carry at most 90 days of signature validity and are re-signed
 before they expire. Hive rejects a manifest that is expired, dated in the future
 beyond normal clock skew, or valid for more than 120 days.
+
+## Website outages
+
+Hive keeps working while qsdm.tech is down or the computer is offline, until
+the signed envelope's own `expires_at`. After every successful check, Hive saves
+the exact envelope bytes it verified, one file per platform and release
+channel, in a `release-envelope-cache` folder in its application-data
+directory. When a later check fails, Hive verifies the saved envelope again in
+full (pinned key, signature, schema, product, channel, platform, and validity
+window with the usual clock skew) and enforces it exactly like a fresh one, so
+a version mismatch still requires the update. There is no other grace period.
+A missing, damaged, tampered, or expired saved envelope is ignored, and Hive
+fails closed as it would without one.
+
+Renew the envelopes before they expire. An envelope that expires during an
+outage locks every Hive that cannot reach the website.
+
+## `issued_at` must always increase
+
+Hive never goes back to an older envelope. An envelope that verifies but was
+issued before the envelope a Hive already saved is ignored, and that Hive keeps
+using the saved one. A renewal (the same version signed again) and a new
+release are signed later, so they replace it.
+
+- Every envelope must have a later `issued_at` than every envelope published
+  before it for the same platform. `new_hive_release_manifest.ps1` takes
+  `issued_at` from the signing computer's clock, so that clock must be right.
+- To roll back to an older version, sign a new envelope for that version.
+  Putting an older envelope file back on the website does not roll Hive back:
+  every Hive that saw the newer envelope ignores it.
 
 ## Current release key (v2)
 
