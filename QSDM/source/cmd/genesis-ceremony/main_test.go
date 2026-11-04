@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/blackbeardONE/QSDM/pkg/chain"
@@ -194,5 +195,56 @@ func TestDefaultParams_MatchGenesisPolicy(t *testing.T) {
 	b.Params = bad
 	if err := VerifyBundle(b); err == nil || !strings.Contains(err.Error(), "policy invariant") {
 		t.Fatalf("verifier must refuse a bundle that allocates a genesis treasury, got %v", err)
+	}
+}
+
+// Participant keys and signatures are ML-DSA-87 (no Ed25519 stand-in).
+func TestRunCeremony_UsesMLDSA87(t *testing.T) {
+	b, err := RunCeremony(2, "qsdm-test", "addr", DefaultParams())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.SignatureAlg != "ML-DSA-87" {
+		t.Fatalf("signature_algorithm = %q", b.SignatureAlg)
+	}
+	for _, p := range b.Participants {
+		pub, _ := hex.DecodeString(p.PubKeyHex)
+		sig, _ := hex.DecodeString(p.Signature)
+		if len(pub) != mldsa87.PublicKeySize || len(sig) != mldsa87.SignatureSize {
+			t.Fatalf("participant %s: pubkey %d bytes, signature %d bytes; want ML-DSA-87 %d/%d",
+				p.ID, len(pub), len(sig), mldsa87.PublicKeySize, mldsa87.SignatureSize)
+		}
+	}
+	for _, s := range b.Notes {
+		if strings.Contains(strings.ToLower(s), "ed25519") {
+			t.Fatalf("bundle note still mentions ed25519: %q", s)
+		}
+	}
+}
+
+// A bundle that names another signature algorithm, an Ed25519-sized key,
+// or the Ed25519-era schema version 1 is refused.
+func TestVerifyBundle_RefusesNonMLDSA(t *testing.T) {
+	fresh := func() *Bundle {
+		b, err := RunCeremony(2, "qsdm-test", "addr", DefaultParams())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	b := fresh()
+	b.SignatureAlg = "ed25519"
+	if err := VerifyBundle(b); err == nil {
+		t.Fatal("signature_algorithm ed25519 must be refused")
+	}
+	b = fresh()
+	b.SchemaVersion = 1
+	if err := VerifyBundle(b); err == nil {
+		t.Fatal("schema version 1 (Ed25519) must be refused")
+	}
+	b = fresh()
+	b.Participants[0].PubKeyHex = strings.Repeat("ab", 32)
+	if err := VerifyBundle(b); err == nil {
+		t.Fatal("a 32-byte (Ed25519-sized) pubkey must be refused")
 	}
 }
