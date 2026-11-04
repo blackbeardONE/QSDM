@@ -55,6 +55,13 @@ release. Required updates cannot be disabled in settings. Hive 1.4.21 and newer 
 release records against the v2 release key; see
 [QSDM-native release signing](QSDM_NATIVE_RELEASE_SIGNING.md).
 
+Hive keeps working when qsdm.tech is down or your computer is offline. It saves
+the signed release record after every successful check. When it cannot check
+the website, it checks the saved record again in full and uses it until the
+record's own expiry date. If the saved record names a different version, the
+update is still required. After the record expires, Hive stays locked until it
+can reach qsdm.tech again.
+
 ## Linux x86-64
 
 Linux Hive connects directly to the production QSDM Network gateway for ledger,

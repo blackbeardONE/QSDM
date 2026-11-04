@@ -11,7 +11,11 @@ policy.
 
 Hive stores account profiles, encrypted QSDM keystore files, settings, task
 state, logs, miner enrollment state, and optional Relay credentials in the
-operating system's application-data directories. Wallet passphrases and private
+operating system's application-data directories. In a `release-envelope-cache`
+folder there, it also keeps a copy of the last signed release envelope it
+verified from `qsdm.tech`, so that it keeps working when the website cannot be
+reached. That file is public release data and holds nothing about you. Wallet
+passphrases and private
 keys are intended to remain on the user's computer and are not account-recovery
 data held by QSDM. Losing the keystore JSON and passphrase can permanently lose
 access to the wallet.
