@@ -44,6 +44,31 @@ bootstrap_peers = [
 # bridge_relay_trusted_keys_file = "/opt/qsdm/bridge_relayers.txt"  # one hex key per line, # comments (env QSDM_BRIDGE_RELAY_TRUSTED_KEYS_FILE)
 # bridge_relay_signer_key_path = "/opt/qsdm/bridge_relayer_key.json"  # signs local events; never the consensus key (env QSDM_BRIDGE_RELAY_SIGNER_KEY_PATH)
 # bridge_relay_max_event_age = "10m"  # oldest accepted remote event (env QSDM_BRIDGE_RELAY_MAX_EVENT_AGE)
+# P2P connection, stream and gossip limits (QSDM/docs/docs/P2P_LIMITS.md). Every
+# key is optional; 0 or unset means the default shown.
+# p2p_limits_disabled = false          # true: libp2p library defaults, no gossip guard, no peer scoring (env QSDM_P2P_LIMITS_DISABLED)
+# conn_low_water = 64                  # the connection manager trims down to this (env QSDM_P2P_CONN_LOW_WATER)
+# conn_high_water = 96                 # trimming starts above this; <= max_conns (env QSDM_P2P_CONN_HIGH_WATER)
+# conn_grace_period = "1m"             # new connections are not trimmed for this long (env QSDM_P2P_CONN_GRACE_PERIOD)
+# max_conns = 192                      # connections in total (env QSDM_P2P_MAX_CONNS)
+# max_inbound_conns = 128              # inbound connections in total (env QSDM_P2P_MAX_INBOUND_CONNS)
+# max_streams = 2048                   # streams in total (env QSDM_P2P_MAX_STREAMS)
+# max_inbound_streams = 1024           # inbound streams in total (env QSDM_P2P_MAX_INBOUND_STREAMS)
+# max_conns_per_peer = 8               # (env QSDM_P2P_MAX_CONNS_PER_PEER)
+# max_streams_per_peer = 256           # (env QSDM_P2P_MAX_STREAMS_PER_PEER)
+# max_inbound_streams_per_peer = 128   # (env QSDM_P2P_MAX_INBOUND_STREAMS_PER_PEER)
+# max_conns_per_ip = 8                 # per IPv4 address or IPv6 /56; loopback exempt (env QSDM_P2P_MAX_CONNS_PER_IP)
+# gossip_max_message_bytes = 1048576   # largest gossip message, own publishes included (env QSDM_P2P_GOSSIP_MAX_MESSAGE_BYTES)
+# gossip_peer_rate = 100.0             # messages/s per topic per forwarding peer; < 0 turns it off (env QSDM_P2P_GOSSIP_PEER_RATE)
+# gossip_peer_burst = 1000             # (env QSDM_P2P_GOSSIP_PEER_BURST)
+# gossip_peer_scoring_disabled = false # (env QSDM_P2P_GOSSIP_PEER_SCORING_DISABLED)
+# gossip_validate_queue = 256          # (env QSDM_P2P_GOSSIP_VALIDATE_QUEUE)
+# gossip_validate_throttle = 2048      # (env QSDM_P2P_GOSSIP_VALIDATE_THROTTLE)
+# Per-topic size limits for messages from peers, merged over the defaults
+# (env QSDM_P2P_GOSSIP_TOPIC_MAX_BYTES="topic=bytes,topic=bytes"). Keep this
+# table at the end of the network section.
+# [network.gossip_topic_max_bytes]
+# "qsdm-transactions" = 262144
 
 # Storage Configuration
 [storage]
