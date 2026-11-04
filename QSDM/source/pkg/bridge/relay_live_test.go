@@ -74,11 +74,19 @@ func (n *liveNode) lock(id string) (Lock, bool) {
 	return *l, true
 }
 
-// waitFor polls cond until it holds or the deadline passes.
-func waitFor(t *testing.T, d time.Duration, what string, cond func() bool) {
+// publishUntil calls publish, and again every 500 ms, until cond holds or the
+// deadline passes. GossipSub can drop a message published just after two
+// hosts connect, and every event these tests publish is idempotent: a repeat
+// is a no-op on the receiver.
+func publishUntil(t *testing.T, d time.Duration, what string, publish func(), cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(d)
+	next := time.Now()
 	for time.Now().Before(deadline) {
+		if !time.Now().Before(next) {
+			publish()
+			next = time.Now().Add(500 * time.Millisecond)
+		}
 		if cond() {
 			return
 		}
@@ -107,19 +115,21 @@ func TestLiveP2PRelay_LockPropagation(t *testing.T) {
 		ID: "live-lock-001", SourceChain: "chain-alpha", TargetChain: "chain-beta", Asset: "TOKEN",
 		Amount: 42.0, SecretHash: "abc123", Secret: "should-be-stripped", Status: LockStatusLocked,
 	}
-	a.relay.PublishLockEvent("lock_created", &lock, a.id())
-	waitFor(t, 10*time.Second, "lock on B", func() bool { _, ok := b.lock("live-lock-001"); return ok })
+	publishUntil(t, 10*time.Second, "lock on B",
+		func() { a.relay.PublishLockEvent("lock_created", &lock, a.id()) },
+		func() bool { _, ok := b.lock("live-lock-001"); return ok })
 
 	l, _ := b.lock("live-lock-001")
 	if l.Amount != 42.0 || l.Secret != "" || l.SecretHash != "abc123" {
 		t.Fatalf("propagated lock = %+v", l)
 	}
 
-	a.relay.PublishLockEvent("lock_redeemed", &lock, a.id())
-	waitFor(t, 10*time.Second, "redeem on B", func() bool {
-		l, _ := b.lock("live-lock-001")
-		return l.Status == LockStatusRedeemed
-	})
+	publishUntil(t, 10*time.Second, "redeem on B",
+		func() { a.relay.PublishLockEvent("lock_redeemed", &lock, a.id()) },
+		func() bool {
+			l, _ := b.lock("live-lock-001")
+			return l.Status == LockStatusRedeemed
+		})
 	if st := b.relay.Stats(); st.Applied != 2 {
 		t.Fatalf("B stats = %+v, want 2 applied", st)
 	}
@@ -153,15 +163,17 @@ func TestLiveP2PRelay_UntrustedEventsIgnored(t *testing.T) {
 	strict.bp.mu.Unlock()
 
 	evil := Lock{ID: "evil-lock", Amount: 1e9, Status: LockStatusLocked}
-	a.relay.PublishLockEvent("lock_created", &evil, a.id())
 	victim := Lock{ID: "victim"}
-	a.relay.PublishLockEvent("lock_refunded", &victim, a.id())
-	unsignedPub.relay.PublishLockEvent("lock_redeemed", &victim, unsignedPub.id())
-
-	waitFor(t, 10*time.Second, "rejections counted", func() bool {
-		d, s := def.relay.Stats(), strict.relay.Stats()
-		return d.NoTrustedKeys >= 3 && s.UntrustedSigner >= 2 && s.Unsigned >= 1
-	})
+	publishUntil(t, 10*time.Second, "rejections counted",
+		func() {
+			a.relay.PublishLockEvent("lock_created", &evil, a.id())
+			a.relay.PublishLockEvent("lock_refunded", &victim, a.id())
+			unsignedPub.relay.PublishLockEvent("lock_redeemed", &victim, unsignedPub.id())
+		},
+		func() bool {
+			d, s := def.relay.Stats(), strict.relay.Stats()
+			return d.NoTrustedKeys >= 3 && s.UntrustedSigner >= 2 && s.Unsigned >= 1
+		})
 	if _, ok := def.lock("evil-lock"); ok {
 		t.Fatal("default node applied an untrusted lock")
 	}
@@ -194,13 +206,14 @@ func TestLiveP2PRelay_SwapPropagation(t *testing.T) {
 		ID: "live-swap-001", InitiatorChain: "chain-x", ParticipantChain: "chain-y",
 		InitiatorAmount: 100, ParticipantAmount: 200, Status: SwapStatusInitiated,
 	}
-	a.relay.PublishSwapEvent("swap_initiated", &swap, a.id())
-	waitFor(t, 10*time.Second, "swap on B", func() bool {
-		b.asp.mu.RLock()
-		defer b.asp.mu.RUnlock()
-		s, ok := b.asp.swaps["live-swap-001"]
-		return ok && s.InitiatorAmount == 100
-	})
+	publishUntil(t, 10*time.Second, "swap on B",
+		func() { a.relay.PublishSwapEvent("swap_initiated", &swap, a.id()) },
+		func() bool {
+			b.asp.mu.RLock()
+			defer b.asp.mu.RUnlock()
+			s, ok := b.asp.swaps["live-swap-001"]
+			return ok && s.InitiatorAmount == 100
+		})
 }
 
 // TestLiveP2PRelay_ThreeNodes: signed lock events cross a star topology; the
@@ -222,8 +235,9 @@ func TestLiveP2PRelay_ThreeNodes(t *testing.T) {
 	time.Sleep(700 * time.Millisecond)
 
 	lock := Lock{ID: "3node-lock", Amount: 77, SecretHash: "h3", Status: LockStatusLocked}
-	n2.relay.PublishLockEvent("lock_created", &lock, n2.id())
-	waitFor(t, 10*time.Second, "lock on node 1 via hub", func() bool { _, ok := n1.lock("3node-lock"); return ok })
+	publishUntil(t, 10*time.Second, "lock on node 1 via hub",
+		func() { n2.relay.PublishLockEvent("lock_created", &lock, n2.id()) },
+		func() bool { _, ok := n1.lock("3node-lock"); return ok })
 	if _, ok := n0.lock("3node-lock"); ok {
 		t.Fatal("hub without trusted keys applied the lock")
 	}
