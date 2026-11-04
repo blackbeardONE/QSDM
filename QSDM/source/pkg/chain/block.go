@@ -158,6 +158,9 @@ type BlockProducer struct {
 	externalAuthz externalProducerAllowlist
 	// Configured before initialization; guarded by mu and sealLifecycleMu.
 	producerTransition *producerpolicy.Transition
+	// producerEpochs is producerTransition.Schedule(), computed once: version 1
+	// is its two-epoch schedule. Set together with producerTransition.
+	producerEpochs []producerpolicy.Epoch
 	// OnSealed runs after a block is appended and the producer lock is released (best-effort hooks).
 	OnSealed func()
 	// OnSealedBlock runs after a block is appended and bp.mu is
@@ -673,7 +676,7 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	// inject a block whose transactions we then replay. Rejecting here also
 	// avoids spending a full clone-and-replay on unauthorized input.
 	if bp.producerTransition != nil {
-		if err := validateTransitionBlock(bp.producerTransition, blk); err != nil {
+		if err := validateTransitionBlock(bp.producerEpochs, blk); err != nil {
 			return err
 		}
 	} else if err := bp.externalAuthz.check(blk.ProducerID); err != nil {

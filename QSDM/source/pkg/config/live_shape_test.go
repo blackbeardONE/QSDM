@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/blackbeardONE/QSDM/pkg/producerpolicy"
 )
 
 // liveShapeEnv lists every environment switch of the P2P hardening, plus the
@@ -65,9 +67,10 @@ func TestLiveShapedConfig_NewFeaturesOff(t *testing.T) {
 		t.Errorf("activation heights changed: %+v", cfg)
 	}
 
-	// The version 1 table is still version 1 and names the same hand-over.
+	// The version 1 table is still version 1, names the same hand-over and
+	// means the same two epochs.
 	p := cfg.ProducerTransition
-	if p == nil || p.Version != 1 {
+	if p == nil || p.Version != 1 || len(p.Epochs) != 0 {
 		t.Fatalf("transition: %+v", p)
 	}
 	if p.CheckpointHeight != 659976 || p.EffectiveHeight != 659977 || p.HistoricalSignatureHeight != 482566 ||
@@ -75,5 +78,16 @@ func TestLiveShapedConfig_NewFeaturesOff(t *testing.T) {
 		p.ReplacementProducer != "1cf60b16cf9aee5e8eaf67a8518a2b2ba7bc54f2dd607f05bc5a861b7a94c859" ||
 		p.CheckpointHash != "16884d35cee8b805fab51f1ecad740022fdb991e0fece15394774e1c5b7cdd0b" {
 		t.Errorf("transition table: %+v", p)
+	}
+	want := []producerpolicy.Epoch{
+		{FromHeight: 482566, ProducerID: "42d05e653f004d0aa71ae9cebc7b2a5b5d0dc7bb41b219a8e99d7c29229c438b"},
+		{FromHeight: 659977, ProducerID: "1cf60b16cf9aee5e8eaf67a8518a2b2ba7bc54f2dd607f05bc5a861b7a94c859",
+			CheckpointHash: "16884d35cee8b805fab51f1ecad740022fdb991e0fece15394774e1c5b7cdd0b"},
+	}
+	if got := p.Schedule(); !reflect.DeepEqual(got, want) {
+		t.Errorf("schedule:\n got %+v\nwant %+v", got, want)
+	}
+	if p.FirstHandoverHeight() != p.EffectiveHeight || p.FinalEpoch().ProducerID != p.ReplacementProducer {
+		t.Errorf("v1 fields and the epoch view disagree: first=%d final=%+v", p.FirstHandoverHeight(), p.FinalEpoch())
 	}
 }

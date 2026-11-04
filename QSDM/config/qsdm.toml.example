@@ -147,6 +147,23 @@ poe_activation_height = 0
 # 0 = never (the default). Every validator must use the same value.
 # stream_ed25519_retirement_height = 0  # env QSDM_STREAM_ED25519_RETIREMENT_HEIGHT
 signer_key_path = "qsdm_consensus_signer.json"
+# Producer transition: which consensus key may sign each block height. Off
+# unless configured (then authorized_block_producers decides). Copy the table
+# exactly as the block producer publishes it; every node must use the same one.
+# Version 1 names one hand-over (historical_producer, checkpoint_height,
+# checkpoint_hash, effective_height, replacement_producer); version 2 lists
+# every producer epoch in order. See QSDM/docs/docs/PRODUCER_TRANSITION.md.
+# [consensus.producer_transition]
+# version = 2
+# historical_prefix_bytes = 0                 # journal prefix pin: byte length
+# historical_prefix_sha256 = "<64 hex>"       # journal prefix pin: SHA-256
+# [[consensus.producer_transition.epochs]]    # epoch 0: no checkpoint_hash
+# from_height = 1                             # first signed height
+# producer_id = "<64 hex consensus address>"
+# [[consensus.producer_transition.epochs]]    # one table per hand-over
+# from_height = 1001                          # checkpoint height + 1
+# producer_id = "<64 hex consensus address>"  # never reused
+# checkpoint_hash = "<64 hex hash of block from_height - 1>"
 
 # Performance Configuration
 [performance]

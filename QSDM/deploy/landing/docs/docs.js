@@ -165,6 +165,7 @@
         { slug: "bridge-relay-auth",    title: "Bridge relay authentication",    repoPath: DOCS_PREFIX_REPO + "/BRIDGE_RELAY_AUTH.md" },
         { slug: "p2p-limits",           title: "P2P limits",                     repoPath: DOCS_PREFIX_REPO + "/P2P_LIMITS.md" },
         { slug: "private-p2p",          title: "Private P2P mode",               repoPath: DOCS_PREFIX_REPO + "/PRIVATE_P2P.md" },
+        { slug: "producer-transition",  title: "Producer transition",            repoPath: DOCS_PREFIX_REPO + "/PRODUCER_TRANSITION.md" },
       ],
     },
     {

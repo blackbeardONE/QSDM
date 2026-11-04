@@ -214,10 +214,20 @@ func evaluatePersistedStateWithEnrollment(accounts *chain.AccountStore, blocks [
 // Every new suffix uses its actual height and the configured enrollment-root
 // activation, so restart verifies precisely the state that new blocks commit.
 func transitionStateRootHeight(policy *producerpolicy.Transition, tip *chain.Block) uint64 {
-	if policy != nil && tip != nil && tip.Height >= policy.EffectiveHeight {
+	if policy != nil && tip != nil && tip.Height >= policy.FirstHandoverHeight() {
 		return tip.Height
 	}
 	return 0
+}
+
+// producerScheduleSummary renders the active producer schedule for the boot
+// log as "producer@from_height" entries, oldest first.
+func producerScheduleSummary(policy *producerpolicy.Transition) string {
+	var parts []string
+	for _, e := range policy.Schedule() {
+		parts = append(parts, fmt.Sprintf("%s@%d", e.ProducerID, e.FromHeight))
+	}
+	return strings.Join(parts, ",")
 }
 
 func evaluateTransitionPersistedState(accounts *chain.AccountStore, blocks []*chain.Block, state *enrollment.InMemoryState, policy *producerpolicy.Transition) (persistedStateRestore, error) {
@@ -1818,7 +1828,8 @@ func main() {
 		log.Fatalf("producer transition: %v", err)
 	}
 	if p := cfg.ProducerTransition; p != nil {
-		logger.Info("Checkpoint-bound producer transition enforced", "checkpoint_height", p.CheckpointHeight, "checkpoint_hash", p.CheckpointHash, "effective_height", p.EffectiveHeight, "replacement_producer", p.ReplacementProducer)
+		final := p.FinalEpoch()
+		logger.Info("Checkpoint-bound producer transition enforced", "version", p.Version, "epochs", producerScheduleSummary(p), "checkpoint_height", final.FromHeight-1, "checkpoint_hash", final.CheckpointHash, "effective_height", final.FromHeight, "replacement_producer", final.ProducerID)
 	}
 	if advice := producerAllowlistAdvice(cfg.AuthorizedBlockProducers, cfg.ProducerTransition); advice != "" {
 		logger.Warn("Stale external block producer allowlist", "detail", advice,
@@ -1845,7 +1856,7 @@ func main() {
 		log.Fatalf("invalid block production role: %v", productionRoleErr)
 	}
 	localBlockProduction := productionRole.localProductionEnabled()
-	if cfg.ProducerTransition != nil && localBlockProduction && consensusSigner.Address() != cfg.ProducerTransition.ReplacementProducer {
+	if cfg.ProducerTransition != nil && localBlockProduction && consensusSigner.Address() != cfg.ProducerTransition.FinalEpoch().ProducerID {
 		log.Fatal("producer transition: configured local signer is not the approved replacement producer")
 	}
 	if !localBlockProduction {

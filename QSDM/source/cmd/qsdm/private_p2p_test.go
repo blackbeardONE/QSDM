@@ -93,3 +93,40 @@ func TestProducerAllowlistAdvice(t *testing.T) {
 		t.Fatalf("no transition: %q", a)
 	}
 }
+
+// Version 2: the current producer is the final epoch's. A list that still
+// pins an earlier epoch's producer gets advice naming the final one, and a
+// list that pins the final producer gets none. Version 2 leaves
+// replacement_producer empty, so reading that field would say nothing.
+func TestProducerAllowlistAdviceVersion2(t *testing.T) {
+	v1 := liveV1Transition()
+	final := strings.Repeat("e", 64)
+	tr := &producerpolicy.Transition{Version: 2, HistoricalPrefixBytes: v1.HistoricalPrefixBytes,
+		HistoricalPrefixSHA256: v1.HistoricalPrefixSHA256,
+		Epochs: append(v1.Schedule(), producerpolicy.Epoch{FromHeight: 900001, ProducerID: final,
+			CheckpointHash: strings.Repeat("f", 64)})}
+	if err := tr.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, stale := range []string{liveOld, liveNew} {
+		adv := producerAllowlistAdvice([]string{stale}, tr)
+		if !strings.Contains(adv, "current producer "+final) {
+			t.Fatalf("allowlist %s: advice %q does not name the final epoch's producer", stale, adv)
+		}
+	}
+	if a := producerAllowlistAdvice([]string{final}, tr); a != "" {
+		t.Fatalf("final producer pinned: unexpected advice %q", a)
+	}
+
+	// The version 2 spelling of the version 1 table advises exactly as it.
+	same := &producerpolicy.Transition{Version: 2, HistoricalPrefixBytes: v1.HistoricalPrefixBytes,
+		HistoricalPrefixSHA256: v1.HistoricalPrefixSHA256, Epochs: v1.Schedule()}
+	if err := same.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, list := range [][]string{{liveOld}, {liveNew}, {liveOld, liveNew}, nil} {
+		if a, b := producerAllowlistAdvice(list, v1), producerAllowlistAdvice(list, same); a != b {
+			t.Fatalf("list %v: version 1 advice %q, version 2 advice %q", list, a, b)
+		}
+	}
+}
