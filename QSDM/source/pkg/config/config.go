@@ -59,6 +59,10 @@ type Config struct {
 	// format: single line of base64(proto.Marshal(libp2p PrivKey)),
 	// mode 0600; see pkg/networking/hostkey.go.
 	NetworkHostKeyPath string
+	// P2PLimits bounds libp2p connections/streams and GossipSub traffic.
+	// Zero fields use the defaults in pkg/networking/p2p_limits.go.
+	// TOML/YAML: keys under [network] (see p2p_limits.go); env: QSDM_P2P_*.
+	P2PLimits P2PLimitsConfig
 	// BridgeRelay authenticates qsdm-bridge gossip events. With no trusted
 	// keys (the default) remote bridge events are never applied.
 	// TOML/YAML: bridge_relay_* under [network]; env: QSDM_BRIDGE_RELAY_*.
@@ -408,6 +412,11 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.BootstrapPeers = tomlCfg.Network.BootstrapPeers
 		cfg.SubmeshConfigPath = strings.TrimSpace(tomlCfg.Network.SubmeshConfig)
 		cfg.NetworkHostKeyPath = strings.TrimSpace(tomlCfg.Network.HostKeyPath)
+		if lim, err := tomlCfg.Network.P2PLimitsTOML.toConfig(); err != nil {
+			return err
+		} else {
+			cfg.P2PLimits = lim
+		}
 		if br, err := tomlCfg.Network.BridgeRelayTOML.toConfig(); err != nil {
 			return err
 		} else {
@@ -515,6 +524,11 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.BootstrapPeers = yamlCfg.Network.BootstrapPeers
 		cfg.SubmeshConfigPath = strings.TrimSpace(yamlCfg.Network.SubmeshConfig)
 		cfg.NetworkHostKeyPath = strings.TrimSpace(yamlCfg.Network.HostKeyPath)
+		if lim, err := yamlCfg.Network.P2PLimitsTOML.toConfig(); err != nil {
+			return err
+		} else {
+			cfg.P2PLimits = lim
+		}
 		if br, err := yamlCfg.Network.BridgeRelayTOML.toConfig(); err != nil {
 			return err
 		} else {
@@ -796,6 +810,7 @@ func applyEnvOverrides(cfg *Config) {
 	if val := strings.TrimSpace(envPreferred("QSDM_NETWORK_HOST_KEY_PATH", "QSDM_NETWORK_HOST_KEY_PATH")); val != "" {
 		cfg.NetworkHostKeyPath = val
 	}
+	applyP2PLimitsEnv(&cfg.P2PLimits)
 	applyBridgeRelayEnv(&cfg.BridgeRelay)
 	if val := strings.TrimSpace(envPreferred("QSDM_NGC_PROOF_PERSIST_PATH", "QSDM_NGC_PROOF_PERSIST_PATH")); val != "" {
 		cfg.NGCProofPersistPath = val
@@ -1046,6 +1061,9 @@ func (c *Config) Validate() error {
 
 	if c.NetworkPort < 1 || c.NetworkPort > 65535 {
 		return fmt.Errorf("invalid network port: %d", c.NetworkPort)
+	}
+	if err := c.P2PLimits.Validate(); err != nil {
+		return err
 	}
 	if err := c.BridgeRelay.Validate(c.ConsensusSignerKeyPath); err != nil {
 		return err

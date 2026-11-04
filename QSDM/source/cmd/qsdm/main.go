@@ -609,15 +609,55 @@ func submeshCLI(dynamicManager *submesh.DynamicSubmeshManager, profilePath strin
 // behaviour (acceptable for tests and dev; on production it causes the
 // post-restart trust-attestation blip documented in RELEASE_NOTES_v0.3.0.md
 // "Session 87").
-func SetupNetwork(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string) (*networking.Network, error) {
-	return networking.SetupLibP2PWithPortBindAndKey(ctx, logger, port, bindAddress, hostKeyPath)
+//
+// limits bounds connections, streams and gossip (QSDM/docs/docs/P2P_LIMITS.md);
+// the zero value selects networking.DefaultP2PLimits.
+func SetupNetwork(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string, limits networking.P2PLimits) (*networking.Network, error) {
+	return networking.SetupLibP2PWithOptions(ctx, logger, networking.SetupOptions{
+		Port: port, BindAddress: bindAddress, HostKeyPath: hostKeyPath, Limits: limits,
+	})
 }
 
 // SetupNetworkPublic enables the explicit public-P2P path. The NAT option is
 // paired with the all-interface bind selected by the launcher; it maps only
 // the libp2p peer port and leaves the validator APIs on loopback.
-func SetupNetworkPublic(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string) (*networking.Network, error) {
-	return networking.SetupLibP2PWithPortBindAndKeyAndNAT(ctx, logger, port, bindAddress, hostKeyPath, true)
+func SetupNetworkPublic(ctx context.Context, logger *logging.Logger, port int, bindAddress string, hostKeyPath string, limits networking.P2PLimits) (*networking.Network, error) {
+	return networking.SetupLibP2PWithOptions(ctx, logger, networking.SetupOptions{
+		Port: port, BindAddress: bindAddress, HostKeyPath: hostKeyPath, EnableNAT: true, Limits: limits,
+	})
+}
+
+// p2pLimitsFromConfig maps the [network] P2P limit keys onto the networking
+// limits. Zero fields keep their networking defaults.
+func p2pLimitsFromConfig(c config.P2PLimitsConfig) networking.P2PLimits {
+	var topics map[string]int
+	if len(c.GossipTopicMaxBytes) > 0 {
+		topics = make(map[string]int, len(c.GossipTopicMaxBytes))
+		for k, v := range c.GossipTopicMaxBytes {
+			topics[k] = v
+		}
+	}
+	return networking.P2PLimits{
+		Disabled:                  c.Disabled,
+		ConnLowWater:              c.ConnLowWater,
+		ConnHighWater:             c.ConnHighWater,
+		ConnGracePeriod:           c.ConnGracePeriod,
+		MaxConns:                  c.MaxConns,
+		MaxInboundConns:           c.MaxInboundConns,
+		MaxStreams:                c.MaxStreams,
+		MaxInboundStreams:         c.MaxInboundStreams,
+		MaxConnsPerPeer:           c.MaxConnsPerPeer,
+		MaxStreamsPerPeer:         c.MaxStreamsPerPeer,
+		MaxInboundStreamsPerPeer:  c.MaxInboundStreamsPerPeer,
+		MaxConnsPerIP:             c.MaxConnsPerIP,
+		GossipMaxMessageBytes:     c.GossipMaxMessageBytes,
+		GossipTopicMaxBytes:       topics,
+		GossipPeerRate:            c.GossipPeerRate,
+		GossipPeerBurst:           c.GossipPeerBurst,
+		GossipPeerScoringDisabled: c.GossipPeerScoringDisabled,
+		GossipValidateQueue:       c.GossipValidateQueue,
+		GossipValidateThrottle:    c.GossipValidateThrottle,
+	}
 }
 
 func isPublicP2PBind(bindAddress string) bool {
@@ -921,7 +961,7 @@ func main() {
 		setupNetwork = SetupNetworkPublic
 		logger.Info("Public P2P mode enabled", "nat_port_mapping", true, "hole_punching", true, "network_port", cfg.NetworkPort)
 	}
-	net, err := setupNetwork(ctx, logger, cfg.NetworkPort, cfg.NetworkBindAddress, networkHostKeyPath)
+	net, err := setupNetwork(ctx, logger, cfg.NetworkPort, cfg.NetworkBindAddress, networkHostKeyPath, p2pLimitsFromConfig(cfg.P2PLimits))
 	if err != nil {
 		logger.Error("Failed to setup libp2p", "error", err)
 		metrics.RecordError("Network setup failed: " + err.Error())
