@@ -38,6 +38,7 @@ jobs:
         include:
           - { pkg: pkg/chain, target: FuzzDecodeStreamActionTx }
           - { pkg: pkg/chain, target: FuzzVerifyStreamActionTx }
+          - { pkg: pkg/chain, target: FuzzStreamEd25519Retirement }
           - { pkg: pkg/chain, target: FuzzDecodeRecoveryCapsuleTx }
           - { pkg: pkg/chain, target: FuzzVerifyRecoveryCapsuleTx }
           - { pkg: pkg/chain, target: FuzzDecodeTaskActionTx }
