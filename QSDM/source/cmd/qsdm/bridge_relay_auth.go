@@ -59,7 +59,7 @@ func bridgeRelayAuthFromConfig(c config.BridgeRelayConfig, consensusPub []byte) 
 		}
 	}
 	if c.SignerKeyPath != "" {
-		signer, err := loadBridgeRelaySigner(c.SignerKeyPath)
+		signer, err := chain.LoadBFTSigner(c.SignerKeyPath)
 		if err != nil {
 			return out, fmt.Errorf("bridge_relay_signer_key_path: %w", err)
 		}
@@ -69,25 +69,6 @@ func bridgeRelayAuthFromConfig(c config.BridgeRelayConfig, consensusPub []byte) 
 		out.Signer = signer
 	}
 	return out, nil
-}
-
-// loadBridgeRelaySigner loads an existing ML-DSA-87 key file in the
-// consensus signer format. Unlike the consensus key, the bridge relayer key
-// is never created by the node: a missing file is an error.
-func loadBridgeRelaySigner(path string) (*chain.PersistentBFTSigner, error) {
-	if _, err := os.Lstat(path); err != nil {
-		return nil, err
-	}
-	// The file exists, so this only loads it, with the checks the node
-	// applies to its consensus key (regular file, size, matching key pair).
-	signer, created, err := chain.LoadOrCreateBFTSigner(path)
-	if err != nil {
-		return nil, err
-	}
-	if created {
-		return nil, fmt.Errorf("%q disappeared while it was being loaded; a new key was written there and is not used", path)
-	}
-	return signer, nil
 }
 
 // readBridgeRelayerKeysFile returns the hex keys in path: one per line,
