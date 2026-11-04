@@ -313,6 +313,22 @@ CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/networking/ ./pkg/con
   block producer's from before these limits. It loads and validates, every
   new feature stays off, and the host `main()` builds from it has no
   limits and no gossip guard.
+- Fuzz targets, whose seeds run with the other tests and which the nightly
+  fuzz workflow (`.github/workflows/go-fuzz-nightly.yml`) fuzzes for five
+  minutes each:
+  - `FuzzGossipGuardValidate` (`pkg/networking/gossip_guard_fuzz_test.go`)
+    sends the guard any sequence of messages: the node's own messages always
+    pass, a message above its topic's limit is always rejected and one
+    within it never is, every message is counted once, and no topic and peer
+    get more accepted messages than the burst and the rate allow.
+  - `FuzzBlockResponseBudget` (`pkg/chain/propagation_budget_fuzz_test.go`)
+    sends the budget any sequence of requests: every request is answered or
+    counted as dropped, the peer table stays within its bound, and neither
+    one peer nor all peers together get more answers than their budget.
+  - `FuzzBlockPropagatorMessage` (same file) feeds any `qsdm-blocks`
+    message to the propagator, repeatedly and from several authors: the
+    block store is read only within the budget, and only verified blocks
+    reach the chain, each once.
 
 ## 7. Remaining risks
 

@@ -52,6 +52,10 @@ jobs:
           - { pkg: pkg/chain, target: FuzzHandleGossipSignedTx }
           - { pkg: pkg/chain, target: FuzzApplyWalletTransferTx }
           - { pkg: pkg/chain, target: FuzzBlockRequestWindow }
+          - { pkg: pkg/chain, target: FuzzBlockResponseBudget }
+          - { pkg: pkg/chain, target: FuzzBlockPropagatorMessage }
+          - { pkg: pkg/networking, target: FuzzGossipGuardValidate }
+          - { pkg: pkg/networking, target: FuzzPrivateGaterAddress }
           - { pkg: pkg/edgepool, target: FuzzDecodeFederationContext }
           - { pkg: pkg/edgepool, target: FuzzDecodeMotherContext }
           - { pkg: pkg/edgepool, target: FuzzVerifyRequestSignature }

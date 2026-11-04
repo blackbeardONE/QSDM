@@ -191,6 +191,13 @@ CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/privatenet/ ./pkg/con
   config shaped like the block producer's from before private mode keeps
   private mode off and the historical host mode, and gets the stale-list
   warning because it pins the earlier producer.
+- `pkg/networking/private_p2p_fuzz_test.go`: `FuzzPrivateGaterAddress`
+  gives the gater any remote address, in binary or text form, and any peer
+  ID. With private mode off everything passes; with it on, an address is
+  admitted exactly when it is not relayed and its IP is in an
+  independently listed private range, and a peer that is not listed never
+  passes, whatever its ban exemption. Its seeds run with the other tests,
+  and the nightly fuzz workflow fuzzes it for five minutes.
 
 ## 8. Remaining risks
 
