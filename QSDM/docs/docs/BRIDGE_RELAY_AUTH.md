@@ -155,43 +155,19 @@ The node creates its consensus key on first start, but it never creates the
 bridge relayer key: create the file before you set
 `bridge_relay_signer_key_path`. Use a new key, never the consensus key.
 
-This repository has no separate command for it. One way is a few lines of Go
-that write the file with the node's own key code. In a source checkout, save
-this as `QSDM/source/bridgekeygen/main.go` (do not commit it):
-
-```go
-package main
-
-import (
-	"fmt"
-	"os"
-
-	"github.com/blackbeardONE/QSDM/pkg/chain"
-)
-
-func main() {
-	path := os.Args[1]
-	if _, err := os.Lstat(path); err == nil {
-		fmt.Fprintln(os.Stderr, "refusing to overwrite", path)
-		os.Exit(1)
-	}
-	key, _, err := chain.LoadOrCreateBFTSigner(path)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	fmt.Println("key ID:", key.Address())
-}
-```
-
-Then, from `QSDM/source`, on the relayer host:
+`qsdm-valkey` (`QSDM/source/cmd/qsdm-valkey`) writes a new key file in exactly
+this format with the node's own key code, and refuses to overwrite any existing
+path. From `QSDM/source`, on the relayer host:
 
 ```
-go run -tags dilithium_circl ./bridgekeygen /opt/qsdm/bridge_relayer_key.json
+go run -tags dilithium_circl ./cmd/qsdm-valkey generate --out /opt/qsdm/bridge_relayer_key.json
 ```
 
-The directory must already exist. The command prints the key ID that peers
-will see in `signer_key_id`.
+The directory must already exist. The command prints `validator_address`,
+which is the key ID that peers will see in `signer_key_id`, and a
+`public_key_fingerprint`; it never prints the private key.
+`qsdm-valkey show --in <file>` loads an existing key file with the node's
+checks and prints its address again.
 
 Give the followers the public half only: copy the `public_key` field of the
 key file (hex) into their `bridge_relayers.txt`, with a comment naming the

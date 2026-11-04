@@ -188,7 +188,11 @@ At most one producer may produce at any time. The steps:
    the new producer's key.
 6. **Start the new producer** with its consensus signer key already in place.
    It refuses to start if its signer is not the final epoch's producer or if
-   the key file is missing.
+   the key file is missing. Create the key in advance, offline, with
+   `qsdm-valkey generate --out <file>` (from `QSDM/source`:
+   `go run -tags dilithium_circl ./cmd/qsdm-valkey generate --out <file>`);
+   the `validator_address` it prints is the new epoch's `producer_id`, and
+   `qsdm-valkey show --in <file>` prints it again.
 7. **Check** that the followers accept block `N + 1`, that its `prev_hash` is
    `H_N` and its `producer_id` is the new producer, and that a block from the
    old key at or above `N + 1` is refused (`ErrExternalProducerNotAuthorized`).
