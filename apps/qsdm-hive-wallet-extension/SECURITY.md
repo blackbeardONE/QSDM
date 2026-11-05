@@ -29,6 +29,19 @@ it. Hive removes those temporary files during shutdown.
 - Site access is scoped to the exact origin and active wallet address.
 - Connections can be reviewed and revoked in Hive under **Connected Sites**.
 - Connecting, signing, and sending CELL require a visible Hive approval.
+- Before that, a website's connection request, message signature, or CELL
+  transfer opens the extension's own approval window (`approve.html`). It shows
+  the origin the browser reports and the exact request. **Cancel**, or closing
+  the window, refuses it (provider error `code` 4001) without contacting Hive.
+  The other button hands the same request to Hive, which shows it again and
+  stays the only place that connects or signs. One request per site waits at a
+  time; a site that is already connected reconnects without a window.
+- The wallet pages (`popup.html`, `approve.html`) run under a
+  Content-Security-Policy with `connect-src 'none'`. The background worker
+  reads three public, read-only QSDM API paths for them (`/status` and
+  receipts) without credentials, and answers only this extension's own pages.
+- Preferences and the list of transfers sent from this browser live in the
+  extension's local storage. They hold no key, passphrase, or signature.
 
 ## Native bridge
 

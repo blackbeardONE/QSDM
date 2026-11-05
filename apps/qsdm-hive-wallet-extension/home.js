@@ -1,6 +1,13 @@
 (() => {
   "use strict";
 
+  // The wallet dashboard moved to popup.html?full=1 (the same wallet as the
+  // toolbar popup, in a tab). Old links to home.html#/wallet land there.
+  if (window.location.hash.startsWith("#/wallet")) {
+    window.location.replace(chrome.runtime.getURL("popup.html?full=1"));
+    return;
+  }
+
   const NATIVE_HOST = "tech.qsdm.hive_wallet";
   const PROVIDER_VERSION = "qsdm-hive-wallet-provider/v1";
   const INTERNAL_ORIGIN = "qsdm-extension://wallet-popup";
@@ -13,31 +20,8 @@
   const addressElement = document.getElementById("wallet-address");
   const siteElement = document.getElementById("requesting-site");
   const noticeElement = document.getElementById("notice");
-  const onboardingView = document.getElementById("onboarding-view");
-  const walletDashboard = document.getElementById("wallet-dashboard");
-  const dashboardAddress = document.getElementById("dashboard-address");
-  const dashboardBalance = document.getElementById("dashboard-balance");
-  const balanceState = document.getElementById("balance-state");
-  const copyAddressButton = document.getElementById("copy-address");
-  const refreshBalanceButton = document.getElementById("refresh-balance");
-  const sendForm = document.getElementById("send-form");
-  const sendFields = document.getElementById("send-fields");
-  const sendRecipient = document.getElementById("send-recipient");
-  const sendAmount = document.getElementById("send-amount");
-  const sendCellButton = document.getElementById("send-cell");
-  const transferStatus = document.getElementById("transfer-status");
-  const openAccountButton = document.getElementById("open-account");
-  const dashboardOpenHiveButton = document.getElementById(
-    "dashboard-open-hive"
-  );
 
   let walletAddress = "";
-  let walletBalance = null;
-  const walletMode = window.location.hash.startsWith("#/wallet");
-
-  onboardingView.hidden = walletMode;
-  walletDashboard.hidden = !walletMode;
-  if (walletMode) document.title = "QSDM Wallet Dashboard";
 
   const parameters = (() => {
     const queryIndex = window.location.hash.indexOf("?");
@@ -69,29 +53,10 @@
     noticeElement.dataset.state = state;
   };
 
-  const setTransferStatus = (message, state = "info") => {
-    transferStatus.textContent = message || "";
-    transferStatus.dataset.state = state;
-  };
-
   const shortenAddress = (address) =>
     address && address.length > 24
       ? `${address.slice(0, 12)}...${address.slice(-10)}`
       : address || "";
-
-  const formatBalance = (value) =>
-    Number.isFinite(Number(value))
-      ? `${Number(value).toLocaleString(undefined, {
-          maximumFractionDigits: 8,
-        })} CELL`
-      : "Unavailable";
-
-  const transactionReference = (value) =>
-    value?.transaction_id ||
-    value?.transactionId ||
-    value?.tx_id ||
-    value?.id ||
-    "accepted by QSDM Core";
 
   const sendNative = (origin, method, params, timeoutMs = 120000) =>
     new Promise((resolve) => {
@@ -139,30 +104,10 @@
     sendNative(INTERNAL_ORIGIN, method, params, timeoutMs);
 
   const refreshWallet = async () => {
-    const previousAddress = walletAddress;
-    const previousBalance = walletBalance;
-    const hasExistingWallet = Boolean(previousAddress);
     useHiveButton.disabled = true;
     stateLabel.textContent = "Checking QSDM Hive...";
-    if (!hasExistingWallet) {
-      addressElement.textContent = "";
-      walletAddress = "";
-      walletBalance = null;
-      dashboardAddress.textContent = "Checking...";
-      dashboardAddress.title = "";
-      dashboardBalance.textContent = "Unavailable";
-      copyAddressButton.disabled = true;
-    } else {
-      walletBalance = previousBalance;
-      dashboardAddress.textContent = previousAddress;
-      dashboardAddress.title = previousAddress;
-      dashboardBalance.textContent = formatBalance(previousBalance);
-      copyAddressButton.disabled = false;
-    }
-    balanceState.textContent = hasExistingWallet
-      ? "Refreshing from Hive..."
-      : "Waiting for Hive";
-    sendFields.disabled = true;
+    addressElement.textContent = "";
+    walletAddress = "";
     if (requestingOrigin) {
       siteElement.textContent = `Requested by ${new URL(requestingOrigin).hostname}`;
     } else {
@@ -173,14 +118,6 @@
     if (!ping?.ok) {
       stateLabel.textContent = "QSDM Hive is not running";
       setNotice("Start Hive, then select Open wallet management.", "error");
-      dashboardAddress.textContent = "QSDM Hive is not running";
-      balanceState.textContent = "Start Hive to use this wallet";
-      if (walletMode) {
-        setTransferStatus(
-          "Start QSDM Hive to check balances or send CELL.",
-          "error"
-        );
-      }
       return;
     }
 
@@ -190,26 +127,12 @@
     if (!walletAddress) {
       stateLabel.textContent = "Wallet setup is needed";
       setNotice("Create, import, or unlock your wallet in QSDM Hive.", "error");
-      dashboardAddress.textContent = "Wallet setup is needed";
-      balanceState.textContent = "Create, import, or unlock a wallet in Hive";
       return;
     }
 
     stateLabel.textContent = "Active Hive wallet";
     addressElement.textContent = shortenAddress(walletAddress);
     addressElement.title = walletAddress;
-    dashboardAddress.textContent = walletAddress;
-    dashboardAddress.title = walletAddress;
-    copyAddressButton.disabled = false;
-
-    const balance = await requestInternal("qsdm_getBalance", undefined, 8000);
-    walletBalance = balance?.ok ? Number(balance.result?.balance) : null;
-    if (!Number.isFinite(walletBalance)) walletBalance = null;
-    dashboardBalance.textContent = formatBalance(walletBalance);
-    balanceState.textContent = balance?.ok
-      ? "Live CELL balance"
-      : balance?.error || "Balance is temporarily unavailable";
-    sendFields.disabled = !balance?.ok;
     setNotice(
       requestingOrigin
         ? "Use this wallet, then approve the website in Hive."
@@ -277,91 +200,6 @@
     setNotice("Opening QSDM Hive...");
     await openHiveWallet();
     setTimeout(() => void refreshWallet(), 800);
-  });
-
-  refreshBalanceButton.addEventListener("click", () => void refreshWallet());
-
-  copyAddressButton.addEventListener("click", async () => {
-    if (!walletAddress) return;
-    try {
-      await navigator.clipboard.writeText(walletAddress);
-      setTransferStatus("Wallet address copied.", "success");
-    } catch {
-      setTransferStatus(
-        "The browser could not copy the wallet address.",
-        "error"
-      );
-    }
-  });
-
-  sendForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const recipient = sendRecipient.value.trim();
-    const amountText = sendAmount.value.trim();
-    if (!/^[a-zA-Z0-9]{32,128}$/.test(recipient)) {
-      setTransferStatus(
-        "Enter a valid QSDM recipient wallet address.",
-        "error"
-      );
-      sendRecipient.focus();
-      return;
-    }
-    if (!/^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/.test(amountText)) {
-      setTransferStatus(
-        "Enter an amount greater than zero with no more than 8 decimals.",
-        "error"
-      );
-      sendAmount.focus();
-      return;
-    }
-    const amount = Number(amountText);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setTransferStatus("Enter an amount greater than zero.", "error");
-      sendAmount.focus();
-      return;
-    }
-    if (walletBalance !== null && amount > walletBalance) {
-      setTransferStatus(
-        "The amount is greater than the available balance.",
-        "error"
-      );
-      sendAmount.focus();
-      return;
-    }
-
-    sendFields.disabled = true;
-    sendCellButton.textContent = "Waiting for Hive approval...";
-    setTransferStatus(
-      `Review ${amountText} CELL to ${shortenAddress(recipient)} in QSDM Hive.`
-    );
-    const response = await requestInternal("qsdm_sendTransaction", {
-      recipient,
-      amount,
-    });
-    sendCellButton.textContent = "Review in Hive";
-    if (!response?.ok) {
-      setTransferStatus(
-        response?.error || "The transfer was not completed.",
-        "error"
-      );
-      sendFields.disabled = false;
-      return;
-    }
-
-    sendForm.reset();
-    setTransferStatus(
-      `Transfer ${transactionReference(response.result)}.`,
-      "success"
-    );
-    await refreshWallet();
-  });
-
-  openAccountButton.addEventListener("click", async () => {
-    await chrome.tabs.create({ url: ACCOUNT_URL });
-  });
-
-  dashboardOpenHiveButton.addEventListener("click", async () => {
-    await openHiveWallet();
   });
 
   void refreshWallet();

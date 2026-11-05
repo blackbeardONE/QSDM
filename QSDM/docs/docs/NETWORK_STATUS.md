@@ -25,7 +25,7 @@ examples from October 2026, and the live values are always in the status API.
 | Transfer parents (Proof-of-Entanglement) | **Enforced from block 816,600** (11 October 2026): every CELL transfer names committed parents. Send with Hive 1.4.22 or newer, the web wallet, or `qsdmcli --auto-parents`. See [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md). |
 | Mining | NVIDIA GPUs through QSDM Hive 1.4.21 or newer, **open to every enrolled miner** since 19 October 2026 (protocol v2; every proof carries the enrollment owner's operator signature), in 7-day windows that renew automatically. Mining was paused from 22 October to 1 November 2026 (see [What is running](#what-is-running)). See [Mining today](MINING_TODAY.md). |
 | Supply | Max supply **90,000,000 CELL**, all from mining. No genesis treasury and no premine ([Genesis Policy v1.1](GENESIS_POLICY_v1.1.md)). Transaction fees are burned (credited to no account). |
-| Release | `hardened-legacy-20261103-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1103`, live since 3 November 2026, 17:37 UTC (see [What is running](#what-is-running)) |
+| Release | `hardened-legacy-20261105-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1105`, live since 5 November 2026, 18:13 UTC (see [What is running](#what-is-running)) |
 | Independent audit | None completed. Security review is an open [community review](COMMUNITY_REVIEW.md) with a [bug bounty](BUG_BOUNTY.md) (rewards confirmed by the owner on 17 October 2026; 50,000 CELL pool); a professional audit remains welcome. The [internal security review](SECURITY_AUDIT.md) is a self-maintained checklist. |
 
 ## Check it yourself
@@ -102,11 +102,15 @@ The [explorer](https://qsdm.tech/explorer.html) and the
 
 ## What is running
 
-- **Core release** `hardened-legacy-20261103-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1103`
-  (live since 2026-11-03 17:37 UTC). It is rc1101 (live from 2026-11-01
-  11:31 UTC) with one fix: a block with a null transaction entry could stop a
-  node before any signature was checked. Fuzzing found it on 2026-11-03, and
-  the fix is in this repository. The release has the d7ffcd4 base, the
+- **Core release** `hardened-legacy-20261105-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1105`
+  (live since 2026-11-05 18:13 UTC). It is rc1103 (live from 2026-11-03
+  17:37 UTC) with lighter memory: blocks share the values that repeat across
+  them, as `QSDM/source` in this repository does since 2026-11-05, so the
+  producer settled at about 6.6 GB after its start instead of 8.5 GB. Nothing
+  a block hashes, signs or encodes changed. rc1103 was rc1101 (live from
+  2026-11-01 11:31 UTC) with one fix: a block with a null transaction entry
+  could stop a node before any signature was checked. Fuzzing found it on
+  2026-11-03, and the fix is in this repository. The release has the d7ffcd4 base, the
   September 2026 recovery patches, the hardened-legacy mining work (durable
   proof and nonce de-duplication, persistent pending rewards, and a
   stop-on-failure rule for block storage), the Proof-of-Entanglement parent

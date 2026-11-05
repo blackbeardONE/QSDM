@@ -3,50 +3,342 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>QSDM Hive Wallet</title>
-    <link rel="stylesheet" href="popup.css" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self'; style-src 'self'; font-src 'self'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>QSDM Wallet</title>
+    <link rel="icon" href="qsdm-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="wallet.css" />
   </head>
   <body>
-    <header>
-      <div class="mark" aria-hidden="true">Q</div>
-      <div>
-        <h1>QSDM Wallet</h1>
-        <p id="hive-status">Checking wallet...</p>
-      </div>
-    </header>
-    <main>
-      <section>
-        <span class="label">Signed in wallet</span>
-        <strong id="wallet-address">Not connected</strong>
-      </section>
-      <section class="balance-card">
-        <span class="label">Available balance</span>
-        <strong id="wallet-balance">Unavailable</strong>
-        <small>CELL on the current QSDM ledger</small>
-      </section>
-      <section>
-        <span class="label">Current site</span>
-        <div class="site-row">
-          <strong id="site-name">Checking...</strong>
-          <span class="site-state" id="site-state">Not connected</span>
+    <svg xmlns="http://www.w3.org/2000/svg" hidden>
+      <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3" /><rect x="3.5" y="7.5" width="17" height="12" rx="2.5" /><path d="M16 13.5h1.5" /></symbol>
+      <symbol id="i-qr" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1" /><rect x="14" y="4" width="6" height="6" rx="1" /><rect x="4" y="14" width="6" height="6" rx="1" /><path d="M14 14h2.5v2.5H14zM19 14v1M14 19h1M17.5 17.5H20V20h-2.5z" /></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 10.5 13.5" /><path d="M21 3 14.5 21l-4-7.5L3 9.5z" /></symbol>
+      <symbol id="i-history" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" /><path d="M3.5 4.5v4h4" /><path d="M12 7.5V12l3 2" /></symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.4 3.6 5.2 3.6 8.5s-1.1 6.1-3.6 8.5c-2.5-2.4-3.6-5.2-3.6-8.5s1.1-6.1 3.6-8.5z" /></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M5.6 18.4l1.6-1.6M16.8 7.2l1.6-1.6" /><circle cx="12" cy="12" r="6.5" /></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="3" /></symbol>
+      <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.6 5.6A9.6 9.6 0 0 1 12 5.5C18 5.5 21.5 12 21.5 12a17 17 0 0 1-2.6 3.4M6.2 6.7C3.9 8.4 2.5 12 2.5 12S6 18.5 12 18.5c1.7 0 3.2-.5 4.5-1.3" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" /></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11.5A8 8 0 0 0 6.2 6.3L4 8.5" /><path d="M4 4v4.5h4.5" /><path d="M4 12.5a8 8 0 0 0 13.8 5.2l2.2-2.2" /><path d="M20 20v-4.5h-4.5" /></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2" /><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2" /></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6" /></symbol>
+      <symbol id="i-back" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6" /></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" /></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" /></symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7.5 7.5" /><path d="M18 14.5V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.5" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" /></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 2.8 19.5h18.4z" /><path d="M12 10v4M12 16.8v.2" /></symbol>
+      <symbol id="i-out" viewBox="0 0 24 24"><path d="M7 17 17 7M8.5 7H17v8.5" /></symbol>
+      <symbol id="i-in" viewBox="0 0 24 24"><path d="M17 7 7 17M15.5 17H7V8.5" /></symbol>
+      <symbol id="i-self" viewBox="0 0 24 24"><path d="M4 9h13l-3.5-3.5M20 15H7l3.5 3.5" /></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-8 8" /><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" /></symbol>
+      <symbol id="i-hive" viewBox="0 0 24 24"><path d="M12 3 19.8 7.5v9L12 21l-7.8-4.5v-9z" /><path d="M12 8.5 15 10.2v3.6L12 15.5l-3-1.7v-3.6z" /></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M12 11v5M12 7.8v.2" /></symbol>
+      <symbol id="i-paste" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="16" rx="2" /><path d="M9 5V3.5h6V5M9 11h6M9 15h4" /></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></symbol>
+    </svg>
+
+    <div class="app" id="wallet-dashboard">
+      <header class="topbar">
+        <div class="brand">
+          <img src="qsdm-mark.svg" alt="" width="26" height="26" />
+          <span>QSDM Wallet</span>
         </div>
-      </section>
-      <p class="custody">
-        Your wallet stays secured by Hive. Sites receive only the public address
-        and actions you approve.
-      </p>
-      <p class="notice" id="notice" role="status"></p>
-      <button id="connect-site" type="button">Connect Current Site</button>
-      <button id="open-dashboard" class="secondary" type="button" disabled>
-        Open Wallet Dashboard
-      </button>
-      <button id="open-account" class="secondary" type="button">
-        Open QSDM Account
-      </button>
-      <button id="open-wallet" class="secondary" type="button">
-        Open Hive Wallet Management
-      </button>
-    </main>
-    <script src="popup.js"></script>
+        <span class="chip" id="network-chip" title="Checking QSDM Hive">
+          <span class="dot" id="hive-dot" data-state="checking"></span>
+          <span id="network-name">QSDM</span>
+        </span>
+        <button class="icon-btn" id="theme-toggle" type="button" aria-label="Switch to dark theme" title="Switch theme">
+          <svg class="icon" aria-hidden="true"><use href="#i-moon" /></svg>
+        </button>
+        <button class="icon-btn" id="expand" type="button" aria-label="Open the wallet in a tab" title="Open in a tab">
+          <svg class="icon" aria-hidden="true"><use href="#i-expand" /></svg>
+        </button>
+      </header>
+
+      <main class="content">
+        <!-- Wallet -->
+        <section data-view="home" aria-label="Wallet">
+          <div class="card account">
+            <span class="avatar" id="avatar" aria-hidden="true">--</span>
+            <div class="account-text">
+              <div class="account-name">Hive wallet</div>
+              <div class="account-addr">
+                <span id="dashboard-address" title="">Checking...</span>
+                <button class="copy-btn" id="copy-address" type="button" aria-label="Copy wallet address" title="Copy address" disabled>
+                  <svg class="icon" aria-hidden="true"><use href="#i-copy" /></svg>
+                </button>
+              </div>
+            </div>
+            <button class="icon-btn ghost" id="account-open" type="button" aria-label="Manage wallets in QSDM Hive" title="Manage wallets in Hive">
+              <svg class="icon" aria-hidden="true"><use href="#i-chevron" /></svg>
+            </button>
+          </div>
+
+          <div class="balance" aria-live="polite">
+            <div class="balance-head">
+              <span class="label">CELL balance</span>
+              <button class="icon-btn" id="toggle-hide" type="button" aria-label="Hide balance" title="Hide balance">
+                <svg class="icon" aria-hidden="true"><use href="#i-eye" /></svg>
+              </button>
+              <button class="icon-btn" id="refresh-balance" type="button" aria-label="Refresh balance" title="Refresh">
+                <svg class="icon" aria-hidden="true"><use href="#i-refresh" /></svg>
+              </button>
+            </div>
+            <div class="balance-amount" id="dashboard-balance"><span class="skeleton"></span></div>
+            <div class="balance-state" id="balance-state">Waiting for Hive</div>
+            <div class="split">
+              <div>
+                <span>Available</span>
+                <strong id="balance-available">-</strong>
+              </div>
+              <div>
+                <span>Pending out <span class="hint" title="CELL you sent from this browser that is not yet in a block">?</span></span>
+                <strong id="balance-pending">-</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="action" id="action-receive" type="button" disabled>
+              <svg class="icon" aria-hidden="true"><use href="#i-qr" /></svg>Receive
+            </button>
+            <button class="action" id="action-send" type="button" disabled>
+              <svg class="icon" aria-hidden="true"><use href="#i-send" /></svg>Send
+            </button>
+            <button class="action" id="action-history" type="button" disabled>
+              <svg class="icon" aria-hidden="true"><use href="#i-history" /></svg>History
+            </button>
+          </div>
+
+          <section class="recent" id="recent" hidden>
+            <div class="recent-head">
+              <p class="section-label">Recent activity</p>
+              <button class="link" id="recent-all" type="button">See all</button>
+            </div>
+            <div class="card history-list" id="recent-list"></div>
+          </section>
+
+          <section class="card blocked" id="blocked" hidden>
+            <span class="badge-icon"><svg class="icon" aria-hidden="true"><use href="#i-hive" /></svg></span>
+            <h2 id="blocked-title">Open QSDM Hive</h2>
+            <p id="blocked-text">Your keys live in QSDM Hive. Start it and this wallet connects by itself.</p>
+            <button class="btn primary" id="blocked-action" type="button">Open QSDM Hive</button>
+          </section>
+
+          <p class="notice" id="notice" role="status"></p>
+        </section>
+
+        <!-- Receive -->
+        <section data-view="receive" aria-labelledby="receive-title" hidden>
+          <div class="view-head">
+            <button class="icon-btn ghost" data-back type="button" aria-label="Back"><svg class="icon" aria-hidden="true"><use href="#i-back" /></svg></button>
+            <h2 id="receive-title">Receive CELL</h2>
+          </div>
+          <div class="card qr-card">
+            <div class="qr-box" id="qr" role="img" aria-label="QR code of your wallet address"></div>
+            <div class="address-box">
+              <code id="receive-address"></code>
+              <button class="copy-btn" id="copy-receive" type="button" aria-label="Copy wallet address" title="Copy address">
+                <svg class="icon" aria-hidden="true"><use href="#i-copy" /></svg>
+              </button>
+            </div>
+          </div>
+          <div class="callout mt">
+            <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+            <span>This is your QSDM address. It stays the same, so you can share it for every payment. Only send CELL on QSDM to it.</span>
+          </div>
+          <a class="link" id="receive-explorer" href="https://qsdm.tech/explorer.html" target="_blank" rel="noopener noreferrer">
+            See this address in the Explorer <svg class="icon" aria-hidden="true"><use href="#i-link" /></svg>
+          </a>
+        </section>
+
+        <!-- Send -->
+        <section data-view="send" aria-labelledby="send-title" hidden>
+          <div class="view-head">
+            <button class="icon-btn ghost" data-back type="button" aria-label="Back"><svg class="icon" aria-hidden="true"><use href="#i-back" /></svg></button>
+            <h2 id="send-title">Send CELL</h2>
+          </div>
+          <form id="send-form" novalidate>
+            <fieldset id="send-fields" disabled>
+              <div class="field">
+                <label for="send-recipient">To</label>
+                <div class="input-wrap" id="recipient-wrap">
+                  <input id="send-recipient" name="recipient" type="text" autocomplete="off" spellcheck="false" placeholder="QSDM address (64 characters)" required />
+                </div>
+                <div class="field-error" id="recipient-error" role="alert"></div>
+              </div>
+              <div class="field">
+                <label for="send-amount">Amount</label>
+                <div class="input-wrap" id="amount-wrap">
+                  <input id="send-amount" name="amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" required />
+                  <span class="unit">CELL</span>
+                  <button class="inline-btn" id="send-max" type="button" title="Send everything">MAX</button>
+                </div>
+                <div class="field-error" id="amount-error" role="alert"></div>
+              </div>
+              <div class="facts">
+                <div><span class="k">Available</span><span class="v" id="send-available">-</span></div>
+                <div><span class="k">Network fee</span><span class="v ok">0 CELL</span></div>
+              </div>
+              <button class="btn primary" id="send-cell" type="submit">Review transfer</button>
+            </fieldset>
+          </form>
+        </section>
+
+        <!-- Review -->
+        <section data-view="review" aria-labelledby="review-title" hidden>
+          <div class="view-head">
+            <button class="icon-btn ghost" data-back="send" type="button" aria-label="Back"><svg class="icon" aria-hidden="true"><use href="#i-back" /></svg></button>
+            <h2 id="review-title">Check before you sign</h2>
+          </div>
+          <dl class="facts">
+            <div class="addr"><dt>From</dt><dd id="review-from"></dd></div>
+            <div class="addr"><dt>To</dt><dd id="review-to"></dd></div>
+            <div><dt>Amount</dt><dd id="review-amount"></dd></div>
+            <div><dt>Network fee</dt><dd>0 CELL</dd></div>
+            <div class="total"><dt>Total</dt><dd id="review-total"></dd></div>
+          </dl>
+          <div class="callout">
+            <svg class="icon" aria-hidden="true"><use href="#i-lock" /></svg>
+            <span>QSDM Hive shows this transfer again and signs it only after you approve it there. Transfers cannot be undone.</span>
+          </div>
+          <div class="btn-row">
+            <button class="btn" data-back="send" type="button">Edit</button>
+            <button class="btn primary" id="confirm-send" type="button">Approve in Hive</button>
+          </div>
+        </section>
+
+        <!-- Result -->
+        <section data-view="result" aria-live="polite" hidden>
+          <div class="card result" id="result" data-state="waiting">
+            <span class="badge-icon"><svg class="icon" aria-hidden="true"><use id="result-icon" href="#i-hive" /></svg></span>
+            <h2 id="result-title">Waiting for Hive</h2>
+            <div id="transfer-status" role="status">
+              <p id="result-text">Approve the transfer in QSDM Hive.</p>
+              <div class="txid" id="result-txid" hidden>
+                <code id="result-txid-text"></code>
+                <button class="copy-btn" id="copy-txid" type="button" aria-label="Copy transaction id" title="Copy transaction id">
+                  <svg class="icon" aria-hidden="true"><use href="#i-copy" /></svg>
+                </button>
+              </div>
+            </div>
+            <a class="btn" id="result-explorer" href="https://qsdm.tech/explorer.html" target="_blank" rel="noopener noreferrer" hidden>
+              View in the Explorer <svg class="icon" aria-hidden="true"><use href="#i-link" /></svg>
+            </a>
+            <button class="btn primary" id="result-done" type="button" hidden>Done</button>
+          </div>
+        </section>
+
+        <!-- History -->
+        <section data-view="history" aria-labelledby="history-title" hidden>
+          <div class="view-head">
+            <button class="icon-btn ghost" data-back type="button" aria-label="Back"><svg class="icon" aria-hidden="true"><use href="#i-back" /></svg></button>
+            <h2 id="history-title" class="grow">History</h2>
+            <button class="icon-btn ghost" id="history-refresh" type="button" aria-label="Refresh history" title="Refresh">
+              <svg class="icon" aria-hidden="true"><use href="#i-refresh" /></svg>
+            </button>
+          </div>
+          <div class="callout" id="history-note" hidden>
+            <svg class="icon" aria-hidden="true"><use href="#i-info" /></svg>
+            <span id="history-note-text"></span>
+          </div>
+          <div class="card history-list" id="history-list"></div>
+          <div class="history-foot">
+            <span class="small" id="history-range"></span>
+            <a class="link" id="history-explorer" href="https://qsdm.tech/explorer.html" target="_blank" rel="noopener noreferrer">
+              All activity <svg class="icon" aria-hidden="true"><use href="#i-link" /></svg>
+            </a>
+          </div>
+        </section>
+
+        <!-- Sites -->
+        <section data-view="sites" aria-labelledby="sites-title" hidden>
+          <div class="view-head plain"><h2 id="sites-title">Sites</h2></div>
+          <p class="section-label">Current site</p>
+          <div class="card site-card">
+            <div class="row bare">
+              <span class="grow"><span class="site-name" id="site-name">Checking...</span></span>
+              <span class="pill" id="site-state">Not connected</span>
+            </div>
+            <p class="small site-help" id="site-help">Connect once. Hive remembers the site until you disconnect it.</p>
+            <button class="btn primary" id="connect-site" type="button" disabled>Connect this site</button>
+          </div>
+          <div class="group">
+            <p class="section-label">All sites</p>
+            <div class="card rows">
+              <div class="row">
+                <span class="grow">Connected sites<span class="sub">Saved in QSDM Hive</span></span>
+                <span class="pill" id="sites-count">-</span>
+              </div>
+              <button class="row" id="manage-sites" type="button">
+                <span class="grow">Manage connected sites in Hive</span>
+                <svg class="icon" aria-hidden="true"><use href="#i-chevron" /></svg>
+              </button>
+            </div>
+          </div>
+          <p class="custody">Sites see only your public address and the actions you approve. Your key never leaves QSDM Hive.</p>
+        </section>
+
+        <!-- Settings -->
+        <section data-view="settings" aria-labelledby="settings-title" hidden>
+          <div class="view-head plain"><h2 id="settings-title">Settings</h2></div>
+          <div class="group">
+            <p class="section-label">Appearance</p>
+            <div class="card rows">
+              <div class="row">
+                <span class="grow">Theme</span>
+                <span class="segmented" role="group" aria-label="Theme">
+                  <button type="button" data-theme-choice="system" aria-pressed="true">Auto</button>
+                  <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+                  <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+                </span>
+              </div>
+              <div class="row">
+                <span class="grow">Hide balances<span class="sub">Show dots until you tap the eye</span></span>
+                <button class="switch" id="hide-switch" type="button" role="switch" aria-checked="false" aria-label="Hide balances"></button>
+              </div>
+            </div>
+          </div>
+          <div class="group">
+            <p class="section-label">Links</p>
+            <div class="card rows">
+              <button class="row" id="open-wallet" type="button"><span class="grow">Wallets in QSDM Hive<span class="sub">Create, import, unlock or switch</span></span><svg class="icon" aria-hidden="true"><use href="#i-chevron" /></svg></button>
+              <button class="row" id="open-account" type="button"><span class="grow">QSDM Account</span><svg class="icon" aria-hidden="true"><use href="#i-link" /></svg></button>
+              <button class="row" id="open-explorer" type="button"><span class="grow">QSDM Explorer</span><svg class="icon" aria-hidden="true"><use href="#i-link" /></svg></button>
+              <button class="row" id="open-full" type="button"><span class="grow">Open the wallet in a tab</span><svg class="icon" aria-hidden="true"><use href="#i-expand" /></svg></button>
+            </div>
+          </div>
+          <div class="group">
+            <p class="section-label">About</p>
+            <div class="card rows">
+              <div class="row"><span class="grow">QSDM Wallet extension</span><span class="pill" id="version">-</span></div>
+            </div>
+          </div>
+          <p class="custody">This extension never stores a private key, recovery phrase or passphrase. QSDM Hive keeps your wallet and asks you before anything is signed.</p>
+        </section>
+      </main>
+
+      <nav class="nav" aria-label="Wallet sections">
+        <button type="button" id="nav-home" data-nav="home" aria-current="page">
+          <svg class="icon" aria-hidden="true"><use href="#i-wallet" /></svg>Wallet
+        </button>
+        <button type="button" id="nav-sites" data-nav="sites">
+          <svg class="icon" aria-hidden="true"><use href="#i-globe" /></svg>Sites
+        </button>
+        <button type="button" id="nav-settings" data-nav="settings">
+          <svg class="icon" aria-hidden="true"><use href="#i-settings" /></svg>Settings
+        </button>
+      </nav>
+      <div class="toast" id="toast" role="status" hidden></div>
+    </div>
+
+    <script src="qr.js"></script>
+    <script src="wallet.js"></script>
   </body>
 </html>

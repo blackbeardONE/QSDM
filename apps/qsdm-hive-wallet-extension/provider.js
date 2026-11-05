@@ -34,11 +34,20 @@
       }
       request.resolve(event.data.result);
     } else {
-      request.reject(
-        new Error(event.data.error || "QSDM wallet request failed")
-      );
+      const error = new Error(event.data.error || "QSDM wallet request failed");
+      // 4001: the person cancelled it in the QSDM Wallet window.
+      if (Number.isInteger(event.data.code)) error.code = event.data.code;
+      request.reject(error);
     }
   });
+
+  // Requests a person answers in the QSDM Wallet window and then in QSDM Hive
+  // get more time than the others.
+  const INTERACTIVE = new Set([
+    "qsdm_requestAccounts",
+    "qsdm_sendTransaction",
+    "qsdm_signMessage",
+  ]);
 
   const provider = Object.freeze({
     isQsdmHive: true,
@@ -51,10 +60,13 @@
       }
       const id = crypto.randomUUID();
       return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          pending.delete(id);
-          reject(new Error("QSDM Hive did not answer the wallet request"));
-        }, 125000);
+        const timeout = setTimeout(
+          () => {
+            pending.delete(id);
+            reject(new Error("QSDM Hive did not answer the wallet request"));
+          },
+          INTERACTIVE.has(method) ? 15 * 60 * 1000 : 125000
+        );
         pending.set(id, { resolve, reject, timeout, method });
         window.postMessage(
           { source: REQUEST_SOURCE, id, method, params },

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self'; style-src 'self'; font-src 'self'; script-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>QSDM Wallet request</title>
+    <link rel="icon" href="qsdm-mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="wallet.css" />
+  </head>
+  <body class="approve">
+    <svg xmlns="http://www.w3.org/2000/svg" hidden>
+      <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.5 2.4 3.6 5.2 3.6 8.5s-1.1 6.1-3.6 8.5c-2.5-2.4-3.6-5.2-3.6-8.5s1.1-6.1 3.6-8.5z" /></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></symbol>
+      <symbol id="i-hive" viewBox="0 0 24 24"><path d="M12 3 19.8 7.5v9L12 21l-7.8-4.5v-9z" /><path d="M12 8.5 15 10.2v3.6L12 15.5l-3-1.7v-3.6z" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" /></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 2.8 19.5h18.4z" /><path d="M12 10v4M12 16.8v.2" /></symbol>
+    </svg>
+
+    <div class="approve-app">
+      <header class="approve-top">
+        <span class="origin-chip" title="">
+          <span class="site-letter" id="site-letter" aria-hidden="true">?</span>
+          <span id="origin-text">Loading...</span>
+        </span>
+      </header>
+
+      <main class="approve-main">
+        <div class="approve-brand">
+          <img src="qsdm-mark.svg" alt="" width="34" height="34" />
+        </div>
+        <h1 id="approve-title">QSDM Wallet request</h1>
+        <p class="approve-sub" id="approve-sub"></p>
+        <p class="approve-trust" id="approve-trust">Only connect with sites you trust.</p>
+
+        <p class="section-label">QSDM Hive wallet</p>
+        <div class="card account">
+          <span class="avatar" id="avatar" aria-hidden="true">--</span>
+          <div class="account-text">
+            <div class="account-name">Hive wallet</div>
+            <div class="account-addr"><span id="account-short"></span></div>
+          </div>
+        </div>
+
+        <dl class="facts approve-facts" id="approve-facts"></dl>
+
+        <div class="message-box" id="message-box" hidden>
+          <p class="section-label">Message to sign</p>
+          <pre id="message-text"></pre>
+        </div>
+
+        <div class="callout" id="approve-note">
+          <svg class="icon" aria-hidden="true"><use href="#i-lock" /></svg>
+          <span id="approve-note-text">QSDM Hive shows this request again and decides there.</span>
+        </div>
+
+        <div class="approve-state" id="approve-state" data-state="waiting" hidden>
+          <span class="badge-icon"><svg class="icon" aria-hidden="true"><use id="state-icon" href="#i-hive" /></svg></span>
+          <div>
+            <strong id="state-title">Confirm in QSDM Hive</strong>
+            <p id="state-text">Hive is showing the same request. Approve it there.</p>
+          </div>
+        </div>
+      </main>
+
+      <footer class="approve-actions">
+        <button class="btn" id="cancel" type="button">Cancel</button>
+        <button class="btn primary" id="approve" type="button" disabled>Connect</button>
+      </footer>
+    </div>
+
+    <script src="approve.js"></script>
+  </body>
+</html>

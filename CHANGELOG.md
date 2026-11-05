@@ -98,6 +98,30 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **2026-11-06: QSDM Wallet extension 0.6.0, and browsers may read the
+  public API.** The extension's toolbar popup is now a full wallet: the CELL
+  balance with hide and refresh, CELL sent from this browser that is not in a
+  block yet, **Receive** with a QR code drawn locally, **Send** with a review
+  of the recipient, amount, fee and total before QSDM Hive is asked,
+  **History** with confirmations and an Explorer link for every transfer,
+  **Sites**, **Settings** with light and dark themes, and the same wallet in
+  a tab. A website's connection request, message signature or CELL transfer
+  first opens the extension's approval window with the requesting origin and
+  the exact request; **Cancel** refuses it (provider error code 4001), and
+  QSDM Hive still shows and decides every request. The extension asks for no
+  new browser permission. The core API now lets any browser origin read its
+  public read-only endpoints (status, health, versions, wallet balance and
+  nonce, receipts, chain blocks and parents, mining blocks and emission):
+  `Access-Control-Allow-Origin: *`, never with credentials. Writes and
+  authenticated endpoints keep the origin allowlist. The extension's
+  confirmations and received transfers appear once the producer runs a
+  release with this.
+- **2026-11-05: release rc1105.** The producer runs
+  `hardened-legacy-20261105-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1105` since
+  18:13 UTC (mining paused 17:51-18:12 UTC): rc1103 plus the block memory
+  sharing of the next entry, so the producer settled at about 6.6 GB after
+  its start instead of 8.5 GB. No consensus change, and no block hash
+  changes.
 - **2026-11-05: full nodes need less memory, from the next full-node
   release.** Blocks share the values that repeat across them in memory: the
   producer's 2,592-byte ML-DSA-87 public key, which every signed block
