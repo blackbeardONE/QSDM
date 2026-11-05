@@ -173,6 +173,13 @@ try {
 
 ## Verification
 
+The background worker's approval flow for website requests and its read-only
+API relay run in Node, without a browser, Hive or network:
+
+```powershell
+node tests/background-approvals.mjs
+```
+
 After building the Windows native tools, run:
 
 ```powershell

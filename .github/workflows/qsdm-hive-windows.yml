@@ -125,6 +125,10 @@ jobs:
           npx tsc --noEmit
           npm test -- --runInBand
 
+      - name: Test browser wallet extension background (approvals, API relay)
+        working-directory: apps/qsdm-hive-wallet-extension
+        run: node tests/background-approvals.mjs
+
       - name: Test browser wallet extension
         working-directory: apps/qsdm-hive-wallet-extension
         run: node tests/run-acceptance.mjs
