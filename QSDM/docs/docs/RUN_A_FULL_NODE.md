@@ -49,7 +49,7 @@ The manual steps below are what the script does. Use them if you prefer to do it
 | | |
 |---|---|
 | OS and CPU | Linux on x86_64 |
-| RAM | 16 GB with today's full-node release: it needs about 10.4 GiB at 1 020 000 blocks and about 1.6 GiB more for every 100 000 blocks after that (11.6 days at 10 seconds per block). See [Memory](#memory). |
+| RAM | 16 GB with today's full-node release: it needs about 10.4 GiB at 1 020 000 blocks and about 1.6 GiB more for every 100 000 blocks after that (11.6 days at 10 seconds per block). The installer stops below 11 GiB. See [Memory](#memory). |
 | Disk | about 15 GB during setup (download, unpacked snapshot, state), about 6 GB afterwards, growing with the chain |
 | Network | outbound HTTPS to `api.qsdm.tech`; no inbound port |
 | Tools | `curl`, `sha256sum`, `tar`, Python 3; `qsdmcli` for the release signature check (optional, see step 2) |
