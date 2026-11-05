@@ -192,6 +192,11 @@ func AppendBlockToFile(path string, blk *Block) error {
 // latter and a state-root mismatch on the next ApplyTx surfaces
 // the former. Keeping the loader pure I/O makes it cheap to
 // unit-test against synthetic NDJSON fixtures.
+//
+// Values repeated across the blocks (the producer's public key,
+// the parent hash, producer IDs, transaction addresses) share one
+// copy in memory (block_share.go). Every value stays byte for byte
+// what the line holds.
 func LoadChainNDJSON(path string) ([]*Block, error) {
 	if path == "" {
 		return nil, errors.New("chain.LoadChainNDJSON: empty path")
@@ -206,6 +211,7 @@ func LoadChainNDJSON(path string) ([]*Block, error) {
 	defer f.Close()
 
 	var out []*Block
+	share := newBlockSharing()
 	scanner := bufio.NewScanner(f)
 	// Allow blocks up to 4 MiB. The default 64 KiB ceiling
 	// is too small once a block carries even a few hundred
@@ -225,6 +231,7 @@ func LoadChainNDJSON(path string) ([]*Block, error) {
 			return out, fmt.Errorf("chain.LoadChainNDJSON: parse line %d of %s: %w (loaded %d blocks before failure; trim the bad line to recover)",
 				lineno, path, err, len(out))
 		}
+		share.add(blk)
 		out = append(out, blk)
 	}
 	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
