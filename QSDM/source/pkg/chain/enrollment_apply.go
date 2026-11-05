@@ -524,11 +524,11 @@ func balanceToDust(bal float64) uint64 {
 	return uint64(scaled)
 }
 
-// dustToBalance is the exact inverse for the small range of
-// values enrollment actually handles (bounded by
-// mining.MinEnrollStakeDust ≈ 10 CELL). float64 has 53 bits of
-// mantissa, so any dust value ≤ 2^53 round-trips exactly;
-// enrollment stakes are far below that ceiling.
+// dustToBalance converts dust to a float64 CELL balance. It is not
+// an exact inverse of balanceToDust: the division rounds, and
+// flooring the result comes back one dust short for some amounts
+// of any size (3 dust gives 2). Round amounts such as
+// mining.MinEnrollStakeDust (10 CELL) convert both ways exactly.
 func dustToBalance(dust uint64) float64 {
 	return float64(dust) / float64(dustPerCELL)
 }

@@ -16,9 +16,11 @@ import (
 //   - Any whole number of dust below 2^50 (about 11.26 M CELL), written as
 //     CELL with DustToCell: it converts back to exactly the same dust. Below
 //     2^50 the two float64 roundings move the scaled value by at most a
-//     quarter of a dust. Higher up the guarantee ends: from 2^51 dust some
-//     amounts come back one dust off, and above about 67.1 M CELL two
-//     neighbouring dust amounts can share one float64.
+//     quarter of a dust. The guarantee holds up to 2^25 CELL (33,554,432
+//     CELL). Between there and 2^52 dust (about 45.0 M CELL) some amounts
+//     come back one dust too many, and from 2^26 CELL (about 67.1 M CELL)
+//     some come back one dust off and two neighbouring dust amounts can
+//     share one float64.
 //   - A whole number of dust below 2^40 plus a fraction between 0.01 and 0.99
 //     of a dust: always refused, because float64 can still show that fraction.
 func FuzzCellToDust(f *testing.F) {
