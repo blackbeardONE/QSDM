@@ -18,6 +18,10 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| 2026-11-05 17:51 | node release | Release rc1105: blocks share the values that repeat across them in memory, so the producer needs less (no consensus change); mining paused 21 minutes | No |
+| 2026-11-04 04:19 | operations | Public peer-to-peer reopened, on release rc1103 | No |
+| 2026-11-03 17:15 | node release | Release rc1103: a fix for a crash that one block with a null transaction entry could cause (no consensus change); mining paused 19 minutes | No |
+| 2026-11-03 13:39 | operations | Public peer-to-peer closed until the rc1103 fix was live | No |
 | 2026-11-02 | operations | The producer accepts peer-to-peer (libp2p) connections on port 4001, with connection, stream and block-request limits; mining paused for one restart | No |
 | 2026-11-01 11:17 | node release | Release rc1101: the Go 1.26.10 security rebuild and a response budget for peer-to-peer block requests (no consensus change); mining paused 16 minutes | No |
 | 2026-11-01 07:33 | operations | Mining resumed after the 22 October - 1 November pause (the producer's host ran out of disk space); 7-day mining windows now renew automatically | No |
@@ -31,6 +35,33 @@ upgrades harden that pilot network; they do not change its stage. See
 | 2026-10-11 13:18 | 816,600 | Proof-of-Entanglement enforced | **Yes**, if you send CELL with old software |
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
+
+## 2026-11-05: release rc1105
+
+- **When:** node release `hardened-legacy-20261105-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1105`,
+  switched in 2026-11-05 17:51 UTC, serving again from 18:11 UTC; mining
+  reopened by itself at 18:12 UTC. A node release, not an activation height.
+- **What changed:** blocks share the values that repeat across them in
+  memory (the producer's ML-DSA-87 public key, parent hashes, producer IDs
+  and transaction addresses), as `QSDM/source` does since 2026-11-05. The
+  producer settled at about 6.6 GB after its start, against 8.5 GB on
+  rc1103. Nothing a block hashes, signs or encodes changed.
+- **What you must do:** nothing.
+
+## 2026-11-03 to 2026-11-04: release rc1103, public peer-to-peer closed and reopened
+
+- **When:** the producer's public peer-to-peer port closed on 2026-11-03 at
+  13:39 UTC. Node release
+  `hardened-legacy-20261103-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1103` was
+  switched in at 17:15 UTC, and mining reopened by itself at 17:35 UTC. The
+  port reopened on 2026-11-04 at 04:19 UTC. A node release, not an
+  activation height.
+- **What changed:** before rc1103, one block with a null transaction entry
+  could stop a node before any signature was checked. Fuzzing found it on
+  2026-11-03, and the fix is in `QSDM/source`. The port stayed closed until
+  the fix was live.
+- **What you must do:** nothing. Full nodes follow the chain over HTTPS and
+  were not exposed.
 
 ## 2026-11-02: public peer-to-peer on the producer
 

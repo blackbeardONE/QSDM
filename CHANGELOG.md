@@ -116,6 +116,12 @@ attempt to retroactively enumerate that history.
   authenticated endpoints keep the origin allowlist. The extension's
   confirmations and received transfers appear once the producer runs a
   release with this.
+- **2026-11-05: release rc1105.** The producer runs
+  `hardened-legacy-20261105-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1105` since
+  18:13 UTC (mining paused 17:51-18:12 UTC): rc1103 plus the block memory
+  sharing of the next entry, so the producer settled at about 6.6 GB after
+  its start instead of 8.5 GB. No consensus change, and no block hash
+  changes.
 - **2026-11-05: full nodes need less memory, from the next full-node
   release.** Blocks share the values that repeat across them in memory: the
   producer's 2,592-byte ML-DSA-87 public key, which every signed block
