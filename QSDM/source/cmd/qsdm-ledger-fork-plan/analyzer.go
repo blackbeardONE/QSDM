@@ -369,7 +369,12 @@ func inspectAccounts(path string) (accountInspection, fileEvidence, bool, []stri
 			} else {
 				problems = append(problems, "account dust total overflows uint64")
 			}
-			if mirrorDust, _, err := floorCellToDust(account.Balance); err != nil || mirrorDust != account.BalanceDust {
+			// The node writes the float mirror as exactly DustToCell(BalanceDust)
+			// (setBalanceDustLocked, MigrateToDust), so compare with that value.
+			// Flooring the mirror back to dust instead comes back one dust short
+			// for some amounts (3 dust gives 2) and reported consistent accounts
+			// as mismatches.
+			if account.Balance != chain.DustToCell(account.BalanceDust) {
 				problems = append(problems, "an account dust balance disagrees with its float mirror")
 			}
 			continue
