@@ -63,6 +63,60 @@ func (c *CORSConfig) NormalizedAllowedOrigins() []string {
 	return out
 }
 
+// publicReadPaths are side-effect-free GET endpoints whose data any client can
+// already read without credentials (curl, a server, a full node). A browser
+// script on any origin may read them too: wallets, the browser extension,
+// explorers and dapps show balances, confirmations and chain status. Their
+// responses carry Access-Control-Allow-Origin "*" and never
+// Access-Control-Allow-Credentials, so a browser sends no cookies with them.
+// Every other path, and every other method on these paths, keeps the
+// allowlist.
+var publicReadPaths = map[string]struct{}{
+	"/api/v1/health":          {},
+	"/api/v1/health/live":     {},
+	"/api/v1/health/ready":    {},
+	"/api/v1/status":          {},
+	"/api/v1/versions":        {},
+	"/api/v1/wallet/balance":  {},
+	"/api/v1/wallet/nonce":    {},
+	"/api/v1/receipts":        {},
+	"/api/v1/chain/blocks":    {},
+	"/api/v1/chain/parents":   {},
+	"/api/v1/mining/blocks":   {},
+	"/api/v1/mining/emission": {},
+}
+
+// isPublicReadPath reports whether p is one of publicReadPaths or a single
+// receipt (/api/v1/receipts/{tx_id}). Paths that are not clean never match.
+func isPublicReadPath(p string) bool {
+	if p == "" || strings.Contains(p, "..") || strings.Contains(p, "//") {
+		return false
+	}
+	if _, ok := publicReadPaths[p]; ok {
+		return true
+	}
+	if id, ok := strings.CutPrefix(p, "/api/v1/receipts/"); ok {
+		return id != "" && !strings.Contains(id, "/")
+	}
+	return false
+}
+
+// isPublicReadRequest: a GET or HEAD of a public read path, or the preflight
+// for one.
+func isPublicReadRequest(r *http.Request) bool {
+	if !isPublicReadPath(r.URL.Path) {
+		return false
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+		return true
+	case http.MethodOptions:
+		m := strings.ToUpper(strings.TrimSpace(r.Header.Get("Access-Control-Request-Method")))
+		return m == http.MethodGet || m == http.MethodHead
+	}
+	return false
+}
+
 // CORSMiddleware enforces the Cross-Origin Resource Sharing protocol.
 //
 // Threat model: a browser script at https://evil.example tries to call the
@@ -130,6 +184,13 @@ func CORSMiddleware(cfg *CORSConfig) func(http.Handler) http.Handler {
 				useWildcard = true
 				matched = true
 			}
+			// Any origin may read the public read-only endpoints, without
+			// credentials (see publicReadPaths).
+			publicRead := false
+			if !matched && isPublicReadRequest(r) {
+				publicRead = true
+				matched = true
+			}
 
 			if !matched {
 				monitoring.RecordCORSRejection()
@@ -144,7 +205,7 @@ func CORSMiddleware(cfg *CORSConfig) func(http.Handler) http.Handler {
 				return
 			}
 
-			if useWildcard {
+			if useWildcard || publicRead {
 				w.Header().Set("Access-Control-Allow-Origin", "*")
 			} else {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
@@ -153,13 +214,20 @@ func CORSMiddleware(cfg *CORSConfig) func(http.Handler) http.Handler {
 				// wrong origin's ACAO header to the next caller.
 				w.Header().Add("Vary", "Origin")
 			}
-			if cfg.AllowCredentials && !useWildcard {
+			if cfg.AllowCredentials && !useWildcard && !publicRead {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 			if len(cfg.ExposedHeaders) > 0 {
 				w.Header().Set("Access-Control-Expose-Headers", strings.Join(cfg.ExposedHeaders, ", "))
 			}
 
+			if r.Method == http.MethodOptions && publicRead {
+				w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type")
+				w.Header().Set("Access-Control-Max-Age", strconv.Itoa(int(maxAge.Seconds())))
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
 			if r.Method == http.MethodOptions {
 				w.Header().Set("Access-Control-Allow-Methods", strings.Join(allowedMethods, ", "))
 				w.Header().Set("Access-Control-Allow-Headers", strings.Join(allowedHeaders, ", "))

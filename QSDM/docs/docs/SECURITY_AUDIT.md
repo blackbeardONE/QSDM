@@ -387,6 +387,7 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 - ✅ Preflight (`OPTIONS`) handled with `204 No Content` + 10-minute `Access-Control-Max-Age`
 - ✅ Configurable via env: `QSDM_CORS_ALLOWED_ORIGINS`, `QSDM_CORS_ALLOW_CREDENTIALS`
 - ✅ **`qsdm_security_cors_rejections_total`** counter on every denial
+- ✅ Public read-only endpoints (GET/HEAD of status, health, versions, wallet balance and nonce, receipts, chain blocks and parents, mining blocks and emission: `publicReadPaths`) answer any origin with `*` and never with credentials (2026-11-06), so browser wallets and explorers can read chain data; every write and authenticated endpoint keeps the allowlist
 - ✅ Regression tests in `pkg/api/cors_test.go`
 
 **Fix Date:** May 2026 (v0.4.2)
