@@ -135,6 +135,14 @@ of the following exist:
 4. Validator operators approve one manifest hash and one activation height.
 5. A full backup, restore, replay, fork-boundary, and rollback rehearsal passes
    on a disposable copy of production state.
+6. Every balance writer uses integer dust once it is active. Today only
+   `Credit` and `ApplyTx` do. `ChargeAndBumpNonce` (and `DebitAndBumpNonce`
+   through it), `ChargeAndBumpNonceAllowCreate`, `ApplyProtocolReward` (mining
+   rewards) and `Debit` change only the float mirror. After activation the
+   state root would not see their changes, and the account's next dust write
+   would overwrite them. The enrollment balance check also reads the float
+   mirror, through `balanceToDust`, which floors it and comes back one dust
+   short for some amounts (3 dust gives 2).
 
 The default notice period used by the planner is 60,480 blocks, approximately
 seven days at the ten-second target block time. This is a minimum coordination

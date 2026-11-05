@@ -94,7 +94,10 @@ func CellToDust(cell float64) (uint64, error) {
 	// because math.Round is always within 0.5, so every in-range value was
 	// silently rounded to the nearest dust. Beyond 2^53 dust (~90.07 M CELL)
 	// float64's ULP exceeds one dust and exactness is no longer decidable
-	// from the float alone; those values are accepted as rounded.
+	// from the float alone; those values are accepted as rounded. The CELL
+	// value itself is coarser than one dust from 2^26 CELL (67,108,864
+	// CELL): there, neighbouring dust amounts can share one float64 (see
+	// DustToCell).
 	ulp := math.Nextafter(scaled, math.Inf(1)) - scaled
 	if math.Abs(scaled-rounded) > math.Max(1e-6, 4*ulp) {
 		return 0, fmt.Errorf("%w: %v is not a whole number of dust", ErrDustConversionRange, cell)
@@ -102,9 +105,22 @@ func CellToDust(cell float64) (uint64, error) {
 	return uint64(rounded), nil
 }
 
-// DustToCell converts integer dust to whole-CELL float for legacy surfaces.
-// Exact for every value below 2^53 dust (~90.07 M CELL), which covers the
-// entire 90 M supply (CellSupplyCapDust = 9e15 dust < 2^53).
+// DustToCell converts integer dust to whole-CELL float for legacy surfaces:
+// the float Balance mirror, JSON and APIs. float64(dust) is exact below 2^53
+// dust, which covers the entire 90 M supply (CellSupplyCapDust = 9e15 dust),
+// but the division by 1e8 rounds: the result is the float64 nearest to the
+// amount, not always the amount itself.
+//
+//   - CellToDust gives the same dust back for every amount below 2^25 CELL
+//     (33,554,432 CELL), and again from 2^52 dust (about 45.0 M CELL) up to
+//     2^26 CELL (67,108,864 CELL). Between 33.5 M and 45.0 M CELL some
+//     amounts come back one dust too many; from 67.1 M CELL some come back
+//     one dust off either way.
+//   - From 2^26 CELL two neighbouring dust amounts can give the same float64.
+//   - Flooring the result instead, as balanceToDust does, comes back one dust
+//     short for some amounts of any size: 3 dust gives 2.
+//
+// Code that needs the exact amount must read BalanceDust, not this float.
 func DustToCell(dust uint64) float64 {
 	return float64(dust) / float64(DustPerCellInt)
 }

@@ -39,7 +39,10 @@ CHAIN_FILES=(qsdm_chain.ndjson qsdm_accounts.json qsdm_enrollment.json qsdm_stak
 DEFAULT_API=https://api.qsdm.tech/api/v1
 DEFAULT_WEBSITE=https://qsdm.tech/fullnode.html
 GITHUB_DOWNLOADS=https://github.com/blackbeardONE/QSDM/releases/download
-NEED_MEM_KB=$((9 * 1024 * 1024))
+# What today's full-node release needs to start at about 1 020 000 blocks: about 10.4 GiB, and about
+# 1.6 GiB more for every 100 000 blocks after that (RUN_A_FULL_NODE.md, "Memory"). Revisit with the
+# next full-node release, which needs less.
+NEED_MEM_KB=$((11 * 1024 * 1024))
 NEED_DISK_KB=$((15 * 1000 * 1000))
 
 # Options.
@@ -1103,8 +1106,8 @@ check_resources() {
   fi
   mem_kb=$(awk '/^MemTotal:/ { print $2; exit }' /proc/meminfo 2>/dev/null || true)
   if [[ $mem_kb =~ ^[0-9]+$ ]] && ((mem_kb < NEED_MEM_KB)); then
-    stop "This server has about $((mem_kb / 1024 / 1024)) GB of memory. A full node needs 10 to 12 GB: the import, and every start, load the whole chain into memory." \
-      "Use a server with more memory. If you are sure, run the same command with --skip-resource-check."
+    stop "This server has about $((mem_kb / 1024 / 1024)) GB of memory. A full node needs more: the import, and every start, load the whole chain into memory. A start needs about 10.4 GB at 1 020 000 blocks, and about 1.6 GB more for every 100 000 blocks after that." \
+      "Use a server with more memory (\"What you need\" in RUN_A_FULL_NODE.md has the figures). If you are sure, run the same command with --skip-resource-check."
   fi
   if [[ $IMPORT_DONE == 1 ]] || compgen -G "$DL/qsdm-snapshot-*" >/dev/null; then
     return 0
@@ -1494,7 +1497,7 @@ step_import() {
   log=$WORK_DIR/logs/import-$(date -u +%Y%m%dT%H%M%SZ).log
   say "  The import checks the whole chain again against the pinned checkpoint: the hash chain from"
   say "  genesis, the producer's signature, the producer transition and the state root. It takes"
-  say "  several minutes and about 10 GB of memory. Its output also goes to $log."
+  say "  several minutes and about 9 GB of memory (more for a later snapshot). Its output also goes to $log."
   say "  + ${s}runuser -u $SERVICE -- sh -c 'cd $STATE_DIR && exec env -i PATH=/usr/bin:/bin CONFIG_FILE=$ETC_DIR/core.toml LOG_FILE=$STATE_DIR/import.log $OPT_DIR/qsdm --snapshot-import --from $SNAP_PARENT/$SNAP_NAME'"
   rc=0
   # shellcheck disable=SC2016 # $1..$5 are expanded by the inner shell.
@@ -1509,7 +1512,7 @@ step_import() {
         "Usually it is a wrong checkpoint, the wrong release or a damaged download. Fix that, then run the same command again."
       ;;
     137)
-      stop "The import was killed (exit 137). Usually this means the server ran out of memory: the import needs about 10 GB." \
+      stop "The import was killed (exit 137). Usually this means the server ran out of memory: the import needs about 9 GB (more for a later snapshot)." \
         "Add memory or swap, then run the same command again."
       ;;
     *)

@@ -73,6 +73,39 @@ func TestAnalyzeRejectsUnrepresentableAccount(t *testing.T) {
 	assertCheck(t, result, "account-balances-convertible", false)
 }
 
+// An account that already holds dust has the float mirror the node writes,
+// DustToCell(BalanceDust). Flooring that float comes back one dust short for
+// some amounts (3 and 29 dust here), so the check must compare with
+// DustToCell itself, and still catch a mirror that is off.
+func TestAnalyzeDustAccountMirror(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		dust    uint64
+		balance float64
+		want    bool
+	}{
+		{"3 dust", 3, chain.DustToCell(3), true},
+		{"29 dust", 29, chain.DustToCell(29), true},
+		{"1.5 CELL", 150_000_000, chain.DustToCell(150_000_000), true},
+		{"mirror of 4 dust on 3", 3, chain.DustToCell(4), false},
+		{"mirror one float step off", 150_000_000, math.Nextafter(1.5, 2), false},
+		{"no mirror", 150_000_000, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			paths := writeFixture(t, t.TempDir(), false, false)
+			writeJSON(t, paths.accounts, []chain.Account{
+				{Address: chain.MiningRewardFunderAddress, Balance: 1e15, Nonce: 2},
+				{Address: "miner", Balance: tc.balance, BalanceDust: tc.dust},
+			})
+			result, err := analyze(analyzeOptions{AccountsPath: paths.accounts, ChainPath: paths.chain, EnrollmentPath: paths.enrollment, StakingPath: paths.staking})
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertCheck(t, result, "account-balances-convertible", tc.want)
+		})
+	}
+}
+
 func TestAnalyzeCountsTaskLockedSupply(t *testing.T) {
 	dir := t.TempDir()
 	accountsPath := filepath.Join(dir, "qsdm_accounts.json")

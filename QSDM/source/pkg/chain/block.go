@@ -484,6 +484,7 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 		}
 	}
 
+	bp.shareWithTipLocked(block)
 	bp.chain = append(bp.chain, block)
 	bp.foldPoEHistoryLocked(block)
 	bp.tipHeight.Store(block.Height)
@@ -661,6 +662,8 @@ func storeExternalAppendReceipts(rs *ReceiptStore, blk *Block, preBlock ChainRep
 // TryAppendExternalBlock replays blk's transactions against a ChainReplayApplier clone, verifies StateRoot,
 // applies to the live store, appends blk to the local chain, removes txs from the mempool, and runs OnSealed.
 // Idempotent if this height is already present. Intended when BFT commits from gossip and PendingBlock has the body.
+// Once every check has passed, blk's prev hash, producer ID and producer public key are replaced by the parent's
+// equal copies (shareWithParent), so the chain holds one copy of each.
 func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	if bp == nil || blk == nil {
 		return fmt.Errorf("chain: nil producer or block")
@@ -793,6 +796,7 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 		bp.mu.Unlock()
 		return fmt.Errorf("chain: live state_root mismatch after external append")
 	}
+	bp.shareWithTipLocked(blk)
 	bp.chain = append(bp.chain, blk)
 	bp.foldPoEHistoryLocked(blk)
 	bp.tipHeight.Store(blk.Height)

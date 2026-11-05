@@ -346,10 +346,21 @@ What the numbers show:
 
 These synthetic ratios understate a real chain, whose journal carries other
 transaction types and whose start also replays task, stream and recovery
-state. For the public network, plan 10 to 12 GB of RAM for the import and for
-every start, as [Run a full node](RUN_A_FULL_NODE.md) says. A snapshot saves
-the genesis replay, not memory: every restart costs the "boot" time and memory,
-whether or not the node came from a snapshot.
+state. They were also measured before blocks shared their repeated values in
+memory (`pkg/chain/block_share.go`): every block then held its own copy of the
+producer's 2,592-byte public key.
+
+`cmd/qsdm/restore_bench_test.go` measures the restore every start runs, and
+the import's checks, on an existing state directory (its header shows how).
+On a copy of the public chain at height 880 376 (880 377 blocks, a 5.0 GB
+journal), on Windows x86-64 with a 16-thread laptop CPU, each took about 2.5
+minutes. Without the sharing, as in today's full-node release, a start peaked
+at 8.2 GiB and the import at 8.3 GiB. With it (the code on main, and the next
+full-node release), the start and the import both peaked at 5.8 GiB.
+[Run a full node](RUN_A_FULL_NODE.md#memory) has the figures and how they grow
+with the chain. A snapshot saves the genesis replay, not memory: every restart
+costs the "boot" time and memory, whether or not the node came from a
+snapshot.
 
 ## 7. Tests
 

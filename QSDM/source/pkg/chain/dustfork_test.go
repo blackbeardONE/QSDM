@@ -63,7 +63,9 @@ func TestCellToDust_rejectsUnrepresentable(t *testing.T) {
 }
 
 func TestDustToCell_roundTripsExactlyAcrossFullSupply(t *testing.T) {
-	// Every value up to the 90 M cap must survive dust -> CELL -> dust.
+	// These amounts, up to the 90 M cap, survive dust -> CELL -> dust. Not
+	// every amount does: some between 33.5 M and 45.0 M CELL, and some from
+	// 67.1 M CELL, come back one dust off (see DustToCell).
 	for _, dust := range []uint64{
 		0, 1, 100_000_000, 356_490_000,
 		CellSupplyCapDust / 2, CellSupplyCapDust,
@@ -207,8 +209,9 @@ func TestCellSupplyCap_matchesGenesisPolicy(t *testing.T) {
 	if s := DefaultEmissionSchedule(); s.MiningCapDust != CellSupplyCapDust {
 		t.Fatalf("default schedule cap %d != supply cap %d", s.MiningCapDust, CellSupplyCapDust)
 	}
-	// The whole supply now fits below 2^53 dust, so DustToCell is exact for
-	// every reachable amount.
+	// The whole supply fits below 2^53 dust, so float64(dust) is exact for
+	// every reachable amount. DustToCell's division still rounds: see its
+	// comment.
 	if CellSupplyCapDust >= 1<<53 {
 		t.Fatalf("supply cap %d is not below 2^53", CellSupplyCapDust)
 	}

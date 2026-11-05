@@ -49,10 +49,48 @@ The manual steps below are what the script does. Use them if you prefer to do it
 | | |
 |---|---|
 | OS and CPU | Linux on x86_64 |
-| RAM | 10 to 12 GB (every start loads the whole chain into memory) |
+| RAM | 16 GB with today's full-node release: it needs about 10.4 GiB at 1 020 000 blocks and about 1.6 GiB more for every 100 000 blocks after that (11.6 days at 10 seconds per block). The installer stops below 11 GiB. See [Memory](#memory). |
 | Disk | about 15 GB during setup (download, unpacked snapshot, state), about 6 GB afterwards, growing with the chain |
 | Network | outbound HTTPS to `api.qsdm.tech`; no inbound port |
 | Tools | `curl`, `sha256sum`, `tar`, Python 3; `qsdmcli` for the release signature check (optional, see step 2) |
+
+### Memory
+
+The import and every start load the whole chain into memory, and the node keeps it there while it runs, so the
+memory a node needs grows with the chain. Go's garbage collector lets the heap grow to about twice what is in use
+before it collects, so the peak is about twice the heap, and a running node can use about as much as a start.
+
+The code on main shares the values that repeat across blocks in memory: the producer's public key, which every
+block it signs carries, and repeated strings. Today's full-node release, the one on qsdm.tech/fullnode.html that
+the installer installs, does not; the sharing comes with the next full-node release. Measured with
+`cmd/qsdm/restore_bench_test.go` on a copy of the public chain at height 880 376 (880 377 blocks, a 5.0 GB
+journal), with Go's default settings, on Windows x86-64 with a 16-thread laptop CPU:
+
+| | Today's release | From the next release |
+|---|---:|---:|
+| Start (the restore every start runs), peak | 8.2 GiB | 5.8 GiB |
+| Go heap after the start | 4.1 GiB | 2.7 GiB |
+| Import, peak | 8.3 GiB | 5.8 GiB |
+| Time of a start or an import | about 2.5 minutes | about 2.5 minutes |
+| Heap per further block | about 8.4 KB | about 5.4 KB |
+| Peak per further 100 000 blocks | about 1.6 GiB | about 1.1 GiB |
+| Peak at about 1 020 000 blocks | about 10.4 GiB | about 7.3 GiB |
+
+The last three rows are derived, not measured at a second height: from the sizes of the values that the newest
+80 000 restored blocks keep in memory, times the measured ratio of peak to heap (about 2). At 10 seconds per
+block, 100 000 blocks take 11.6 days.
+
+To run in less memory, you can set Go's soft memory limit for the service: run
+`sudo systemctl edit qsdm-follower`, add `Environment=GOMEMLIMIT=...` under `[Service]`, then
+`sudo systemctl restart qsdm-follower`. Choose a value below the server's memory and well above the heap the node
+holds: with today's release 4.1 GiB at height 880 376 plus about 0.8 GiB per 100 000 blocks (about 5.2 GiB at
+1 020 000), from the next release 2.7 GiB plus about 0.5 GiB per 100 000 blocks. For example, with today's
+release on a server with 12 GB, `GOMEMLIMIT=9GiB` keeps the process near 9 GiB while the heap still has room to
+grow. With the code on main, `GOMEMLIMIT=4GiB` made the start at height 880 376 peak at 4.0 GiB in the same time;
+that value is only for the next release, since today's release holds a 4.1 GiB heap at that height. Under a
+limit the garbage collector runs more often, and as the heap the node needs approaches the limit it spends more
+and more CPU on collection: raise the limit or add memory before that. The installer and the unit below do not
+set it.
 
 ## Trust anchors (take them from qsdm.tech, not from the download)
 
@@ -140,7 +178,8 @@ echo "exit $?"
 
 The import verifies everything again against your pinned checkpoint: the hash chain from genesis, the producer's
 signature on the checkpoint block, the producer transition and the state root. It takes several minutes and about
-10 GB of RAM. [Verified snapshot bootstrap](SNAPSHOT_BOOTSTRAP.md#3-trust-model) lists every check.
+as much memory as a start: 8.3 GiB for the snapshot at height 880 376 with today's release (see [Memory](#memory)).
+[Verified snapshot bootstrap](SNAPSHOT_BOOTSTRAP.md#3-trust-model) lists every check.
 
 - **Exit 0** prints a report with `"authorized_by": "producer_transition"` and three installed files. Then delete
   `/srv/qsdm-snapshot` and the downloaded archive.
