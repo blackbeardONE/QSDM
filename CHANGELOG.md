@@ -98,6 +98,24 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **2026-11-05: full nodes need less memory, from the next full-node
+  release.** Blocks share the values that repeat across them in memory: the
+  producer's 2,592-byte ML-DSA-87 public key, which every signed block
+  carries, parent hashes, producer IDs and transaction addresses. Nothing a
+  block hashes, signs or encodes changes. On a copy of the public chain at
+  height 880,376, a start peaked at 5.8 GiB instead of 8.2 GiB, in the same
+  time. The full-node release on qsdm.tech does not have this yet:
+  [Run a full node](QSDM/docs/docs/RUN_A_FULL_NODE.md#memory) gives the
+  figures for both and how they grow with the chain, and the installer now
+  stops below 11 GiB, what today's release needs. A new harness,
+  `cmd/qsdm/restore_bench_test.go`, measures a start and an import on any
+  state directory. Also: `qsdm-ledger-fork-plan` no longer reports
+  consistent dust accounts as mismatches, the dust conversion comments say
+  where the CELL-to-dust round trip is exact, and the
+  [dust fork runbook](QSDM/docs/docs/LEDGER_DUST_FORK_RUNBOOK.md) lists the
+  balance functions that still ignore integer dust. Nothing changes on the
+  live network.
+
 - **2026-11-04: supply rules, producer hand-over version 2 and snapshot
   bootstrap in `QSDM/source`.** The supply code now follows the Genesis
   Policy: a 90 million CELL cap, all of it mined, and no genesis treasury.
