@@ -1430,6 +1430,15 @@ try {
   assert.equal(walletDashboard.address, TEST_ADDRESS);
   assert.equal(walletDashboard.balance, "42.50000000 CELL");
   assert.match(walletDashboard.status, /mock-qsdm-transaction/);
+  // The wallet shows the result first and then refreshes the balance, so
+  // wait for that refresh to reach the broker before reading the order.
+  const dashboardDeadline = Date.now() + 15000;
+  while (
+    requests.length - dashboardStart < 5 &&
+    Date.now() < dashboardDeadline
+  ) {
+    await delay(100);
+  }
   const dashboardMethods = requests
     .slice(dashboardStart)
     .map((request) => request.method);
