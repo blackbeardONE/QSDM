@@ -1131,27 +1131,41 @@ const runExtensionWalletDashboardChecks = async (browser, extensionId) => {
       consoleProblems.push(`${message.type()}: ${message.text()}`);
     }
   });
+  // The old dashboard link lands on the wallet app in a tab.
   await page.goto(`chrome-extension://${extensionId}/home.html#/wallet`, {
     waitUntil: "domcontentloaded",
   });
   await page.waitForFunction(
     () =>
+      window.location.pathname === "/popup.html" &&
+      window.location.search === "?full=1" &&
+      document.querySelector("#balance-state")?.textContent ===
+        "Live CELL balance" &&
       document.querySelector("#dashboard-balance")?.textContent ===
-        "42.5 CELL" &&
-      document.querySelector("#send-fields")?.disabled === false,
+        "42.50000000 CELL",
     { timeout: 15000 }
-  );
-  assert.equal(
-    await page.$eval("#onboarding-view", (element) => element.hidden),
-    true
   );
   assert.equal(
     await page.$eval("#wallet-dashboard", (element) => element.hidden),
     false
   );
+  await page.click("#action-send");
+  await page.waitForFunction(
+    () => document.querySelector("#send-fields")?.disabled === false,
+    { timeout: 15000 }
+  );
   await page.type("#send-recipient", TEST_ADDRESS);
   await page.type("#send-amount", "0.5");
   await page.click("#send-cell");
+  // The review step shows the transfer before Hive is asked.
+  await page.waitForFunction(
+    () =>
+      !document.querySelector("[data-view='review']")?.hidden &&
+      document.querySelector("#review-amount")?.textContent ===
+        "0.50000000 CELL",
+    { timeout: 15000 }
+  );
+  await page.click("#confirm-send");
   await page.waitForFunction(
     () =>
       document
@@ -1176,7 +1190,7 @@ const runExtensionWalletDashboardChecks = async (browser, extensionId) => {
   }
   assert.deepEqual(consoleProblems, []);
   return page.evaluate(() => ({
-    address: document.querySelector("#dashboard-address")?.textContent,
+    address: document.querySelector("#dashboard-address")?.title,
     balance: document.querySelector("#dashboard-balance")?.textContent,
     status: document.querySelector("#transfer-status")?.textContent,
   }));
@@ -1255,6 +1269,36 @@ try {
   );
   nativeHostRegistrySnapshot = snapshotNativeHostRegistrations();
   installNativeHost(extensionId);
+
+  // A website's connection request, transfer and signature each open the
+  // extension's approval window (approve.html) before QSDM Hive is asked. This
+  // run approves every one as soon as it is ready and keeps its title.
+  const approvalTitles = [];
+  const handledApprovals = new Set();
+  const approveWindow = (target) => {
+    if (
+      handledApprovals.has(target) ||
+      !target.url().startsWith(`chrome-extension://${extensionId}/approve.html`)
+    ) {
+      return;
+    }
+    handledApprovals.add(target);
+    (async () => {
+      const approvalPage = await target.page();
+      if (!approvalPage) throw new Error("approval window has no page");
+      await approvalPage.waitForFunction(
+        () => document.querySelector("#approve")?.disabled === false,
+        { timeout: 15000 }
+      );
+      approvalTitles.push(
+        await approvalPage.$eval("#approve-title", (element) => element.textContent)
+      );
+      await approvalPage.click("#approve");
+    })().catch((error) => stage(`approval window: ${error.message}`));
+  };
+  browser.on("targetcreated", approveWindow);
+  browser.on("targetchanged", approveWindow);
+
   stage("testing website provider methods");
   const result = await withTimeout(
     runProviderChecks(browser, `${expectedOrigin}/acceptance`),
@@ -1283,14 +1327,28 @@ try {
     requests.map((request) => request.method),
     [
       "qsdm_accounts",
+      "qsdm_ping",
+      "qsdm_getWalletInfo",
+      "qsdm_accounts",
       "qsdm_requestAccounts",
       "qsdm_getBalance",
+      "qsdm_ping",
+      "qsdm_getWalletInfo",
+      "qsdm_accounts",
       "qsdm_signMessage",
+      "qsdm_ping",
+      "qsdm_getWalletInfo",
+      "qsdm_accounts",
       "qsdm_sendTransaction",
       "qsdm_disconnect",
       "qsdm_accounts",
     ]
   );
+  assert.deepEqual(approvalTitles.slice(0, 3), [
+    "Connect with QSDM Wallet",
+    "Sign a message",
+    "Send CELL",
+  ]);
 
   stage("testing qsdm.tech web wallet provider panel");
   const webWalletStart = requests.length;
@@ -1358,13 +1416,8 @@ try {
     .slice(onboardingStart)
     .map((request) => request.method);
   assert.deepEqual(
-    onboardingMethods.slice(-4),
-    [
-      "qsdm_ping",
-      "qsdm_getWalletInfo",
-      "qsdm_getBalance",
-      "qsdm_requestAccounts",
-    ]
+    onboardingMethods.slice(-3),
+    ["qsdm_ping", "qsdm_getWalletInfo", "qsdm_requestAccounts"]
   );
 
   stage("testing extension wallet dashboard");
@@ -1375,19 +1428,21 @@ try {
     "Extension wallet dashboard checks"
   );
   assert.equal(walletDashboard.address, TEST_ADDRESS);
-  assert.equal(walletDashboard.balance, "42.5 CELL");
+  assert.equal(walletDashboard.balance, "42.50000000 CELL");
   assert.match(walletDashboard.status, /mock-qsdm-transaction/);
-  assert.deepEqual(
-    requests.slice(dashboardStart).map((request) => request.method),
-    [
-      "qsdm_ping",
-      "qsdm_getWalletInfo",
-      "qsdm_getBalance",
-      "qsdm_sendTransaction",
-      "qsdm_ping",
-      "qsdm_getWalletInfo",
-      "qsdm_getBalance",
-    ]
+  const dashboardMethods = requests
+    .slice(dashboardStart)
+    .map((request) => request.method);
+  assert.deepEqual(dashboardMethods.slice(0, 5), [
+    "qsdm_ping",
+    "qsdm_getWalletInfo",
+    "qsdm_getBalance",
+    "qsdm_sendTransaction",
+    "qsdm_getBalance",
+  ]);
+  // Anything later is the wallet's own 20-second balance refresh.
+  assert.ok(
+    dashboardMethods.slice(5).every((method) => method === "qsdm_getBalance")
   );
 
   stage("testing extension popup");
@@ -1405,37 +1460,40 @@ try {
   await withTimeout(
     popup.waitForFunction(
       () =>
-        document.querySelector("#hive-status")?.textContent === "Wallet ready",
+        document.querySelector("#balance-state")?.textContent ===
+        "Live CELL balance",
       { timeout: 10000 }
     ),
     12000,
     "Popup connection check"
   ).catch(async (error) => {
     const popupState = await popup.evaluate(() => ({
-      status: document.querySelector("#hive-status")?.textContent,
-      address: document.querySelector("#wallet-address")?.textContent,
+      hive: document.querySelector(".app")?.dataset.hive,
+      address: document.querySelector("#dashboard-address")?.textContent,
+      balance: document.querySelector("#balance-state")?.textContent,
       notice: document.querySelector("#notice")?.textContent,
     }));
     stage(`popup state before failure: ${JSON.stringify(popupState)}`);
     throw error;
   });
-  const popupAddress = await popup.$eval(
-    "#wallet-address",
-    (element) => element.textContent
+  assert.equal(
+    await popup.$eval("#dashboard-address", (element) => element.textContent),
+    `${TEST_ADDRESS.slice(0, 8)}\u2026${TEST_ADDRESS.slice(-8)}`
   );
   assert.equal(
-    popupAddress,
-    `${TEST_ADDRESS.slice(0, 10)}...${TEST_ADDRESS.slice(-8)}`
+    await popup.$eval("#dashboard-balance", (element) => element.textContent),
+    "42.50000000 CELL"
   );
-  assert.equal(
-    await popup.$eval("#site-name", (element) => element.textContent),
-    "Unavailable on this page"
-  );
-  assert.equal(
-    await popup.$eval("#wallet-balance", (element) => element.textContent),
-    "42.5 CELL"
+  // Opened as a tab here, the popup's active tab is itself: not a website.
+  await popup.click("#nav-sites");
+  await popup.waitForFunction(
+    () =>
+      document.querySelector("#site-name")?.textContent ===
+      "This page cannot connect",
+    { timeout: 10000 }
   );
 
+  await popup.click("#nav-settings");
   const accountTargetPromise = browser.waitForTarget(
     (target) => target.url() === "https://qsdm.tech/account/",
     { timeout: 15000 }
@@ -1445,21 +1503,24 @@ try {
   const accountPage = await accountTarget.page();
   await accountPage?.close();
   if (screenshotDirectory) {
-    await popup.setViewport({ width: 390, height: 720 });
+    await popup.click("#nav-home");
+    await popup.setViewport({ width: 360, height: 600 });
     await popup.screenshot({
       path: path.join(screenshotDirectory, "qsdm-wallet-popup.png"),
-      fullPage: true,
     });
   }
 
   const popupMethods = requests
     .slice(popupStart)
     .map((request) => request.method);
-  assert.deepEqual(popupMethods, [
+  assert.deepEqual(popupMethods.slice(0, 3), [
     "qsdm_ping",
     "qsdm_getWalletInfo",
     "qsdm_getBalance",
   ]);
+  assert.ok(
+    popupMethods.slice(3).every((method) => method === "qsdm_getBalance")
+  );
   const methods = requests.map((request) => request.method);
 
   console.log(

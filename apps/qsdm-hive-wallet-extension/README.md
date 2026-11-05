@@ -38,24 +38,41 @@ or recovery phrases. Those remain local to Hive.
 
 ## Wallet dashboard
 
-Extension 0.5.1 provides the everyday wallet functions without moving custody into
-the browser:
+Extension 0.6.0 is a full wallet in the toolbar popup (`popup.html`), without
+moving custody into the browser. The same wallet opens in a tab with the expand
+button (`popup.html?full=1`; the old `home.html#/wallet` link lands there):
 
-- the popup shows the active Hive wallet and its live CELL balance;
-- **Open Wallet Dashboard** opens `home.html#/wallet`;
-- **Open QSDM Account** opens the trusted production account dashboard from
-  both the popup and full wallet dashboard;
-- the dashboard copies the receiving address, refreshes the balance, and
-  requests wallet-to-wallet CELL transfers; and
-- the signed-in QSDM Account dashboard can show the same active wallet and
-  request the same Hive-approved transfer.
+- **Wallet**: the active Hive wallet's address (copy), the live CELL balance
+  with hide and refresh, CELL sent from this browser that is not in a block yet
+  (**Pending out**), **Receive**, **Send** and **History**, and the three latest
+  transfers;
+- **Receive**: the address as a QR code drawn locally (`qr.js`, MIT) and in
+  groups of eight characters, with a link to it in the QSDM Explorer;
+- **Send**: recipient and amount (with **MAX**), checked against the balance,
+  then a review of from, to, amount, the network fee (0 CELL) and the total
+  before QSDM Hive is asked; the result shows the transaction id and its
+  Explorer page;
+- **History**: the transfers sent from this browser, and the transfers to and
+  from this wallet in the most recent 1,000 blocks with their confirmations
+  once QSDM's public API answers the extension (read-only, through the
+  background worker); every row opens in the QSDM Explorer;
+- **Sites**: connect or disconnect the current website, and the number of
+  connected sites Hive keeps;
+- **Settings**: light, dark or automatic theme; hide balances by default;
+  links to the wallets in Hive, QSDM Account and the Explorer.
+
+Websites that ask to connect, to sign a message, or to send CELL first open the
+extension's approval window (`approve.html`) with the requesting origin and the
+exact request. **Cancel** refuses it (provider error code 4001); continuing
+hands it to QSDM Hive, which shows it again and decides.
 
 Every transfer displays the exact recipient and amount in QSDM Hive before it
 is signed. Closing Hive makes balance and transfer actions unavailable. The
 extension cannot export a key, recovery phrase, keystore, or passphrase, and
-its internal dashboard is not allowed to request arbitrary message signatures.
+its internal pages are not allowed to request arbitrary message signatures.
 QSDM currently supports CELL on these wallet surfaces; other currencies or
-tokens are not implied by the interface.
+tokens are not implied by the interface. The fonts are Outfit and IBM Plex
+Mono (SIL Open Font License, `OFL-*.txt`).
 
 ## Installation
 
@@ -140,6 +157,19 @@ Supported website methods are `qsdm_requestAccounts`, `qsdm_accounts`,
 `qsdm_disconnect`. `qsdm_openOnboarding` is an extension-local navigation
 request: it opens the internal onboarding page and never reaches Hive or QSDM
 Core.
+
+`qsdm_requestAccounts` (for a site not connected yet), `qsdm_signMessage` and
+`qsdm_sendTransaction` open the approval window first, so they can take as long
+as a person needs (the provider waits up to 15 minutes for them). When the
+person cancels, the promise rejects with an `Error` whose `code` is `4001`:
+
+```js
+try {
+  await window.qsdm.request({ method: "qsdm_requestAccounts" });
+} catch (error) {
+  if (error.code === 4001) showMessage("Connection cancelled.");
+}
+```
 
 ## Verification
 

@@ -60,11 +60,21 @@ $packageFiles = @(
     'content.js',
     'provider.js',
     'popup.html',
-    'popup.css',
-    'popup.js',
     'home.html',
     'home.css',
     'home.js',
+    'approve.html',
+    'approve.js',
+    'wallet.css',
+    'wallet.js',
+    'qr.js',
+    'LICENSE-qr.txt',
+    'qsdm-mark.svg',
+    'font-outfit.woff2',
+    'font-plex-mono-400.woff2',
+    'font-plex-mono-500.woff2',
+    'OFL-Outfit.txt',
+    'OFL-IBMPlexMono.txt',
     'qsdm-hive-icon.png'
 )
 
