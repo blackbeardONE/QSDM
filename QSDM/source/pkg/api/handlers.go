@@ -259,6 +259,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/wallet/recovery/capsules", handlers.QSDMRecoveryCapsuleLookupHandler)
 	mux.HandleFunc("/api/v1/wallet/recovery/capsules/", handlers.QSDMRecoveryCapsuleRouteHandler)
 
+	// QSDM-20 native tokens (QSDM/docs/docs/QSDM_20.md). Reads are public
+	// ledger data; the submit route carries the sender's ML-DSA signature.
+	mux.HandleFunc("/api/v1/qsdm20/tokens", handlers.QSDM20TokensHandler)
+	mux.HandleFunc("/api/v1/qsdm20/tokens/", handlers.QSDM20TokenRouteHandler)
+	mux.HandleFunc("/api/v1/qsdm20/balances/", handlers.QSDM20BalancesHandler)
+	mux.HandleFunc("/api/v1/qsdm20/submit", handlers.QSDM20SubmitHandler)
+
 	// Authentication endpoints (public)
 	mux.HandleFunc("/api/v1/auth/login", handlers.Login)
 	mux.HandleFunc("/api/v1/auth/register", handlers.Register)

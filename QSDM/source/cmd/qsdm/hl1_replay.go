@@ -127,6 +127,7 @@ func hl1ReplayConsensusSettings(cfg *config.Config) {
 	chain.SetEnrollmentStateRootActivationHeight(cfg.EnrollmentStateRootActivationHeight)
 	chain.SetPoEActivationHeight(cfg.PoEActivationHeight)
 	chain.SetStreamEd25519RetirementHeight(cfg.StreamEd25519RetirementHeight)
+	chain.SetQSDM20ActivationHeight(cfg.QSDM20ActivationHeight)
 	chain.SetRequireSignedCertificates(cfg.RequireSignedVotes)
 	chain.SetRequireSignedBlocks(cfg.RequireSignedVotes)
 	chain.SetRequireEvidenceProof(cfg.RequireSignedVotes)
@@ -454,6 +455,9 @@ func (s *hl1ReplayStack) restore(blocks []*chain.Block, verified *chain.Verified
 	}
 	if err := s.v2.RecoveryState.RestoreFromChainReplay(restored.recoveryState); err != nil {
 		return fmt.Errorf("install replayed wallet recovery capsule state: %w", err)
+	}
+	if err := s.v2.QSDM20State.RestoreFromChainReplay(restored.qsdm20State); err != nil {
+		return fmt.Errorf("install replayed QSDM-20 token state: %w", err)
 	}
 	if s.transition != nil {
 		s.v2.Aware.SetStateRootHeight(transitionStateRootHeight(s.transition, tip))

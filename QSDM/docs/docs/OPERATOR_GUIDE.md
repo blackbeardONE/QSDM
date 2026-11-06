@@ -5,8 +5,8 @@
 > together all of the existing reference docs in the order you'll
 > actually meet them.
 >
-> **Scope.** Public pilot network (pre-mainnet) today, run by a single
-> block producer during recovery. Mainnet only after the gates in
+> **Scope.** Public pilot network (pre-mainnet) today, with one block
+> producer run by the project. Mainnet only after the gates in
 > [`TREASURY_POLICY.md` §9](./TREASURY_POLICY.md#9-mainnet-release-gates)
 > close, including a published security review (today an open
 > [community review with a bug bounty](./COMMUNITY_REVIEW.md); no
@@ -33,7 +33,7 @@ replicated byte-for-byte across every validator that has finished its
 initial sync.
 
 > **Today (pilot network):** the design above is the target. Right now the
-> chain is produced by a single block producer during recovery, with a
+> chain is produced by one block producer run by the project, with a
 > backup node following it, and `GET /api/v1/status` may report `peers: 0`.
 > Independent validators are on the roadmap; running one is how you help
 > get there.

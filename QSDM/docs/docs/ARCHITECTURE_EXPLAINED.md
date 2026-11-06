@@ -3,7 +3,7 @@
 **Last Updated:** December 2025
 
 > **Current status note (2026-10):** This is a historical document. QSDM today is a
-> public pilot network (pre-mainnet) run by a single block producer during recovery.
+> public pilot network (pre-mainnet): Proof-of-Entanglement transfers, one block producer run by the project.
 > CELL wallet transactions are signed with ML-DSA-87 (NIST FIPS 204), and signed consensus
 > messages are enforced from block 827,000; independent validators and a published
 > security review (an open [community review](COMMUNITY_REVIEW.md); no independent

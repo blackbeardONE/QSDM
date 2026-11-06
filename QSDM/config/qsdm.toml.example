@@ -146,6 +146,10 @@ poe_activation_height = 0
 # refused; streams opened below it can still take receipts, settle and close.
 # 0 = never (the default). Every validator must use the same value.
 # stream_ed25519_retirement_height = 0  # env QSDM_STREAM_ED25519_RETIREMENT_HEIGHT
+# QSDM-20 tokens (qsdm/token/v1, QSDM/docs/docs/QSDM_20.md): token
+# transactions are valid from this height. 0 = off (the default): nodes refuse
+# every token transaction. Every validator must use the same value.
+# qsdm20_activation_height = 0  # env QSDM_QSDM20_ACTIVATION_HEIGHT
 signer_key_path = "qsdm_consensus_signer.json"
 # Producer transition: which consensus key may sign each block height. Off
 # unless configured (then authorized_block_producers decides). Copy the table

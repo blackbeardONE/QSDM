@@ -20,7 +20,7 @@ network see [Network status](NETWORK_STATUS.md).
 | Consensus | **Signed consensus enforced from block 827,000** (`signed_consensus_active: true`): every BFT vote and consensus message must carry a valid ML-DSA signature; unsigned consensus traffic is refused | There is only one producer and no independent validators yet, so there is no multi-validator BFT today |
 | Mining | Enrollment needs a signed enrollment and a 10 CELL bond; proofs carry NVIDIA attestation; duplicate proofs and nonces are rejected durably | Consumer-GPU attestation (`nvidia-hmac-v1`) is an economic control tied to the enrollment and its bond, not a hardware proof |
 | Software downloads | QSDM Hive releases are signed with the v2 release key and checked by Hive before updating | You trust the release key holder; the previous key was rotated in 2026 |
-| Public API | Read endpoints are public; admin and certificate routes are not exposed; write routes are limited during recovery | Rate limits and nginx rules run on infrastructure operated by the project |
+| Public API | Read endpoints are public; admin and certificate routes are not exposed; write routes are limited during the pilot | Rate limits and nginx rules run on infrastructure operated by the project |
 | Review | An internal, self-maintained [security review](SECURITY_AUDIT.md); an open [community review](COMMUNITY_REVIEW.md) with a [bug bounty](BUG_BOUNTY.md) | No independent audit has been completed; community review is not an audit |
 
 ## Keys and wallets
@@ -75,7 +75,7 @@ network see [Network status](NETWORK_STATUS.md).
   port was closed while a fixed build went in, and it reopened on 4 November.
   The decoders that read peer messages, public API request bodies, mining
   submissions and snapshot files are fuzzed every night, and so are the
-  producer transition rules (53 targets in
+  producer transition rules (55 targets in
   `.github/workflows/go-fuzz-nightly.yml`).
 - A new full node can start from a verified snapshot instead of replaying the
   chain from genesis. It trusts only a checkpoint its operator pins (height,
@@ -143,7 +143,7 @@ network see [Network status](NETWORK_STATUS.md).
 - Read endpoints (status, blocks, transactions, balances) are public and need
   no key.
 - Administrative routes and certificate issuance are not reachable from the
-  internet. New account registration is disabled during recovery.
+  internet. New account registration is disabled during the pilot.
 - The operator dashboard is private.
 - Details per endpoint are in the [API reference](API_REFERENCE.md).
 

@@ -220,6 +220,13 @@ type ConsensusConfigTOML struct {
 	// before. Every validator must use the same value.
 	StreamEd25519RetirementHeight uint64 `toml:"stream_ed25519_retirement_height" yaml:"stream_ed25519_retirement_height"`
 
+	// QSDM20ActivationHeight is the first height at which QSDM-20 token
+	// transactions (qsdm/token/v1, QSDM/docs/docs/QSDM_20.md) are valid.
+	// Zero, the default, keeps them off: admission refuses every token
+	// transaction and no state root changes. Every validator must use the
+	// same value.
+	QSDM20ActivationHeight uint64 `toml:"qsdm20_activation_height" yaml:"qsdm20_activation_height"`
+
 	// SignerKeyPath stores the validator-only ML-DSA consensus hot key.
 	SignerKeyPath string `toml:"signer_key_path" yaml:"signer_key_path"`
 

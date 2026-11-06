@@ -1,8 +1,8 @@
 # Feature Summary — QSDM
 
-**Last Updated:** November 2026 · Running release **hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101** · Hive **1.4.22** · Edge Control **1.3.7**
+**Last Updated:** November 2026 · Running release **hardened-legacy-20261106-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1106** · Hive **1.4.22** · Edge Control **1.3.7**
 
-QSDM (Quantum-Secure Dynamic Mesh) is a mesh ledger with post-quantum (ML-DSA-87) wallet signatures whose native coin is **Cell (CELL)**. It currently runs as a public pilot network (pre-mainnet) with a single block producer during recovery. Validators are designed to run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
+QSDM (Quantum-Secure Dynamic Mesh) is a mesh ledger with post-quantum (ML-DSA-87) wallet signatures whose native coin is **Cell (CELL)**. It currently runs as a public pilot network (pre-mainnet) with Proof-of-Entanglement transfers and one block producer run by the project. Validators are designed to run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
 
 For the current state of the public network, see [Network status](NETWORK_STATUS.md).
 
@@ -21,7 +21,7 @@ it is not the CELL network gateway or another Hive client.
 
 ## Ledger & consensus
 
-- **Proof-of-Entanglement (PoE) + BFT** on a dynamic mesh is the target consensus design; today the pilot network runs a single block producer during recovery. Every node checks each transfer's signature under the sender's own key. The PoE parent rules (parents must be committed transactions) are enforced only from an activation height that has not been set yet ([details](PROOF_OF_ENTANGLEMENT.md)).
+- **Proof-of-Entanglement (PoE) + BFT** on a dynamic mesh is the consensus design; today one block producer run by the project makes the blocks. Every node checks each transfer's signature under the sender's own key, and the PoE parent rules (every transfer names 2 to 10 committed transactions as parents) are enforced from block 816,600 ([details](PROOF_OF_ENTANGLEMENT.md)).
 - **ML-DSA-87** wallet transaction signatures (NIST FIPS 204) with Zstd compression and batch signing. The generic P2P transaction-gossip verifier code still also accepts Ed25519, but the producer has no transaction gossip ingress, so it cannot be reached on the live chain; retirement is planned. Signed consensus is enforced from block 827,000.
 - **3D mesh validation**, rule-based quarantine, and staked reputation penalties.
 - **Dynamic submeshes** with fee thresholds, priority routing, and geotags.

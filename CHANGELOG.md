@@ -17,6 +17,25 @@ from 2026-04-22 on.
 
 ### Added
 
+- **QSDM-20 native tokens, switched off (2026-11-06).** Anyone will be able
+  to create a token and send it to any QSDM address with ordinary signed
+  transactions (contract `qsdm/token/v1`): create, transfer, mint, burn and
+  renounce, with the minting modes `none`, `issuer` and `open` (fair launch).
+  The rules are part of the protocol, amounts are exact integers up to
+  2^256 - 1, fees are paid in CELL and burned, and the token state joins the
+  block state root as a `qsdm-20` segment once the first token exists.
+  Specification: [`QSDM/docs/docs/QSDM_20.md`](QSDM/docs/docs/QSDM_20.md).
+  New API routes: `POST /api/v1/qsdm20/submit` and the public reads
+  `GET /api/v1/qsdm20/tokens`, `/tokens/{id}`, `/tokens/{id}/holders` and
+  `/balances/{address}`. The code ships off:
+  `[consensus] qsdm20_activation_height` (env
+  `QSDM_QSDM20_ACTIVATION_HEIGHT`) is `0` by default, nodes refuse every
+  token transaction, every state root stays byte-identical, and every block
+  that is valid today stays valid (below the activation height a block is
+  judged exactly as before).
+  `/api/v1/status` reports `consensus_auth.qsdm20_activation_height` and
+  `qsdm20_active`. Two fuzz targets join the nightly run.
+
 - **QSDM Hive 1.4.21 (2026-10-03/04).** Automatic miner operator signing:
   when the Hive wallet is unlocked, Hive starts the bundled miner with the
   wallet as its ML-DSA-87 operator key, so mining proofs carry an
@@ -100,6 +119,13 @@ from 2026-04-22 on.
 - **QSDM Hive 1.3.94 Virtual Compute Runtime (2026-07-09).** Mother Hive now discovers live pooled CPU, NVIDIA GPU, and RAM capacity; provides bounded workload controls; shows queue, Agent assignment, duration, cancellation, and verified receipt state; and keeps the private loopback gateway token outside renderer code. The gateway adds authenticated `/v1/resources` and `/v1/workloads` discovery routes while preserving the fixed-workload, no-remote-shell security boundary. A separate design specifies opt-in, wallet-authenticated, one-hop Mother Hive federation across locations without exposing Agent or private Mother credentials.
 
 ### Changed
+
+- **2026-11-06: the docs describe the pilot as it runs now.** 22 documents
+  said the network had "a single block producer during recovery"; they now
+  say what is true today: transfers follow the Proof-of-Entanglement rules,
+  and one block producer run by the project makes the blocks. The Feature
+  Summary no longer says the PoE parent rules wait for an activation height:
+  they are enforced from block 816,600. The roadmap names release rc1106.
 
 - **2026-11-06: QSDM's history starts on 10 May 2025.** A new
   [History](QSDM/docs/docs/HISTORY.md) page gives the timeline from the first

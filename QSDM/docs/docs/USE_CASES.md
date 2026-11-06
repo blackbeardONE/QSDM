@@ -6,7 +6,7 @@
 
 ## Overview
 
-**QSDM** (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger with native coin **Cell (CELL)**. Validators are designed to run PoE + BFT consensus (today a single block producer runs the pilot network (pre-mainnet) during recovery); miners mint CELL with NVIDIA-attested Proof-of-Work. **QSDM Hive** is the Windows/Linux client for wallets, signed tasks, mining, and integrations. This document lists where the stack fits today.
+**QSDM** (Quantum-Secure Dynamic Mesh) is a post-quantum mesh ledger with native coin **Cell (CELL)**. Validators are designed to run PoE + BFT consensus (today one block producer run by the project makes the blocks of the pilot network (pre-mainnet), and transfers follow the Proof-of-Entanglement rules); miners mint CELL with NVIDIA-attested Proof-of-Work. **QSDM Hive** is the Windows/Linux client for wallets, signed tasks, mining, and integrations. This document lists where the stack fits today.
 
 ---
 

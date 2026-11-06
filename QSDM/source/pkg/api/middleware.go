@@ -323,6 +323,11 @@ func isPublicEndpoint(path string) bool {
 		"/api/v1/wallet/recovery/nonce",
 		"/api/v1/wallet/recovery/capsules",
 		"/api/v1/wallet/recovery/capsules/submit-signed",
+		// QSDM-20 tokens: the token list is public ledger data, and a
+		// token transaction is authorized by the sender's ML-DSA signature
+		// in the body, verified before mempool admission.
+		"/api/v1/qsdm20/tokens",
+		"/api/v1/qsdm20/submit",
 		"/api/v1/monitoring/ngc-proof",
 		"/api/v1/monitoring/ngc-challenge",
 		"/api/v1/monitoring/ngc-proofs",
@@ -472,6 +477,10 @@ func isPublicEndpoint(path string) bool {
 		return true
 	}
 	if strings.HasPrefix(path, "/api/v1/wallet/recovery/capsules/") {
+		return true
+	}
+	// QSDM-20 token, holder and balance reads are public ledger data.
+	if strings.HasPrefix(path, "/api/v1/qsdm20/tokens/") || strings.HasPrefix(path, "/api/v1/qsdm20/balances/") {
 		return true
 	}
 	return false

@@ -6,7 +6,7 @@ paused or disconnected session stops adding billable seconds.
 
 The first protocol version is `qsdm/streams/v1`.
 
-> **Status (October 2026):** the protocol is implemented in QSDM Core, but no production service bills through it yet, and public write routes may be restricted while the pilot network (pre-mainnet) is in recovery.
+> **Status (October 2026):** the protocol is implemented in QSDM Core, but no production service bills through it yet, and public write routes may be restricted while the network is a pilot (pre-mainnet).
 
 ## What this solves
 

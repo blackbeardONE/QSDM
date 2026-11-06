@@ -128,6 +128,8 @@ tags:
     description: Referral reward pool used by QSDM Hive
   - name: Wallet Recovery
     description: Encrypted wallet recovery capsules
+  - name: QSDM-20
+    description: QSDM-20 native tokens (contract qsdm/token/v1, see QSDM_20.md)
   - name: Contracts
     description: Contracts and their call traces
   - name: Bridge
@@ -2925,6 +2927,304 @@ paths:
                 $ref: '#/components/schemas/Error'
         '503':
           description: Recovery capsule state is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /qsdm20/submit:
+    post:
+      tags:
+        - QSDM-20
+      summary: Submit a signed QSDM-20 token transaction
+      description: |
+        Submits a token transaction (contract qsdm/token/v1, see QSDM_20.md): create, transfer, mint, burn or renounce. signature is the sender's ML-DSA-87 signature over the signing digest of sender, nonce, fee_dust and payload, and the SHA-256 of public_key must equal sender. nonce must be the sender's current consensus account nonce (GET /mining/account returns it), and the sender's CELL account must cover fee_dust, which is burned. The node builds the transaction from the body (the canonical JSON payload, and the id qsdm20- followed by the hex signing digest) and checks it against its current state before the mempool takes it: the activation height (consensus_auth.qsdm20_active in GET /status), the field rules, the signature, the nonce, the fee and the token rules. A transaction that passes is still dropped from its block, with nothing charged, if an earlier transaction in the same block makes it invalid. Unknown JSON fields are refused. Answers 503 until the token state and mempool are wired. A read-only follower node (QSDM_API_READ_ONLY=1) answers 503.
+      operationId: submitQSDM20Transaction
+      x-qsdm-access: public
+      x-qsdm-follower: refused
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QSDM20SubmitRequest'
+      responses:
+        '200':
+          description: Transaction admitted to the mempool (mempool_status submitted) or already pending there (mempool_status duplicate).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QSDM20SubmitResponse'
+        '400':
+          description: Invalid JSON, including unknown fields, data after the object or a body over 1 MiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: Method other than POST.
+          headers:
+            Allow:
+              description: Always POST.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: |
+            The transaction is refused: tokens are switched off or the next block is below the activation height, a field breaks the field rules, the signature or public key is wrong, the nonce is stale, the CELL account is missing or cannot pay the fee, the token is unknown, the sender is not the issuer, minting is off, the amount is over mint_limit or max_supply, the sender holds too few units, or the mempool refused it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: QSDM-20 submission is not configured, or the node is a read-only follower.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /qsdm20/tokens:
+    get:
+      tags:
+        - QSDM-20
+      summary: List QSDM-20 tokens, newest first
+      description: |
+        Returns every token, by creation height descending and then token id ascending. Without limit, every token after cursor is returned; with limit, a page that has more after it ends with next_cursor, which the next request passes as cursor. Answers 503 until the token state is wired.
+      operationId: listQSDM20Tokens
+      x-qsdm-access: public
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: next_cursor of the previous page (<created_height>:<token id>).
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Page size, a positive integer. Without it every remaining token is returned.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: One page of tokens.
+          headers:
+            Cache-Control:
+              description: Always no-store.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QSDM20TokensResponse'
+        '400':
+          description: limit is not a positive integer, or cursor is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: Method other than GET.
+          headers:
+            Allow:
+              description: Always GET.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: QSDM-20 token state is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /qsdm20/tokens/{token_id}:
+    get:
+      tags:
+        - QSDM-20
+      summary: Get one QSDM-20 token
+      description: |
+        Returns one token with its supply (minted minus burned) and number of holders. Answers 503 until the token state is wired.
+      operationId: getQSDM20Token
+      x-qsdm-access: public
+      parameters:
+        - name: token_id
+          in: path
+          required: true
+          description: Token id, 64 lowercase hex characters.
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{64}$'
+      responses:
+        '200':
+          description: The token.
+          headers:
+            Cache-Control:
+              description: Always no-store.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QSDM20TokenResponse'
+        '400':
+          description: The token id is not 64 lowercase hex characters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: Method other than GET.
+          headers:
+            Allow:
+              description: Always GET.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: QSDM-20 token state is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /qsdm20/tokens/{token_id}/holders:
+    get:
+      tags:
+        - QSDM-20
+      summary: List a QSDM-20 token's holders, largest balance first
+      description: |
+        Returns the token's holders (every address with a non-zero balance), by balance descending and then address ascending. Paging works as for GET /qsdm20/tokens. Answers 503 until the token state is wired.
+      operationId: listQSDM20Holders
+      x-qsdm-access: public
+      parameters:
+        - name: token_id
+          in: path
+          required: true
+          description: Token id, 64 lowercase hex characters.
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{64}$'
+        - name: cursor
+          in: query
+          required: false
+          description: next_cursor of the previous page (<balance>:<address>).
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Page size, a positive integer. Without it every remaining holder is returned.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: One page of holders.
+          headers:
+            Cache-Control:
+              description: Always no-store.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QSDM20HoldersResponse'
+        '400':
+          description: The token id, limit or cursor is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No such token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: Method other than GET.
+          headers:
+            Allow:
+              description: Always GET.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: QSDM-20 token state is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /qsdm20/balances/{address}:
+    get:
+      tags:
+        - QSDM-20
+      summary: List the QSDM-20 tokens an address holds
+      description: |
+        Returns every token the address holds, by token id ascending; an address that holds none gets an empty list. Answers 503 until the token state is wired.
+      operationId: getQSDM20Balances
+      x-qsdm-access: public
+      parameters:
+        - name: address
+          in: path
+          required: true
+          description: QSDM address, 64 lowercase hex characters.
+          schema:
+            type: string
+            pattern: '^[0-9a-f]{64}$'
+      responses:
+        '200':
+          description: The address's token balances.
+          headers:
+            Cache-Control:
+              description: Always no-store.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QSDM20BalancesResponse'
+        '400':
+          description: The address is not 64 lowercase hex characters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: Method other than GET.
+          headers:
+            Allow:
+              description: Always GET.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: QSDM-20 token state is not configured.
           content:
             application/json:
               schema:
@@ -6379,6 +6679,8 @@ components:
         - ed25519_tx_accepted
         - stream_ed25519_retirement_height
         - stream_ed25519_session_keys_retired
+        - qsdm20_activation_height
+        - qsdm20_active
       properties:
         signed_consensus_supported:
           type: boolean
@@ -6442,6 +6744,17 @@ components:
         stream_ed25519_session_keys_retired:
           type: boolean
           description: Whether the stream Ed25519 retirement governs the next block (chain tip + 1).
+        qsdm20_activation_height:
+          type: integer
+          format: int64
+          description: |
+            First height at which QSDM-20 token transactions (contract
+            qsdm/token/v1, see QSDM_20.md) are valid ([consensus]
+            qsdm20_activation_height or QSDM_QSDM20_ACTIVATION_HEIGHT); 0
+            means switched off, and every token transaction is refused.
+        qsdm20_active:
+          type: boolean
+          description: Whether the next block (chain tip + 1) accepts QSDM-20 token transactions.
 
     # ------------------------------------------------------------------
     # Versions
@@ -8662,6 +8975,321 @@ components:
           description: Hex SHA-256 over all current capsule records, ordered by locator.
         recovery:
           $ref: '#/components/schemas/RecoveryCapsuleState'
+
+    QSDM20Action:
+      type: object
+      additionalProperties: false
+      description: |
+        The payload of a QSDM-20 transaction (QSDM_20.md). Each action carries exactly its own fields; any other field is refused. Amounts are base units as decimal strings without leading zeros, from 1 to 2^256 - 1 (initial_supply may be "0" in issuer and open mode).
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum:
+            - create
+            - transfer
+            - mint
+            - burn
+            - renounce
+        symbol:
+          type: string
+          description: create. 1 to 12 characters A to Z and 0 to 9.
+          pattern: '^[A-Z0-9]{1,12}$'
+        name:
+          type: string
+          description: create. 1 to 48 characters of valid UTF-8, no control characters.
+        decimals:
+          type: integer
+          description: create. 0 to 18.
+          minimum: 0
+          maximum: 18
+        max_supply:
+          type: string
+          description: create. Base units, 1 to 2^256 - 1.
+        initial_supply:
+          type: string
+          description: create. Base units going to the sender (the issuer), 0 to max_supply; equal to max_supply in mint none.
+        mint:
+          type: string
+          description: create. Minting mode.
+          enum:
+            - none
+            - issuer
+            - open
+        mint_limit:
+          type: string
+          description: create, open mode only. The most units one open mint may create.
+        token:
+          type: string
+          description: transfer, mint, burn and renounce. Token id, 64 lowercase hex characters.
+          pattern: '^[0-9a-f]{64}$'
+        to:
+          type: string
+          description: transfer and mint. QSDM address, 64 lowercase hex characters; an open mint must go to the sender.
+          pattern: '^[0-9a-f]{64}$'
+        amount:
+          type: string
+          description: transfer, mint and burn. Base units, 1 to 2^256 - 1.
+
+    QSDM20SubmitRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - sender
+        - nonce
+        - fee_dust
+        - payload
+        - public_key
+        - signature
+      properties:
+        sender:
+          type: string
+          description: Sender address, 64 lowercase hex characters (the SHA-256 of public_key).
+        nonce:
+          type: integer
+          format: int64
+          description: The sender's current consensus account nonce.
+        fee_dust:
+          type: integer
+          format: int64
+          description: Fee in dust (1 CELL = 100,000,000 dust), burned; 0 is allowed.
+        payload:
+          $ref: '#/components/schemas/QSDM20Action'
+        public_key:
+          type: string
+          description: Lowercase hex ML-DSA-87 public key (2592 bytes).
+        signature:
+          type: string
+          description: Lowercase hex ML-DSA-87 signature (4627 bytes) over the 32-byte signing digest (QSDM_20.md, "Signature").
+
+    QSDM20SubmitResponse:
+      type: object
+      required:
+        - tx_id
+        - action
+        - sender
+        - nonce
+        - token
+        - status
+        - mempool_status
+      properties:
+        tx_id:
+          type: string
+          description: qsdm20- followed by the lowercase hex signing digest; GET /receipts/{tx_id} reports the outcome.
+        action:
+          type: string
+        sender:
+          type: string
+        nonce:
+          type: integer
+          format: int64
+        token:
+          type: string
+          description: The token acted on; for a create, the id the new token gets.
+        status:
+          type: string
+          enum:
+            - accepted
+        mempool_status:
+          type: string
+          enum:
+            - submitted
+            - duplicate
+
+    QSDM20Token:
+      type: object
+      required:
+        - id
+        - symbol
+        - name
+        - decimals
+        - issuer
+        - mint
+        - max_supply
+        - minted
+        - burned
+        - supply
+        - holders
+        - created_height
+      properties:
+        id:
+          type: string
+        symbol:
+          type: string
+        name:
+          type: string
+        decimals:
+          type: integer
+        issuer:
+          type: string
+          description: The address that created the token.
+        mint:
+          type: string
+          description: Minting mode; none after a renounce.
+          enum:
+            - none
+            - issuer
+            - open
+        mint_limit:
+          type: string
+          description: Present only in open mode.
+        max_supply:
+          type: string
+          description: After a renounce, the amount minted so far.
+        minted:
+          type: string
+        burned:
+          type: string
+        supply:
+          type: string
+          description: minted minus burned; the sum of all balances.
+        holders:
+          type: integer
+          description: Number of addresses with a non-zero balance.
+        created_height:
+          type: integer
+          format: int64
+
+    QSDM20Holder:
+      type: object
+      required:
+        - address
+        - balance
+      properties:
+        address:
+          type: string
+        balance:
+          type: string
+
+    QSDM20Balance:
+      type: object
+      required:
+        - token
+        - symbol
+        - name
+        - decimals
+        - balance
+      properties:
+        token:
+          type: string
+        symbol:
+          type: string
+        name:
+          type: string
+        decimals:
+          type: integer
+        balance:
+          type: string
+
+    QSDM20TokensResponse:
+      type: object
+      required:
+        - runtime
+        - source
+        - state_root
+        - tokens
+        - has_more
+      properties:
+        runtime:
+          type: string
+          enum:
+            - qsdm-native
+        source:
+          type: string
+          enum:
+            - chain
+        state_root:
+          type: string
+          description: The token state root (QSDM_20.md, "State and the state root").
+        tokens:
+          type: array
+          items:
+            $ref: '#/components/schemas/QSDM20Token'
+        next_cursor:
+          type: string
+          description: Present when more tokens follow; pass it as cursor.
+        has_more:
+          type: boolean
+
+    QSDM20TokenResponse:
+      type: object
+      required:
+        - runtime
+        - source
+        - state_root
+        - token
+      properties:
+        runtime:
+          type: string
+          enum:
+            - qsdm-native
+        source:
+          type: string
+          enum:
+            - chain
+        state_root:
+          type: string
+        token:
+          $ref: '#/components/schemas/QSDM20Token'
+
+    QSDM20HoldersResponse:
+      type: object
+      required:
+        - runtime
+        - source
+        - state_root
+        - token
+        - holders
+        - has_more
+      properties:
+        runtime:
+          type: string
+          enum:
+            - qsdm-native
+        source:
+          type: string
+          enum:
+            - chain
+        state_root:
+          type: string
+        token:
+          type: string
+        holders:
+          type: array
+          items:
+            $ref: '#/components/schemas/QSDM20Holder'
+        next_cursor:
+          type: string
+          description: Present when more holders follow; pass it as cursor.
+        has_more:
+          type: boolean
+
+    QSDM20BalancesResponse:
+      type: object
+      required:
+        - runtime
+        - source
+        - state_root
+        - address
+        - balances
+      properties:
+        runtime:
+          type: string
+          enum:
+            - qsdm-native
+        source:
+          type: string
+          enum:
+            - chain
+        state_root:
+          type: string
+        address:
+          type: string
+        balances:
+          type: array
+          items:
+            $ref: '#/components/schemas/QSDM20Balance'
 
     ContractAbiParam:
       type: object

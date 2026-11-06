@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -138,6 +139,10 @@ func TestCORS_PublicReadAnyOrigin(t *testing.T) {
 		"/api/v1/receipts/hive_wallet_1762390000000_9f8e7d6c5b4a3921",
 		"/api/v1/chain/blocks?from=1&to=1",
 		"/api/v1/mining/emission",
+		"/api/v1/qsdm20/tokens?limit=10",
+		"/api/v1/qsdm20/tokens/" + strings.Repeat("ab", 32),
+		"/api/v1/qsdm20/tokens/" + strings.Repeat("ab", 32) + "/holders?limit=5",
+		"/api/v1/qsdm20/balances/13d786706accfbe77c5ddf6fc6757e1cca07bd01aff0cad3dcf9411d92cf11c9",
 	} {
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			req := httptest.NewRequest(method, path, nil)
@@ -219,6 +224,11 @@ func TestCORS_PublicPathWritesStayDenied(t *testing.T) {
 		{http.MethodPut, "/api/v1/receipts/abc", ""},
 		{http.MethodOptions, "/api/v1/status", "POST"},
 		{http.MethodOptions, "/api/v1/wallet/submit-signed", "POST"},
+		{http.MethodPost, "/api/v1/qsdm20/submit", ""},
+		{http.MethodOptions, "/api/v1/qsdm20/submit", "POST"},
+		{http.MethodPost, "/api/v1/qsdm20/tokens", ""},
+		{http.MethodDelete, "/api/v1/qsdm20/tokens/abc", ""},
+		{http.MethodOptions, "/api/v1/qsdm20/balances/abc", "POST"},
 	}
 	for _, c := range cases {
 		req := httptest.NewRequest(c.method, c.path, nil)
@@ -254,6 +264,24 @@ func TestCORS_PublicReadPathMatching(t *testing.T) {
 		"/api/v1/wallet/submit-signed":   false,
 		"/api/v1/auth/login":             false,
 		"":                               false,
+
+		"/api/v1/qsdm20/tokens":                        true,
+		"/api/v1/qsdm20/tokens/abc":                    true,
+		"/api/v1/qsdm20/tokens/abc/holders":            true,
+		"/api/v1/qsdm20/balances/abc":                  true,
+		"/api/v1/qsdm20/tokens/":                       false,
+		"/api/v1/qsdm20/tokens/abc/":                   false,
+		"/api/v1/qsdm20/tokens/abc/holders/x":          false,
+		"/api/v1/qsdm20/tokens/abc/supply":             false,
+		"/api/v1/qsdm20/tokens//holders":               false,
+		"/api/v1/qsdm20/tokens/../submit":              false,
+		"/api/v1/qsdm20/balances/":                     false,
+		"/api/v1/qsdm20/balances/abc/def":              false,
+		"/api/v1/qsdm20/submit":                        false,
+		"/api/v1/qsdm20":                               false,
+		"/api/v1/qsdm20/tokensx":                       false,
+		"/api/v1/qsdm20/balances":                      false,
+		"/api/v1/qsdm20/tokens/abc/holders/../../../x": false,
 	} {
 		if got := isPublicReadPath(path); got != want {
 			t.Errorf("isPublicReadPath(%q) = %v, want %v", path, got, want)

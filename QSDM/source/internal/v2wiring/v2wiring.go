@@ -53,6 +53,7 @@ package v2wiring
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/api"
@@ -361,6 +362,9 @@ type Wired struct {
 	TaskState       *chain.TaskStateStore
 	StreamState     *chain.StreamStateStore
 	RecoveryState   *chain.RecoveryCapsuleStateStore
+	// QSDM20State is the QSDM-20 token state (qsdm/token/v1). It stays
+	// empty while no activation height is set.
+	QSDM20State *chain.QSDM20StateStore
 
 	// RecentRejections is the bounded ring of §4.6 attestation
 	// rejections (arch-spoof / hashrate-band / cc-cert-subject).
@@ -408,6 +412,13 @@ func Wire(cfg Config) (*Wired, error) {
 	aware.SetStreamStateStore(streamState)
 	recoveryState := chain.NewRecoveryCapsuleStateStore()
 	aware.SetRecoveryCapsuleStateStore(recoveryState)
+	qsdm20State := chain.NewQSDM20StateStore()
+	aware.SetQSDM20StateStore(qsdm20State)
+	// The QSDM-20 admission layer judges the activation height at the next
+	// block, read from this applier's height source once AttachToProducer
+	// installs it. ReinstallAdmissionGate receives only the pool, so the
+	// source is kept per pool.
+	qsdm20AdmissionHeights.Store(cfg.Pool, aware.NextBlockHeight)
 
 	// Slasher arm. Build the production dispatcher with the
 	// real registry, all three verifiers wired (forgedattest,
@@ -634,6 +645,8 @@ func Wire(cfg Config) (*Wired, error) {
 	//   - enrollment.AdmissionChecker (enroll/unenroll txs)
 	//   - chain.StreamAdmissionChecker (CELL stream signatures)
 	//   - chain.RecoveryCapsuleAdmissionChecker (legacy-wallet recovery)
+	//   - chain.QSDM20AdmissionChecker  (QSDM-20 tokens: activation height,
+	//                                    shape and signature)
 	//   - cfg.BaseAdmit                (everything else: POL/BFT)
 	//
 	// Each layer only intercepts its own ContractID and
@@ -647,7 +660,8 @@ func Wire(cfg Config) (*Wired, error) {
 			slashing.AdmissionChecker(
 				enrollment.AdmissionChecker(
 					chain.StreamAdmissionChecker(
-						chain.RecoveryCapsuleAdmissionChecker(cfg.BaseAdmit))))))
+						chain.RecoveryCapsuleAdmissionChecker(
+							chain.QSDM20AdmissionChecker(aware.NextBlockHeight, cfg.BaseAdmit)))))))
 
 	// HTTP handler hookup. All four mining endpoints
 	//
@@ -672,6 +686,9 @@ func Wire(cfg Config) (*Wired, error) {
 	api.SetStreamStateProvider(streamState)
 	api.SetRecoveryCapsuleMempool(cfg.Pool)
 	api.SetRecoveryCapsuleStateProvider(recoveryState)
+	api.SetQSDM20Mempool(cfg.Pool)
+	api.SetQSDM20StateProvider(qsdm20State)
+	api.SetQSDM20TxChecker(aware)
 	api.SetEnrollmentRegistry(state)
 	api.SetEnrollmentLister(state)
 	// Both interfaces are satisfied by the same chain-side
@@ -762,6 +779,7 @@ func Wire(cfg Config) (*Wired, error) {
 		TaskState:        taskState,
 		StreamState:      streamState,
 		RecoveryState:    recoveryState,
+		QSDM20State:      qsdm20State,
 		RecentRejections: rejectionStore,
 		SealedBlockHook:  hook,
 	}, nil
@@ -1025,17 +1043,34 @@ func ReinstallAdmissionGate(pool *mempool.Mempool, prev func(*mempool.Tx) error)
 	if pool == nil {
 		return
 	}
-	// Mirror Wire()'s stack: gov > slashing > enrollment > streams > recovery > prev.
+	// Mirror Wire()'s stack: gov > slashing > enrollment > streams > recovery > QSDM-20 > prev.
 	// Each layer only intercepts its own ContractID, so the
 	// order is structurally safe but kept stable for
 	// readability and ease of comparison with Wire().
+	//
+	// The QSDM-20 layer reads the next block height from the applier
+	// Wire built for this pool. A pool Wire never saw has no height
+	// source, and the layer then refuses every token transaction once an
+	// activation height is set (fail closed); with none set it refuses
+	// them anyway.
+	var qsdm20Height func() (uint64, bool)
+	if v, ok := qsdm20AdmissionHeights.Load(pool); ok {
+		qsdm20Height, _ = v.(func() (uint64, bool))
+	}
 	pool.SetAdmissionChecker(
 		chainparams.AdmissionChecker(
 			slashing.AdmissionChecker(
 				enrollment.AdmissionChecker(
 					chain.StreamAdmissionChecker(
-						chain.RecoveryCapsuleAdmissionChecker(prev))))))
+						chain.RecoveryCapsuleAdmissionChecker(
+							chain.QSDM20AdmissionChecker(qsdm20Height, prev)))))))
 }
+
+// qsdm20AdmissionHeights maps each pool Wire configured to the next-block
+// height source of the applier it built (*mempool.Mempool ->
+// func() (uint64, bool)), so ReinstallAdmissionGate can rebuild the QSDM-20
+// admission layer with the same source.
+var qsdm20AdmissionHeights sync.Map
 
 // AttachToProducer wires the post-construction half of the
 // EnrollmentAwareApplier contract into a freshly-built
