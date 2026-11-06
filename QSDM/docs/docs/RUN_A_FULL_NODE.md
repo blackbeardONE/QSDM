@@ -60,37 +60,47 @@ The import and every start load the whole chain into memory, and the node keeps 
 memory a node needs grows with the chain. Go's garbage collector lets the heap grow to about twice what is in use
 before it collects, so the peak is about twice the heap, and a running node can use about as much as a start.
 
-The code on main shares the values that repeat across blocks in memory: the producer's public key, which every
-block it signs carries, and repeated strings. Today's full-node release, the one on qsdm.tech/fullnode.html that
-the installer installs, does not; the sharing comes with the next full-node release. Measured with
-`cmd/qsdm/restore_bench_test.go` on a copy of the public chain at height 880 376 (880 377 blocks, a 5.0 GB
-journal), with Go's default settings, on Windows x86-64 with a 16-thread laptop CPU:
+The code on main is lighter in three ways that come with the next full-node release. Today's release, the one on
+qsdm.tech/fullnode.html that the installer installs, has none of them:
+
+- it shares the values that repeat across blocks in memory (the producer's public key, which every block it signs
+  carries, and repeated strings);
+- a start verifies each block's ML-DSA-87 signature once, on every core, instead of twice on one;
+- once a block's signature is verified at the start, the node keeps it only in the journal
+  (`qsdm_chain.ndjson`), with its position and a 16-byte digest in memory. It reads it back, and checks it against
+  that digest, only to send the block to another node (`GET /api/v1/chain/blocks` and the peer-to-peer catch-up).
+  Blocks the node appends while it runs keep their signatures in memory until it restarts.
+
+Measured with `cmd/qsdm/restore_bench_test.go` on a copy of the public chain at height 880 376 (880 377 blocks, a
+5.0 GB journal), with Go's default settings, on Windows x86-64 with a 16-thread laptop CPU:
 
 | | Today's release | From the next release |
 |---|---:|---:|
-| Start (the restore every start runs), peak | 8.2 GiB | 5.8 GiB |
-| Go heap after the start | 4.1 GiB | 2.7 GiB |
+| Start (the restore every start runs), peak | 8.2 GiB | 1.9 GiB |
+| Go heap after the start | 4.1 GiB | 1.0 GiB |
+| Time of a start | about 2.5 minutes | about 30 seconds |
 | Import, peak | 8.3 GiB | 5.8 GiB |
-| Time of a start or an import | about 2.5 minutes | about 2.5 minutes |
-| Heap per further block | about 8.4 KB | about 5.4 KB |
-| Peak per further 100 000 blocks | about 1.6 GiB | about 1.1 GiB |
-| Peak at about 1 020 000 blocks | about 10.4 GiB | about 7.3 GiB |
+| Time of an import | about 2.5 minutes | about 2.5 minutes |
+| Heap per further block | about 8.4 KB | about 0.6 KB |
+| Start peak per further 100 000 blocks | about 1.6 GiB | about 0.12 GiB |
+| Start peak at about 1 020 000 blocks | about 10.4 GiB | about 2.1 GiB |
 
-The last three rows are derived, not measured at a second height: from the sizes of the values that the newest
-80 000 restored blocks keep in memory, times the measured ratio of peak to heap (about 2). At 10 seconds per
-block, 100 000 blocks take 11.6 days.
+The start uses every core, so it takes longer on a server with fewer. The import still keeps every signature in
+memory while it checks the snapshot (about 1.1 GiB more per further 100 000 blocks, about 7.3 GiB at 1 020 000),
+so with the next release the import, not the start, sets the memory a server needs. The last three rows are
+derived, not measured at a second height: from the sizes of the values that the newest 80 000 restored blocks keep
+in memory, times the measured ratio of peak to heap (about 2). A running node also holds the signatures of the
+blocks it appended since its last start: about 0.5 GiB of heap per 100 000 blocks. At 10 seconds per block,
+100 000 blocks take 11.6 days.
 
-To run in less memory, you can set Go's soft memory limit for the service: run
+To run today's release in less memory, you can set Go's soft memory limit for the service: run
 `sudo systemctl edit qsdm-follower`, add `Environment=GOMEMLIMIT=...` under `[Service]`, then
 `sudo systemctl restart qsdm-follower`. Choose a value below the server's memory and well above the heap the node
-holds: with today's release 4.1 GiB at height 880 376 plus about 0.8 GiB per 100 000 blocks (about 5.2 GiB at
-1 020 000), from the next release 2.7 GiB plus about 0.5 GiB per 100 000 blocks. For example, with today's
-release on a server with 12 GB, `GOMEMLIMIT=9GiB` keeps the process near 9 GiB while the heap still has room to
-grow. With the code on main, `GOMEMLIMIT=4GiB` made the start at height 880 376 peak at 4.0 GiB in the same time;
-that value is only for the next release, since today's release holds a 4.1 GiB heap at that height. Under a
-limit the garbage collector runs more often, and as the heap the node needs approaches the limit it spends more
-and more CPU on collection: raise the limit or add memory before that. The installer and the unit below do not
-set it.
+holds: 4.1 GiB at height 880 376 plus about 0.8 GiB per 100 000 blocks (about 5.2 GiB at 1 020 000). For example,
+on a server with 12 GB, `GOMEMLIMIT=9GiB` keeps the process near 9 GiB while the heap still has room to grow.
+Under a limit the garbage collector runs more often, and as the heap the node needs approaches the limit it spends
+more and more CPU on collection: raise the limit or add memory before that. The installer and the unit below do
+not set it.
 
 ## Trust anchors (take them from qsdm.tech, not from the download)
 
