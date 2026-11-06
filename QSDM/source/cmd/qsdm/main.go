@@ -160,6 +160,8 @@ type persistedStateRestore struct {
 	streamActions   int
 	recoveryState   *chain.RecoveryCapsuleStateStore
 	recoveryActions int
+	qsdm20State     *chain.QSDM20StateStore
+	qsdm20Actions   int
 	stateRoot       string
 	backupPath      string
 	discardedTail   int
@@ -189,6 +191,11 @@ func evaluatePersistedStateWithEnrollment(accounts *chain.AccountStore, blocks [
 	if err != nil {
 		return persistedStateRestore{}, err
 	}
+	qsdm20 := chain.NewQSDM20StateStore()
+	qsdm20Actions, err := replayQSDM20StateFromBlocks(qsdm20, blocks)
+	if err != nil {
+		return persistedStateRestore{}, err
+	}
 	var enrollApplier *chain.EnrollmentApplier
 	if enrollmentState != nil {
 		enrollApplier = chain.NewEnrollmentApplier(accounts, enrollmentState)
@@ -198,6 +205,7 @@ func evaluatePersistedStateWithEnrollment(accounts *chain.AccountStore, blocks [
 	aware.SetTaskStateStore(tasks)
 	aware.SetStreamStateStore(streams)
 	aware.SetRecoveryCapsuleStateStore(recovery)
+	aware.SetQSDM20StateStore(qsdm20)
 	return persistedStateRestore{
 		blocks:          blocks,
 		taskState:       tasks,
@@ -206,6 +214,8 @@ func evaluatePersistedStateWithEnrollment(accounts *chain.AccountStore, blocks [
 		streamActions:   streamActions,
 		recoveryState:   recovery,
 		recoveryActions: recoveryActions,
+		qsdm20State:     qsdm20,
+		qsdm20Actions:   qsdm20Actions,
 		stateRoot:       aware.StateRoot(),
 	}, nil
 }
@@ -268,10 +278,12 @@ func findPersistedSnapshotBlock(
 	tasks := chain.NewTaskStateStore()
 	streams := chain.NewStreamStateStore()
 	recovery := chain.NewRecoveryCapsuleStateStore()
+	qsdm20 := chain.NewQSDM20StateStore()
 	aware := chain.NewEnrollmentAwareApplier(accounts, nil)
 	aware.SetTaskStateStore(tasks)
 	aware.SetStreamStateStore(streams)
 	aware.SetRecoveryCapsuleStateStore(recovery)
+	aware.SetQSDM20StateStore(qsdm20)
 
 	match := -1
 	for index, blk := range blocks {
@@ -286,6 +298,9 @@ func findPersistedSnapshotBlock(
 		}
 		if _, err := replayRecoveryCapsuleStateFromBlocks(recovery, []*chain.Block{blk}); err != nil {
 			return -1, fmt.Errorf("replay wallet recovery capsule state at height %d: %w", blk.Height, err)
+		}
+		if _, err := replayQSDM20StateFromBlocks(qsdm20, []*chain.Block{blk}); err != nil {
+			return -1, fmt.Errorf("replay QSDM-20 token state at height %d: %w", blk.Height, err)
 		}
 		if aware.StateRoot() == blk.StateRoot {
 			match = index
@@ -2402,9 +2417,13 @@ func main() {
 		if err := v2Wired.RecoveryState.RestoreFromChainReplay(restoredState.recoveryState); err != nil {
 			fatalRestore("chain restore: install replayed wallet recovery capsule state from %s: %v", chainStatePath, err)
 		}
+		if err := v2Wired.QSDM20State.RestoreFromChainReplay(restoredState.qsdm20State); err != nil {
+			fatalRestore("chain restore: install replayed QSDM-20 token state from %s: %v", chainStatePath, err)
+		}
 		loadedTaskActions := restoredState.taskActions
 		loadedStreamActions := restoredState.streamActions
 		loadedRecoveryActions := restoredState.recoveryActions
+		loadedQSDM20Actions := restoredState.qsdm20Actions
 		if tip, ok := adminProducer.LatestBlock(); ok {
 			if cfg.ProducerTransition != nil {
 				v2Wired.Aware.SetStateRootHeight(transitionStateRootHeight(cfg.ProducerTransition, tip))
@@ -2504,6 +2523,7 @@ func main() {
 			"task_actions_replayed", loadedTaskActions,
 			"stream_actions_replayed", loadedStreamActions,
 			"recovery_capsules_replayed", loadedRecoveryActions,
+			"qsdm20_actions_replayed", loadedQSDM20Actions,
 			"receipts_loaded", loadedReceipts,
 			"chain_path", chainStatePath,
 			"accounts_path", accountsStatePath,
