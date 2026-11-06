@@ -75,7 +75,7 @@ network see [Network status](NETWORK_STATUS.md).
   port was closed while a fixed build went in, and it reopened on 4 November.
   The decoders that read peer messages, public API request bodies, mining
   submissions and snapshot files are fuzzed every night, and so are the
-  producer transition rules (53 targets in
+  producer transition rules (55 targets in
   `.github/workflows/go-fuzz-nightly.yml`).
 - A new full node can start from a verified snapshot instead of replaying the
   chain from genesis. It trusts only a checkpoint its operator pins (height,
