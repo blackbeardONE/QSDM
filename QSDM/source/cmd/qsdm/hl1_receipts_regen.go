@@ -90,6 +90,11 @@ type hl1RepairOptions struct {
 
 	// Blocks is the restored chain (S4); its last block is the tip N.
 	Blocks []*chain.Block
+	// Verified is what S4 verified of Blocks
+	// (chain.VerifyProducerTransitionChain), nil without a producer
+	// transition. The scratch replay restores the prefix N-1 through it
+	// instead of verifying every block again.
+	Verified *chain.VerifiedChain
 	// Live is the live state applier, restored and root-checked at N by S4.
 	// It is only read (cloned).
 	Live chain.ChainReplayApplier
@@ -464,7 +469,7 @@ func hl1S4rReplay(o hl1RepairOptions, fsys hl1FS, blocks []*chain.Block, blkW, b
 		height = func() uint64 { return o.scratchHeight(n, scratch.TipHeight) }
 	}
 	pre.SetHeightFn(height)
-	if err := scratch.RestoreChain(prefix); err != nil {
+	if err := scratch.RestoreVerifiedChain(prefix, o.Verified); err != nil {
 		return nil, nil, hl1S4rErr(hl1S4rRouteC6RX, "block %d: scratch producer hydrate (%d blocks): %v", n, len(prefix), err)
 	}
 	hl1S4rScratchReplays.Add(1)

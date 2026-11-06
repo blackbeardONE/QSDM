@@ -345,46 +345,57 @@ func hl1rBoot(t *testing.T, dir string, policy *producerpolicy.Transition) (*hl1
 // restored stack and blocks.
 func hl1rRestore(t *testing.T, dir string, policy *producerpolicy.Transition) (*hl1ReplayStack, []*chain.Block, error) {
 	t.Helper()
+	st, blocks, _, err := hl1rRestoreVerified(t, dir, policy)
+	return st, blocks, err
+}
+
+// hl1rRestoreVerified is hl1rRestore, also returning what the producer
+// transition check verified (nil without a producer transition), which
+// main() hands to S4r. As in main(), the restore does not verify the
+// blocks again.
+func hl1rRestoreVerified(t *testing.T, dir string, policy *producerpolicy.Transition) (*hl1ReplayStack, []*chain.Block, *chain.VerifiedChain, error) {
+	t.Helper()
 	journal := filepath.Join(dir, hl1JournalName)
 	if err := hl1RequireFinalNewline(hl1OSFS{}, journal); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	blocks, err := chain.LoadChainNDJSON(journal)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if len(blocks) == 0 {
-		return nil, nil, errors.New("empty journal")
+		return nil, nil, nil, errors.New("empty journal")
 	}
 	st, err := hl1NewReplayStack(dir, nil, nil, policy, logging.NewSilentLogger())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	if err := st.producer.ValidateProducerTransitionChain(blocks); err != nil {
-		return nil, nil, err
+	verified, err := st.producer.VerifyProducerTransitionChain(blocks)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	if _, dropped := canonicalPersistedChain(blocks); dropped != 0 {
-		return nil, nil, errors.New("forked journal")
+		return nil, nil, nil, errors.New("forked journal")
 	}
 	accounts := filepath.Join(dir, hl1AccountsName)
-	if err := st.restore(blocks, accounts, filepath.Join(dir, hl1EnrollmentName), filepath.Join(dir, hl1ReceiptsName)); err != nil {
-		return nil, nil, err
+	if err := st.restore(blocks, verified, accounts, filepath.Join(dir, hl1EnrollmentName), filepath.Join(dir, hl1ReceiptsName)); err != nil {
+		return nil, nil, nil, err
 	}
 	if policy == nil {
 		acc := chain.NewAccountStore()
 		if _, err := acc.Load(accounts); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		r, err := reconcilePersistedStateTail(journal, acc, blocks, time.Now())
 		if err != nil || r.recovered {
-			return nil, nil, fmt.Errorf("reconcilePersistedStateTail: recovered=%v err=%v", r.recovered, err)
+			return nil, nil, nil, fmt.Errorf("reconcilePersistedStateTail: recovered=%v err=%v", r.recovered, err)
 		}
 	}
-	return st, blocks, nil
+	return st, blocks, verified, nil
 }
 
 // hl1rRepairOptions are main()'s S4r options for a restored stack.
-func hl1rRepairOptions(dir string, policy *producerpolicy.Transition, st *hl1ReplayStack, blocks []*chain.Block, fsys hl1FS) hl1RepairOptions {
+func hl1rRepairOptions(dir string, policy *producerpolicy.Transition, st *hl1ReplayStack, blocks []*chain.Block, verified *chain.VerifiedChain, fsys hl1FS) hl1RepairOptions {
 	return hl1RepairOptions{
 		ProducerRole:   true,
 		StateDir:       dir,
@@ -393,6 +404,7 @@ func hl1rRepairOptions(dir string, policy *producerpolicy.Transition, st *hl1Rep
 		ReceiptsPath:   filepath.Join(dir, hl1ReceiptsName),
 		Transition:     policy,
 		Blocks:         blocks,
+		Verified:       verified,
 		Live:           st.v2.StateApplier.(chain.ChainReplayApplier),
 		Receipts:       st.receipts,
 		FS:             fsys,
@@ -405,11 +417,11 @@ func hl1rRepairOptions(dir string, policy *producerpolicy.Transition, st *hl1Rep
 // a hook that edits the S4r options.
 func hl1rBootWith(t *testing.T, dir string, policy *producerpolicy.Transition, fsys hl1FS, mod func(*hl1RepairOptions)) (*hl1ReplayStack, hl1RepairResult, hl1S5Result, error) {
 	t.Helper()
-	st, blocks, err := hl1rRestore(t, dir, policy)
+	st, blocks, verified, err := hl1rRestoreVerified(t, dir, policy)
 	if err != nil {
 		return nil, hl1RepairResult{}, hl1S5Result{}, err
 	}
-	o := hl1rRepairOptions(dir, policy, st, blocks, fsys)
+	o := hl1rRepairOptions(dir, policy, st, blocks, verified, fsys)
 	if mod != nil {
 		mod(&o)
 	}

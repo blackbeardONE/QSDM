@@ -2302,10 +2302,16 @@ func main() {
 	if persistedBlocks, restoreErr := chain.LoadChainNDJSON(chainStatePath); restoreErr != nil {
 		fatalRestore("chain restore: read %s: %v", chainStatePath, restoreErr)
 	} else if len(persistedBlocks) > 0 {
+		// With a producer transition every block is authenticated once here
+		// (hash, links, schedule, ML-DSA-87); RestoreVerifiedChain below
+		// installs exactly these blocks without verifying them again.
+		var verifiedChain *chain.VerifiedChain
 		if cfg.ProducerTransition != nil {
-			if err := adminProducer.ValidateProducerTransitionChain(persistedBlocks); err != nil {
+			v, err := adminProducer.VerifyProducerTransitionChain(persistedBlocks)
+			if err != nil {
 				fatalRestore("producer transition persisted chain: %v", err)
 			}
+			verifiedChain = v
 		}
 		restoreBlocks, droppedForkBlocks := canonicalPersistedChain(persistedBlocks)
 		if cfg.ProducerTransition != nil && droppedForkBlocks != 0 {
@@ -2362,7 +2368,7 @@ func main() {
 				"chain_path", chainStatePath,
 				"backup_path", restoredState.backupPath)
 		}
-		if err := adminProducer.RestoreChain(restoreBlocks); err != nil {
+		if err := adminProducer.RestoreVerifiedChain(restoreBlocks, verifiedChain); err != nil {
 			fatalRestore("chain restore: producer hydrate from %s (%d blocks): %v",
 				chainStatePath, len(restoreBlocks), err)
 		}
@@ -2501,6 +2507,7 @@ func main() {
 			Transition:     cfg.ProducerTransition,
 			Authorized:     cfg.AuthorizedBlockProducers,
 			Blocks:         hl1RestoredBlocks,
+			Verified:       verifiedChain,
 			Live:           hl1LiveApplier,
 			Receipts:       adminReceipts,
 			FS:             hl1OSFS{},

@@ -132,6 +132,13 @@ func SignBlock(b *Block, signer BFTSigner) error {
 // VerifyBlockSignature checks a block's producer signature. An attached
 // signature is always verified; the policy flag governs unsigned blocks.
 func VerifyBlockSignature(b *Block) error {
+	return verifyBlockSignature(b, false)
+}
+
+// verifyBlockSignature is VerifyBlockSignature. hashChecked reports that the
+// caller has just compared b.Hash with computeBlockHash(b), which is then not
+// computed again.
+func verifyBlockSignature(b *Block, hashChecked bool) error {
 	if b == nil {
 		return errors.New("chain: nil block")
 	}
@@ -141,8 +148,10 @@ func VerifyBlockSignature(b *Block) error {
 		}
 		return nil
 	}
-	if want := computeBlockHash(b); want != b.Hash {
-		return fmt.Errorf("%w: block hash does not match its contents", ErrBlockBadSignature)
+	if !hashChecked {
+		if want := computeBlockHash(b); want != b.Hash {
+			return fmt.Errorf("%w: block hash does not match its contents", ErrBlockBadSignature)
+		}
 	}
 	if err := verifyAuth(b.ProducerAuth, blockSigDigest(b), b.ProducerID); err != nil {
 		return fmt.Errorf("%w: %v", ErrBlockBadSignature, err)

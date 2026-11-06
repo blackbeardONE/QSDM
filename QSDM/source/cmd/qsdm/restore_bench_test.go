@@ -22,9 +22,9 @@ package main
 //
 // boot    main()'s restore block: the consensus settings, the transition
 //         prefix check, the journal load, the producer transition check of
-//         the whole chain (every block hash and signature), the snapshot
-//         pair's state root check and the producer hydrate
-//         (hl1ReplayStack.restore).
+//         the whole chain (every block hash and signature, once), the
+//         snapshot pair's state root check and the producer hydrate
+//         (hl1ReplayStack.restore, which does not verify the blocks again).
 // import  the checks of qsdm --snapshot-import (snapshotVerifyDir), without
 //         the staging copy and the checkpoint pin.
 //
@@ -218,13 +218,14 @@ func restoreBenchBoot(t *testing.T, dir, scratch string, c restoreBenchConsensus
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.producer.ValidateProducerTransitionChain(blocks); err != nil {
+	verified, err := st.producer.VerifyProducerTransitionChain(blocks)
+	if err != nil {
 		t.Fatalf("producer transition persisted chain: %v", err)
 	}
 	if _, dropped := canonicalPersistedChain(blocks); dropped != 0 {
 		t.Fatalf("journal contains %d forked duplicate block(s)", dropped)
 	}
-	if err := st.restore(blocks, filepath.Join(dir, hl1AccountsName), filepath.Join(dir, hl1EnrollmentName),
+	if err := st.restore(blocks, verified, filepath.Join(dir, hl1AccountsName), filepath.Join(dir, hl1EnrollmentName),
 		filepath.Join(scratch, hl1ReceiptsName)); err != nil {
 		t.Fatalf("restore: %v", err)
 	}

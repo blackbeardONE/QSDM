@@ -4,10 +4,10 @@ package chain
 //
 // bp.chain is contiguous by height: every append is its tip's height plus one
 // (ProduceBlock, TryAppendExternalBlock,
-// ReceiptProducer.ProduceBlockWithReceipts), and RestoreChain installs only
-// contiguous, linked blocks. So the block at height h is
-// bp.chain[h-bp.chain[0].Height], found by an index computation instead of a
-// walk of the whole chain under bp.mu. The first block is genesis
+// ReceiptProducer.ProduceBlockWithReceipts), and RestoreChain and
+// RestoreVerifiedChain install only contiguous, linked blocks. So the block at
+// height h is bp.chain[h-bp.chain[0].Height], found by an index computation
+// instead of a walk of the whole chain under bp.mu. The first block is genesis
 // (height 0) for every chain a node builds, receives or verifies under a
 // producer transition; RestoreChain without one also accepts a journal whose
 // first block is above it.

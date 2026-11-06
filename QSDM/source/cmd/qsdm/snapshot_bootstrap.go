@@ -303,10 +303,11 @@ func snapshotVerifyDir(dir, scratch string, c snapshotConsensus, pinned *config.
 	if err != nil {
 		return res, err
 	}
-	if err := st.producer.ValidateProducerTransitionChain(blocks); err != nil {
+	verified, err := st.producer.VerifyProducerTransitionChain(blocks)
+	if err != nil {
 		return res, fmt.Errorf("producer transition persisted chain: %w", err)
 	}
-	if err := st.restore(blocks, filepath.Join(dir, hl1AccountsName), filepath.Join(dir, hl1EnrollmentName),
+	if err := st.restore(blocks, verified, filepath.Join(dir, hl1AccountsName), filepath.Join(dir, hl1EnrollmentName),
 		filepath.Join(scratch, "absent-receipts.ndjson")); err != nil {
 		return res, fmt.Errorf("state restore: %w", err)
 	}

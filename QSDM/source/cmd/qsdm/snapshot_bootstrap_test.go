@@ -745,7 +745,7 @@ func TestSnapshotDispatchPlacement(t *testing.T) {
 	s.before(t, "snapshotMain", "cfg.ProducerTransition.ValidateJournalPrefix")
 	s.before(t, "snapshotMain", "hl1AcquireStateLock")
 	// The guard runs on the restored chain, before S5 and the network.
-	s.before(t, "adminProducer.RestoreChain", "snapshotCheckpointGuard")
+	s.before(t, "adminProducer.RestoreVerifiedChain", "snapshotCheckpointGuard")
 	s.before(t, "snapshotCheckpointGuard", "hl1StartupWatermark")
 	s.before(t, "snapshotCheckpointGuard", "chain.NewBlockPropagator")
 }

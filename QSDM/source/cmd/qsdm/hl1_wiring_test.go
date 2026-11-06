@@ -101,7 +101,7 @@ func TestHL1WiringStartupOrder(t *testing.T) {
 	// S5 after the whole restore block (including every receipts load and
 	// the migration) and before OpenChainJournal and the reserve parse.
 	s5 := s.one(t, "hl1StartupWatermark")
-	for _, name := range []string{"adminReceipts.LoadNDJSON", "adminReceipts.Load", "adminReceipts.AppendBlockNDJSON", "adminProducer.RestoreChain"} {
+	for _, name := range []string{"adminReceipts.LoadNDJSON", "adminReceipts.Load", "adminReceipts.AppendBlockNDJSON", "adminProducer.RestoreVerifiedChain"} {
 		for _, p := range s.calls(s.main, name) {
 			if p >= s5 {
 				t.Fatalf("%s (line %d) runs after S5 (line %d)", name, s.line(p), s.line(s5))

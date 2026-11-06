@@ -125,7 +125,7 @@ func hl1rReference(t *testing.T, f *hl1rFixture, n uint64) map[string]*chain.TxR
 		t.Fatal(err)
 	}
 	prefix := append([]*chain.Block(nil), blocks[:len(blocks)-1]...)
-	if err := st.restore(prefix, filepath.Join(dir, hl1AccountsName), filepath.Join(dir, hl1EnrollmentName), filepath.Join(dir, hl1ReceiptsName)); err != nil {
+	if err := st.restore(prefix, nil, filepath.Join(dir, hl1AccountsName), filepath.Join(dir, hl1EnrollmentName), filepath.Join(dir, hl1ReceiptsName)); err != nil {
 		t.Fatalf("reference follower restore: %v", err)
 	}
 	if err := st.producer.TryAppendExternalBlock(blocks[len(blocks)-1]); err != nil {
@@ -865,7 +865,7 @@ func TestHL1S4rFollowerRoleDoesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, replays := hl1rTreeHash(t, f.dir), hl1S4rScratchReplays.Load()
-	o := hl1rRepairOptions(f.dir, nil, st, blocks, hl1OSFS{})
+	o := hl1rRepairOptions(f.dir, nil, st, blocks, nil, hl1OSFS{})
 	o.ProducerRole = false
 	res, err := hl1RepairTipReceipts(o)
 	if err != nil || res.Gate || len(res.Regenerated) != 0 {
@@ -988,7 +988,7 @@ func TestHL1S4rPlacementAndPins(t *testing.T) {
 	// After the whole S4 restore block, including every receipts load and
 	// the migration, and the "restored from disk" log.
 	for _, name := range []string{"adminReceipts.LoadNDJSON", "adminReceipts.Load", "adminReceipts.AppendBlockNDJSON",
-		"adminProducer.RestoreChain", "v2Wired.EnrollmentState.Load", "v2Wired.StateApplier.StateRoot"} {
+		"adminProducer.RestoreVerifiedChain", "v2Wired.EnrollmentState.Load", "v2Wired.StateApplier.StateRoot"} {
 		ps := s.calls(s.main, name)
 		if len(ps) == 0 {
 			t.Fatalf("main() has no %s", name)
