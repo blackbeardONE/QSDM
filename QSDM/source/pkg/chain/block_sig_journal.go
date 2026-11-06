@@ -9,6 +9,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
+	"sync"
+
+	"github.com/blackbeardONE/QSDM/pkg/producerpolicy"
 )
 
 // Producer signatures kept in the journal.
@@ -110,6 +114,11 @@ func (j *journalLines) split(data []byte, atEOF bool) (int, []byte, error) {
 // signature must verify. Each block hash is computed and each signature
 // verified once, here.
 //
+// The lines are decoded and verified on every core (one worker per
+// GOMAXPROCS); each block is then checked against the one before it in
+// journal order, and the error is the first failure in journal order. At
+// most one line per worker is read ahead.
+//
 // Every verified signature except the last block's is then dropped from
 // memory (see above). The last block keeps its signature, so that the boot
 // step S4r can replay it through TryAppendExternalBlock. RestoreVerifiedChain
@@ -119,6 +128,21 @@ func (j *journalLines) split(data []byte, atEOF bool) (int, []byte, error) {
 // A missing file is a fresh chain: no blocks and no error. Any other failure
 // returns no chain.
 func (bp *BlockProducer) LoadVerifiedJournal(path string) (*VerifiedChain, error) {
+	return bp.loadVerifiedJournal(path, runtime.GOMAXPROCS(0))
+}
+
+// journalItem is one journal line on its way through loadVerifiedJournal.
+type journalItem struct {
+	index  uint64            // its block's index: the number of blocks before it
+	lineno int               // its line number
+	at     strippedSignature // its position, and its signature's digest once verified
+	raw    []byte            // the line (a copy) until it is decoded
+	blk    *Block
+	err    error
+	done   chan struct{} // closed once blk and err are set
+}
+
+func (bp *BlockProducer) loadVerifiedJournal(path string, workers int) (*VerifiedChain, error) {
 	if bp == nil {
 		return nil, errors.New("chain.LoadVerifiedJournal: nil producer")
 	}
@@ -140,44 +164,92 @@ func (bp *BlockProducer) LoadVerifiedJournal(path string) (*VerifiedChain, error
 		return nil, fmt.Errorf("chain.LoadVerifiedJournal: open %s: %w", path, err)
 	}
 	defer f.Close()
+	if workers < 1 {
+		workers = 1
+	}
+
+	// The reader hands each line to a free worker (jobs) after queueing it,
+	// in journal order, for the loop below (order, one line per worker
+	// ahead of it). quit stops the reader and the workers early.
+	order := make(chan *journalItem, workers)
+	jobs := make(chan *journalItem)
+	quit := make(chan struct{})
+	var scanErr error
+	var wg sync.WaitGroup
+	wg.Add(1 + workers)
+	go func() {
+		defer wg.Done()
+		defer close(jobs)
+		defer close(order)
+		var lines journalLines
+		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024) // LoadChainNDJSON's limits
+		scanner.Split(lines.split)
+		var index uint64
+		lineno := 0
+		for scanner.Scan() {
+			lineno++
+			raw := scanner.Bytes()
+			if len(raw) == 0 {
+				continue
+			}
+			it := &journalItem{index: index, lineno: lineno, raw: append([]byte(nil), raw...), done: make(chan struct{}),
+				at: strippedSignature{offset: lines.start, length: uint32(len(raw))}}
+			index++
+			select {
+			case order <- it:
+			case <-quit:
+				return
+			}
+			select {
+			case jobs <- it:
+			case <-quit:
+				return
+			}
+		}
+		scanErr = scanner.Err()
+	}()
+	for w := 0; w < workers; w++ {
+		go func() {
+			defer wg.Done()
+			for it := range jobs {
+				it.blk, it.err = decodeJournalLine(epochs, path, it)
+				it.raw = nil
+				close(it.done)
+			}
+		}()
+	}
+	fail := func(err error) (*VerifiedChain, error) {
+		close(quit)
+		wg.Wait()
+		return nil, err
+	}
 
 	share := newBlockSharing()
-	var lines journalLines
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024) // LoadChainNDJSON's limits
-	scanner.Split(lines.split)
 	var held *Block // the last block verified: its signature is dropped when the next one verifies
 	var heldAt strippedSignature
-	lineno := 0
-	for scanner.Scan() {
-		lineno++
-		raw := scanner.Bytes()
-		if len(raw) == 0 {
-			continue
+	for it := range order {
+		<-it.done
+		blk := it.blk
+		if it.index == 0 && blk != nil && (blk.Height != 0 || blk.PrevHash != "") {
+			return fail(errTransitionNoGenesis)
 		}
-		blk := &Block{}
-		if err := json.Unmarshal(raw, blk); err != nil {
-			return nil, fmt.Errorf("chain.LoadVerifiedJournal: parse line %d of %s: %w (verified %d blocks before it; trim the bad line to recover)",
-				lineno, path, err, len(v.blocks))
+		if it.err != nil {
+			return fail(it.err)
+		}
+		if n := len(v.blocks); n > 0 && blk.PrevHash != v.blocks[n-1].Hash {
+			return fail(fmt.Errorf("chain: producer transition broken linkage at height %d (%s line %d)", blk.Height, path, it.lineno))
 		}
 		share.add(blk)
-		var prev *Block
-		if n := len(v.blocks); n > 0 {
-			prev = v.blocks[n-1]
-		} else if blk.Height != 0 || blk.PrevHash != "" {
-			return nil, errTransitionNoGenesis
-		}
-		if err := verifyTransitionChainBlock(epochs, prev, blk, uint64(len(v.blocks))); err != nil {
-			return nil, fmt.Errorf("%w (%s line %d)", err, path, lineno)
-		}
 		if held != nil {
 			held.stripSignature(heldAt)
 		}
-		held, heldAt = blk, strippedSignature{offset: lines.start, length: uint32(len(raw))}
+		held, heldAt = blk, it.at
 		v.blocks = append(v.blocks, blk)
 	}
-	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("chain.LoadVerifiedJournal: scan %s: %w", path, err)
+	wg.Wait()
+	if scanErr != nil && !errors.Is(scanErr, io.EOF) {
+		return nil, fmt.Errorf("chain.LoadVerifiedJournal: scan %s: %w", path, scanErr)
 	}
 	if n := len(v.blocks); n > 0 && v.blocks[n-1].Height < finalCheckpointHeight(epochs) {
 		return nil, errTransitionIncomplete
@@ -185,16 +257,37 @@ func (bp *BlockProducer) LoadVerifiedJournal(path string) (*VerifiedChain, error
 	return v, nil
 }
 
+// decodeJournalLine decodes the line of it and verifies the block in it as
+// the block at it.index of a chain that starts at genesis: everything
+// verifyTransitionChainBlock checks but the link to the block before it,
+// which the caller checks in journal order. It records the digest of the
+// verified signature in it.at. On a verification failure it returns the
+// block with the error.
+func decodeJournalLine(epochs []producerpolicy.Epoch, path string, it *journalItem) (*Block, error) {
+	blk := &Block{}
+	if err := json.Unmarshal(it.raw, blk); err != nil {
+		return nil, fmt.Errorf("chain.LoadVerifiedJournal: parse line %d of %s: %w (verified %d blocks before it; trim the bad line to recover)",
+			it.lineno, path, err, it.index)
+	}
+	if err := verifyTransitionChainBlock(epochs, nil, blk, it.index); err != nil {
+		return blk, fmt.Errorf("%w (%s line %d)", err, path, it.lineno)
+	}
+	if a := blk.ProducerAuth; len(a.PublicKey) > 0 && len(a.Signature) > 0 {
+		it.at.digest = signatureDigest(a.Signature)
+	}
+	return blk, nil
+}
+
 // stripSignature drops b's verified signature from memory, recording where
-// it is: at.offset and at.length locate b's journal line. Only
-// LoadVerifiedJournal calls it, on a block it has just verified and not yet
+// it is: at.offset and at.length locate b's journal line, and at.digest is
+// the digest of the signature (decodeJournalLine). Only
+// LoadVerifiedJournal calls it, on a block it has verified and not yet
 // returned. A block without a verified signature is left as it is.
 func (b *Block) stripSignature(at strippedSignature) {
 	a := b.ProducerAuth
 	if len(a.PublicKey) == 0 || len(a.Signature) == 0 || a.stripped != nil {
 		return
 	}
-	at.digest = signatureDigest(a.Signature)
 	b.ProducerAuth = BFTWireAuth{PublicKey: a.PublicKey, stripped: &at}
 }
 
