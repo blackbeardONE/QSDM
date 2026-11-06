@@ -24,7 +24,7 @@
 
 | Mark | Type | Used since | Use case |
 |------|------|-----------|----------|
-| **QSDM** | wordmark | 2025-Q3 (estimate; project lead to confirm) | software protocol name |
+| **QSDM** | wordmark | 2025-05-10 (first public commit, [github.com/BbOldaccount/QSDM](https://github.com/BbOldaccount/QSDM)) | software protocol name |
 | **Quantum-Safe Distributed Mining** | wordmark (expansion of QSDM) | 2025-Q3 | software protocol name |
 | **Cell** | wordmark | 2026-Q1 (post-rebrand from initial "QSDM" token name) | native coin name |
 | **CELL** | wordmark (symbol) | 2026-Q1 | native coin symbol |

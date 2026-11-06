@@ -18,6 +18,7 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| 2026-11-06 08:42 | node release | Release rc1106: the producer keeps checked block signatures on disk and needs less memory, and the public read-only API answers any browser origin (no consensus change); mining paused 13 minutes | No |
 | 2026-11-05 17:51 | node release | Release rc1105: blocks share the values that repeat across them in memory, so the producer needs less (no consensus change); mining paused 21 minutes | No |
 | 2026-11-04 04:19 | operations | Public peer-to-peer reopened, on release rc1103 | No |
 | 2026-11-03 17:15 | node release | Release rc1103: a fix for a crash that one block with a null transaction entry could cause (no consensus change); mining paused 19 minutes | No |
@@ -35,6 +36,22 @@ upgrades harden that pilot network; they do not change its stage. See
 | 2026-10-11 13:18 | 816,600 | Proof-of-Entanglement enforced | **Yes**, if you send CELL with old software |
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
+
+## 2026-11-06: release rc1106
+
+- **When:** node release `hardened-legacy-20261106-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1106`,
+  switched in 2026-11-06 08:42 UTC; mining reopened by itself at 08:55 UTC.
+  A node release, not an activation height.
+- **What changed:** the start-up and memory changes that `QSDM/source` has
+  since 2026-11-06: a height index instead of a walk of the whole chain, one
+  signature check per block at start, and block signatures that were checked
+  kept in the journal on disk instead of in memory. The producer settled at
+  about 4.5 GB after its start, against 6.6 GB on rc1105. The public
+  read-only endpoints (status, balances, receipts, blocks, parents, mining
+  reads) now answer any browser origin with `Access-Control-Allow-Origin: *`,
+  never with credentials, so the QSDM Wallet extension shows confirmations
+  and received CELL. Nothing a block hashes, signs or encodes changed.
+- **What you must do:** nothing.
 
 ## 2026-11-05: release rc1105
 

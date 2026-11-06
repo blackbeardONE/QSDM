@@ -1,6 +1,6 @@
 # QSDM Wallet vs QSDM WASM Wallet
 
-**Last Updated:** December 2024
+**Last Updated:** December 2025
 
 ---
 

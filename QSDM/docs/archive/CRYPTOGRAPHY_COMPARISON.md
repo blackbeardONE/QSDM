@@ -110,7 +110,7 @@ QSDM signs wallet transactions with **ML-DSA-87** (NIST category 5 post-quantum 
 
 | Protocol | Current Status | Timeline | Algorithm Choice |
 |----------|----------------|----------|-------------------|
-| **QSDM** | ✅ **Already Post-Quantum** | **2024** | **ML-DSA-87 (FIPS 204)** |
+| **QSDM** | ✅ **Already Post-Quantum** | **2025** | **ML-DSA-87 (FIPS 204)** |
 | Bitcoin | ⚠️ Research Phase | 2030+ (estimated) | Considering ML-DSA, Falcon, SPHINCS+ |
 | Ethereum | ⚠️ Research Phase | 2030+ (estimated) | Evaluating multiple options |
 | Cardano | ⚠️ Research Phase | Unknown | Considering various schemes |
@@ -161,7 +161,7 @@ QSDM signs wallet transactions with **ML-DSA-87** (NIST category 5 post-quantum 
 - Compliant with NIST FIPS 204 standard
 
 ### 2. **Early Adoption Advantage**
-- Deployed quantum-safe cryptography in 2024
+- Deployed quantum-safe cryptography in 2025
 - Years ahead of major blockchain protocols
 - No technical debt from future migration
 
@@ -223,5 +223,5 @@ QSDM signs wallet transactions with **ML-DSA-87** (NIST category 5 post-quantum 
 
 ---
 
-*Last Updated: December 2024*
+*Last Updated: December 2025*
 

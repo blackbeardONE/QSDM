@@ -195,7 +195,13 @@ To make the "VPS = no GPU" rule real (not just documentation):
 
 ---
 
-## 7. Rebrand — QSDM → QSDM
+## 7. Rebrand — QSDM+ → QSDM
+
+> **Note (2026-11-06).** A later automatic rename turned most `QSDM+` and
+> `qsdmplus` names in this section into `QSDM` and `qsdm`, so some rows below
+> show the same name on both sides. The exact old and new names are in
+> [Rebrand notes](../REBRAND_NOTES.md); how QSDM began is in
+> [History](../HISTORY.md).
 
 This is a large mechanical change touching every layer. Below is the complete inventory.
 

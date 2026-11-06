@@ -160,7 +160,7 @@
 ### 7.1. Security Advantages
 
 1. **Quantum-Safe Now**
-   - ✅ Already deployed (2024)
+   - ✅ Already deployed (2025)
    - ✅ 256-bit security (maximum level)
    - ✅ No migration needed
 
@@ -220,7 +220,7 @@
 
 ## 9. Real-World Impact
 
-### 9.1. Current State (2024)
+### 9.1. Current State (2025)
 
 | Protocol | Quantum Safety | Status |
 |----------|----------------|--------|
@@ -308,6 +308,6 @@ The trade-offs (larger signatures, slightly slower signing) are **acceptable** f
 
 ---
 
-*Last Updated: December 2024*
+*Last Updated: December 2025*
 *Includes all optimizations: signature compression, storage optimization*
 

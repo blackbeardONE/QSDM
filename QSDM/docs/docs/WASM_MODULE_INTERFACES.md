@@ -56,4 +56,4 @@ This document describes the interfaces exposed by the WASM modules in the Quantu
 ---
 
 Developed by Blackbeard | Ten Titanics | GitHub: blackbeardONE  
-© 2023-2024 Quantum-Secure Dynamic Mesh Ledger (QSDM) Project
+© 2025-2026 Quantum-Secure Dynamic Mesh Ledger (QSDM) Project

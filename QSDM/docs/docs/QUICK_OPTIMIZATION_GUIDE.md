@@ -128,5 +128,5 @@ See `docs/OPTIMIZATION_STRATEGIES.md` for:
 
 ---
 
-*Last Updated: December 2024*
+*Last Updated: December 2025*
 

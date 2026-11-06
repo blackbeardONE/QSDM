@@ -106,7 +106,7 @@ BEGIN
             VALUE "FileDescription", "$FileDescription\0"
             VALUE "FileVersion", "$FileVersion.0\0"
             VALUE "InternalName", "$InternalName\0"
-            VALUE "LegalCopyright", "Copyright (c) 2024-2026 Joedel Lopez Dalioan\0"
+            VALUE "LegalCopyright", "Copyright (c) 2025-2026 Joedel Lopez Dalioan\0"
             VALUE "OriginalFilename", "$OriginalFilename\0"
             VALUE "ProductName", "$ProductName\0"
             VALUE "ProductVersion", "$ProductVersion.0\0"

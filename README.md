@@ -15,6 +15,12 @@ future cryptographically relevant quantum computer.
 
 Latest tagged ledger release: **v0.4.3**. Public site: [qsdm.tech](https://qsdm.tech).
 
+QSDM began on 10 May 2025 in its first repository,
+[github.com/BbOldaccount/QSDM](https://github.com/BbOldaccount/QSDM), with
+Proof-of-Entanglement and post-quantum signatures in its code from the next day,
+and moved to this repository on 22 April 2026. See
+[History](QSDM/docs/docs/HISTORY.md).
+
 ## Network status
 
 QSDM is a **public pilot network (pre-mainnet)**. Today:
@@ -54,8 +60,8 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
 
 ### What is running (November 2026)
 
-- **Core:** release `hardened-legacy-20261105-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1105`
-  since 2026-11-05, based on this repository's `QSDM/source` (d7ffcd4 plus
+- **Core:** release `hardened-legacy-20261106-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1106`
+  since 2026-11-06, based on this repository's `QSDM/source` (d7ffcd4 plus
   the recovery patches and the HL1/HL2 hardened-legacy mining work listed in
   the [changelog](CHANGELOG.md)). Its peer-to-peer limits (opt-in here) and
   block-request budget are in this repository too; see
@@ -143,7 +149,7 @@ for why NVIDIA-lock is a transparency signal, not a consensus rule.
 
 ## License
 
-[MIT](LICENSE) © 2024-2026 Joedel Lopez Dalioan (Blackbeard).
+[MIT](LICENSE) © 2025-2026 Joedel Lopez Dalioan (Blackbeard).
 
 The ledger node and sidecars are permissively licensed. Vendored
 third-party dependencies under `QSDM/source/wasmer-go-patched/` retain
