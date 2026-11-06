@@ -1,7 +1,7 @@
 # QSDM Performance Benchmark Report
 > **Current capability note (2026-08-27):** This is a historical implementation report. It records work completed at the time, but it is not the current whole-project readiness statement. For current percentages, known blockers, and what is safe to claim today, see [Capability Snapshot](CAPABILITY_SNAPSHOT.md).
 
-**Date:** December 2024  
+**Date:** December 2025  
 **Version:** QSDM with ML-DSA-87 Optimizations  
 **Status:** All Optimizations Active
 
@@ -348,6 +348,6 @@ All optimizations are **working as expected**:
 
 ---
 
-*Report Generated: December 2024*  
+*Report Generated: December 2025*  
 *All optimizations validated and working correctly*
 

@@ -187,7 +187,7 @@
           "</div>" + cols +
         "</div>" +
         '<div class="shell-foot-bottom">' +
-          '<span>&copy; 2024&ndash;2026 QSDM &middot; <a class="ext" rel="noopener" href="https://github.com/blackbeardONE/QSDM/blob/main/LICENSE">MIT License<span class="visually-hidden"> (external site)</span></a></span>' +
+          '<span>&copy; 2025&ndash;2026 QSDM &middot; <a class="ext" rel="noopener" href="https://github.com/blackbeardONE/QSDM/blob/main/LICENSE">MIT License<span class="visually-hidden"> (external site)</span></a></span>' +
           "<span>No trackers. No third-party scripts.</span>" +
         "</div>" +
       "</div>";

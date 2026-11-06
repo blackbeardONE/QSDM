@@ -1,6 +1,6 @@
 # Production Readiness Guide
 
-**Last Updated:** December 2024  
+**Last Updated:** December 2025  
 **Status:** Configuration and logging features implemented ✅ (historical)
 
 > **Current status note (2026-10):** This is a historical document. QSDM today is a
@@ -181,7 +181,7 @@ currentID := logger.GetRequestID()
 {
   "level": "INFO",
   "msg": "Transaction processed",
-  "timestamp": "2024-12-20T10:30:45Z",
+  "timestamp": "2025-12-20T10:30:45Z",
   "request_id": "550e8400-e29b-41d4-a716-446655440000",
   "tx_id": "abc123",
   "amount": 100.0

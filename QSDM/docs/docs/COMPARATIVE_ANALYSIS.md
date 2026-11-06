@@ -51,7 +51,7 @@ This document provides a comparative analysis of Quantum-Secure Dynamic Mesh Led
 
 - Nakamoto, Satoshi. "Bitcoin: A Peer-to-Peer Electronic Cash System." 2008.  
 - Popov, Serguei. "The Tangle." IOTA Foundation, 2018.  
-- BlackbeardONE. "Quantum-Secure Dynamic Mesh Ledger (QSDM) Documentation." 2023-2024.  
+- BlackbeardONE. "Quantum-Secure Dynamic Mesh Ledger (QSDM) Documentation." 2025-2026.  
 - Bernstein, Daniel J., et al. "CRYSTALS-Dilithium: A Lattice-Based Digital Signature Scheme." 2017.  
 - Wood, Gavin. "Ethereum: A Secure Decentralised Generalised Transaction Ledger." Ethereum Project Yellow Paper, 2014.  
 

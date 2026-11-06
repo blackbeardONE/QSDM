@@ -130,5 +130,5 @@ With optimizations (memory pooling, batch signing):
 
 ---
 
-*Last Updated: December 2024*
+*Last Updated: December 2025*
 

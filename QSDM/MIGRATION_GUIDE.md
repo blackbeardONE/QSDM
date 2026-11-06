@@ -1,6 +1,6 @@
 # QSDM Project Migration Guide
 
-**Date:** December 25, 2024  
+**Date:** December 25, 2025  
 **Status:** Ready for Migration ✅
 
 ---
@@ -257,5 +257,5 @@ If you encounter issues during migration:
 ---
 
 **Migration Status:** ✅ Ready  
-**Last Updated:** December 25, 2024
+**Last Updated:** December 25, 2025
 

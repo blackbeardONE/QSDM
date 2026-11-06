@@ -7,7 +7,7 @@
 > running the public pilot network (pre-mainnet) today is
 > `hardened-legacy-20261101-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1101` (see [Network status](NETWORK_STATUS.md)).
 
-**Date:** May 2026 (Initial: December 2024)
+**Date:** May 2026 (Initial: December 2025)
 **Status:** Hardening Pass Complete — no independent audit has been completed; security review continues as an open [community review](COMMUNITY_REVIEW.md)
 **Reviewer:** QSDM project (internal)
 **Target version:** v0.4.2 (historical)
@@ -120,7 +120,7 @@ All **Critical**, **High**, and **Medium** issues from the initial audit are res
 - ✅ GeoTag validation (optional, max 100 chars)
 - ✅ Timestamp validation (RFC3339, ±30s clock skew, ≤24h age) — added in v0.4.2 (see [MED-3](#med-3-insufficient-transaction-validation))
 
-**Fix Date:** December 2024 (timestamp window: May 2026)
+**Fix Date:** December 2025 (timestamp window: May 2026)
 
 **Files Modified:**
 - `pkg/api/validation.go`
@@ -187,7 +187,7 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 - ✅ Periodic cleanup goroutine prevents unbounded memory growth
 - ✅ `qsdm_security_rate_limit_violations_total` counter
 
-**Fix Date:** December 2024 (metrics: May 2026)
+**Fix Date:** December 2025 (metrics: May 2026)
 
 **Note:** Exponential backoff is implicitly provided by the account-lockout subsystem ([HIGH-4](#high-4-weak-password-policy)). IP whitelist/blacklist can be added as a future enhancement.
 
@@ -207,7 +207,7 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 - ✅ Uses `http.MaxBytesReader` for automatic rejection
 - ✅ Applied as the outermost handler in `Server.Start`
 
-**Fix Date:** December 2024
+**Fix Date:** December 2025
 
 ---
 
@@ -231,7 +231,7 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 - ✅ **Account lockout** — 5 failed attempts within a 15-minute window triggers a 15-minute lockout (`AccountLockoutManager` in `pkg/api/account_lockout.go`)
 - ✅ **`qsdm_security_failed_logins_total`** and **`qsdm_security_account_lockouts_total`** counters for SOC alerting on credential-stuffing waves
 
-**Fix Date:** December 2024 (lockout + metrics: May 2026)
+**Fix Date:** December 2025 (lockout + metrics: May 2026)
 
 **Remaining Work (out-of-scope nice-to-haves):**
 - Password history tracking (prevent reuse of the last N passwords) — tracked separately, not part of audit scope.

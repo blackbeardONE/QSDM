@@ -4,11 +4,14 @@ All user-visible changes to QSDM are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 uses [Semantic Versioning](https://semver.org/) for tagged releases.
 
-Historical project activity prior to the Major Update rebrand (Phases
-1–5, executed 2026-04-22) is captured verbatim in
+QSDM began on 2025-05-10 in its first repository,
+[github.com/BbOldaccount/QSDM](https://github.com/BbOldaccount/QSDM), was
+built further under the name QSDM+, and moved to this repository with the
+Major Update of 2026-04-22. [History](QSDM/docs/docs/HISTORY.md) gives that
+timeline. The Major Update plan (Phases 1–5) is kept in
 [`QSDM/docs/docs/history/MAJOR_UPDATE_EXECUTED.md`](QSDM/docs/docs/history/MAJOR_UPDATE_EXECUTED.md)
-and the `QSDM/docs/docs/archive/` folder; this file does **not**
-attempt to retroactively enumerate that history.
+and older documents in `QSDM/docs/archive/`; this file records the changes
+from 2026-04-22 on.
 
 ## [Unreleased]
 
@@ -98,6 +101,29 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **2026-11-06: QSDM's history starts on 10 May 2025.** A new
+  [History](QSDM/docs/docs/HISTORY.md) page gives the timeline from the first
+  commit in QSDM's first repository,
+  [github.com/BbOldaccount/QSDM](https://github.com/BbOldaccount/QSDM)
+  (Proof-of-Entanglement and CRYSTALS-Dilithium code from 2025-05-11), through
+  QSDM+ and the Major Update of 2026-04-22, to block 0 of the pilot chain on
+  2026-05-06. Dates that put QSDM work in 2023 or 2024 are corrected: the
+  copyright years in the licenses, the README and the Windows version
+  resource are now 2025-2026, and "December 2024" and "2025-01-27" in older
+  documents now read December 2025 and 2026-01-27: the same month a year
+  later, the only one between the first commit and the move to this
+  repository. The trademark intake records the name's
+  first public use on 2025-05-10, and an automatic rename that had turned
+  "QSDM+ → QSDM" into "QSDM → QSDM" in the README, the operator guide, the
+  Major Update plan and this file is undone.
+- **2026-11-06: release rc1106.** The producer runs
+  `hardened-legacy-20261106-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1106` since
+  08:55 UTC (mining paused 08:42-08:55 UTC): rc1105 plus the start-up and
+  memory changes of the next entry and the public read-only API for any
+  browser origin. The producer settled at about 4.5 GB after its start
+  instead of 6.6 GB, and the QSDM Wallet extension's History shows
+  confirmations and received CELL. No consensus change, and no block hash
+  changes.
 - **2026-11-06: a node starts about six times faster in a third of the
   memory, from the next release.** A start verifies each block's ML-DSA-87
   signature once instead of twice, on every core, and computes each block
@@ -5203,8 +5229,8 @@ publish.
 **Tag:** `v0.3.0` @ `c00fccd93a66c5317aaaa03b80e9a09d111e87bd`
 (2026-05-11T12:23:14+08:00).
 **Release theme:** first tagged release after the **QSDM**
-rebrand on 2026-04-22 (rebrand from the historical "QSDM"
-naming window). Native coin renamed to **Cell (CELL)**;
+rebrand on 2026-04-22 (rebrand from the transitional "QSDM+"
+name). Native coin renamed to **Cell (CELL)**;
 release-evidence tooling, release-container CI pipeline,
 GHCR case-sensitivity fix, and the Stage-A/B retirement of
 the always-stub `dilithium` / `wallet` / `poe` / `wasm_sdk`
@@ -10655,7 +10681,7 @@ matrix (Session 78's `c00fccd`).
   the operator dashboard. (`pkg/api/handlers_trust.go`,
   `deploy/landing/trust.html`, `internal/dashboard/static/dashboard.js`.)
 - **Major Update Phase 1–4 deliverables landed in-repo.** Rebrand
-  (`QSDM → QSDM`, native coin `Cell (CELL)`, `dust` smallest unit),
+  (`QSDM+ → QSDM`, native coin `Cell (CELL)`, `dust` smallest unit),
   two-tier node roles (validator / miner) with role-guard startup
   enforcement, emission schedule calculator, reference CPU miner
   (`cmd/qsdmminer`), split Dockerfiles (`Dockerfile.validator`,

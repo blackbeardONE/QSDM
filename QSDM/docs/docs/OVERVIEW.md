@@ -44,6 +44,15 @@ Details: [CELL tokenomics](CELL_TOKENOMICS.md).
 Read the [Security model](SECURITY_MODEL.md) before you store value on the
 pilot network.
 
+## Since 2025
+
+QSDM began on 10 May 2025 in its first repository,
+[github.com/BbOldaccount/QSDM](https://github.com/BbOldaccount/QSDM), with
+Proof-of-Entanglement and post-quantum signatures in its code from the next
+day. It was built further as QSDM+, became QSDM again with the coin CELL on
+22 April 2026, and its pilot chain started on 6 May 2026. See
+[History](HISTORY.md).
+
 ## Next steps
 
 - New user: [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md), then the
@@ -51,6 +60,7 @@ pilot network.
 - Miner: [Mining today](MINING_TODAY.md).
 - Developer: [API reference](API_REFERENCE.md) and
   [Consensus rules](CONSENSUS_RULES.md).
-- What changed recently: [Network upgrades](NETWORK_UPGRADES.md).
+- What changed recently: [Network upgrades](NETWORK_UPGRADES.md). How it all
+  began: [History](HISTORY.md).
 - Unfamiliar term? See the [Glossary](GLOSSARY.md).
 - Source code: [github.com/blackbeardONE/QSDM](https://github.com/blackbeardONE/QSDM).

@@ -1,6 +1,6 @@
 # Ubuntu 24.04 Deployment Guide
 
-**Last Updated:** December 2024  
+**Last Updated:** December 2025  
 **Target:** Ubuntu 24.04 LTS VPS
 
 ---

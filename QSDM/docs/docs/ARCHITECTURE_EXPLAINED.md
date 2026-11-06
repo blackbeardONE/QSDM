@@ -1,6 +1,6 @@
 # QSDM Architecture: Mesh-Based Ledger (Not a Blockchain)
 
-**Last Updated:** December 2024
+**Last Updated:** December 2025
 
 > **Current status note (2026-10):** This is a historical document. QSDM today is a
 > public pilot network (pre-mainnet) run by a single block producer during recovery.

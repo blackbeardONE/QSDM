@@ -6,7 +6,7 @@ ready and is announced on [Network status](NETWORK_STATUS.md) and in the
 [changelog](https://github.com/blackbeardONE/QSDM/blob/main/CHANGELOG.md).
 
 > [!NOTE]
-> This page replaces the earlier phase-by-phase roadmap (2024 to September
+> This page replaces the earlier phase-by-phase roadmap (May 2025 to September
 > 2026). That version is in the repository history.
 
 ## Where we are (November 2026)

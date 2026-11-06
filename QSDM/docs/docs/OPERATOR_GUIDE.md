@@ -541,7 +541,7 @@ A few practical notes:
   flood-detection alerts (`QSDMAttestRejectionPersistCompactionsHigh`
   and `QSDMAttestRejectionPersistHardCapDropping`). Covers triage,
   mitigation policy, slashing escalation, and a worked example.
-- [`REBRAND_NOTES.md`](./REBRAND_NOTES.md) — QSDM → QSDM migration
+- [`REBRAND_NOTES.md`](./REBRAND_NOTES.md) — QSDM+ → QSDM migration
   table (env vars, metrics, headers).
 
 > **Corrections welcome.** If this guide contradicts any of the
