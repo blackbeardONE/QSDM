@@ -1662,9 +1662,10 @@ func main() {
 			"env", "QSDM_STREAM_ED25519_RETIREMENT_HEIGHT")
 	}
 	// QSDM-20 tokens (qsdm/token/v1, QSDM/docs/docs/QSDM_20.md): below this
-	// height every token transaction is refused at admission, when producing
-	// and when replaying blocks. Zero, the default, keeps them off, and the
-	// state root never gains its qsdm-20 segment.
+	// height admission refuses every token transaction, and a block that
+	// carries one anyway is judged as by a node without QSDM-20 (a plain CELL
+	// transfer). Zero, the default, keeps them off, and the state root never
+	// gains its qsdm-20 segment.
 	chain.SetQSDM20ActivationHeight(cfg.QSDM20ActivationHeight)
 	if cfg.QSDM20ActivationHeight > 0 {
 		logger.Info("QSDM-20 tokens scheduled",

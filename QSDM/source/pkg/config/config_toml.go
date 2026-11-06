@@ -222,8 +222,9 @@ type ConsensusConfigTOML struct {
 
 	// QSDM20ActivationHeight is the first height at which QSDM-20 token
 	// transactions (qsdm/token/v1, QSDM/docs/docs/QSDM_20.md) are valid.
-	// Zero, the default, keeps them off: every token transaction is refused
-	// and no state root changes. Every validator must use the same value.
+	// Zero, the default, keeps them off: admission refuses every token
+	// transaction and no state root changes. Every validator must use the
+	// same value.
 	QSDM20ActivationHeight uint64 `toml:"qsdm20_activation_height" yaml:"qsdm20_activation_height"`
 
 	// SignerKeyPath stores the validator-only ML-DSA consensus hot key.

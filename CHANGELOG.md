@@ -29,8 +29,10 @@ from 2026-04-22 on.
   `GET /api/v1/qsdm20/tokens`, `/tokens/{id}`, `/tokens/{id}/holders` and
   `/balances/{address}`. The code ships off:
   `[consensus] qsdm20_activation_height` (env
-  `QSDM_QSDM20_ACTIVATION_HEIGHT`) is `0` by default, every token
-  transaction is refused, and every state root stays byte-identical.
+  `QSDM_QSDM20_ACTIVATION_HEIGHT`) is `0` by default, nodes refuse every
+  token transaction, every state root stays byte-identical, and every block
+  that is valid today stays valid (below the activation height a block is
+  judged exactly as before).
   `/api/v1/status` reports `consensus_auth.qsdm20_activation_height` and
   `qsdm20_active`. Two fuzz targets join the nightly run.
 

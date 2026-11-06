@@ -269,18 +269,24 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		return recovery.ApplyEconomicTx(tx, a.accounts)
 	}
 	if tx.ContractID == QSDM20ContractID {
-		// QSDM-20 tokens (qsdm20.go). Refused below the activation height
-		// and always while no height is set, before anything is charged; a
-		// token transaction never falls through to the plain transfer path.
-		tokens := a.QSDM20StateStore()
-		if tokens == nil {
-			return ErrQSDM20StateNotWired
-		}
-		h, err := a.qsdm20Height()
+		// QSDM-20 tokens (qsdm20.go) from the activation height on. Below
+		// it, and always while no height is set, the transaction is not
+		// intercepted: it takes the plain transfer path below, exactly as
+		// on a node without QSDM-20, so this code turns no block that is
+		// valid today into an invalid one. Admission
+		// (QSDM20AdmissionChecker) refuses token transactions until the
+		// activation height, so this node never relays or includes one.
+		active, h, err := qsdm20RulesAt(a.NextBlockHeight)
 		if err != nil {
 			return err
 		}
-		return tokens.ApplyEconomicTxAtHeight(tx, a.accounts, h)
+		if active {
+			tokens := a.QSDM20StateStore()
+			if tokens == nil {
+				return ErrQSDM20StateNotWired
+			}
+			return tokens.ApplyEconomicTxAtHeight(tx, a.accounts, h)
+		}
 	}
 	if tx.ContractID == WalletTransferContractID {
 		return ApplyWalletTransferTx(a.accounts, tx)

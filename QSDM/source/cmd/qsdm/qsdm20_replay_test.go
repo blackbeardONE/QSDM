@@ -6,7 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
@@ -113,14 +116,52 @@ func TestEvaluatePersistedStateRestoresQSDM20Tokens(t *testing.T) {
 	}
 
 	// A node whose activation height does not match the chain refuses to
-	// restore it instead of building a different state.
+	// restore it instead of building a different state. Switched off, it
+	// replays no token transaction, so its root is not the journal's and
+	// no block matches the account snapshot; with a later height the
+	// transfer names a token it never made.
 	chain.SetQSDM20ActivationHeight(0)
-	if _, err := evaluatePersistedState(accounts.Clone(), blocks); !errors.Is(err, chain.ErrQSDM20Inactive) {
-		t.Fatalf("restore with tokens switched off: %v", err)
+	off, err := evaluatePersistedState(accounts.Clone(), blocks)
+	if err != nil || off.stateRoot == block6.StateRoot || off.qsdm20Actions != 0 {
+		t.Fatalf("restore with tokens switched off: root %s, %d token actions, %v", off.stateRoot, off.qsdm20Actions, err)
+	}
+	chainPath := filepath.Join(t.TempDir(), "chain.ndjson")
+	if _, err := reconcilePersistedStateTail(chainPath, accounts.Clone(), blocks, time.Now()); err == nil {
+		t.Fatal("restore with tokens switched off was accepted")
+	}
+	if _, err := os.Stat(chainPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("refused restore wrote the journal: %v", err)
 	}
 	chain.SetQSDM20ActivationHeight(6)
-	if _, err := evaluatePersistedState(accounts.Clone(), blocks); !errors.Is(err, chain.ErrQSDM20Inactive) {
+	if _, err := evaluatePersistedState(accounts.Clone(), blocks); !errors.Is(err, chain.ErrQSDM20UnknownToken) {
 		t.Fatalf("restore with a later activation height: %v", err)
+	}
+}
+
+// A journal whose block below the activation height carries a
+// qsdm/token/v1 transaction, applied by a node without QSDM-20 as a plain
+// CELL transfer, restores exactly as before: the published root, no token
+// actions and no token state, whether tokens are off or start later.
+func TestEvaluatePersistedStateBelowActivationAsBefore(t *testing.T) {
+	alice := newQSDM20ReplayWallet(t)
+	tx := alice.tx(t, 0, chain.QSDM20Action{Action: chain.QSDM20ActionCreate, Symbol: "OLD", Name: "Old node",
+		Decimals: chain.QSDM20Decimals(0), MaxSupply: "1", InitialSupply: "1", Mint: chain.QSDM20MintNone})
+	accounts := chain.NewAccountStore()
+	accounts.Credit(alice.address, 1)
+	if err := accounts.ApplyTx(tx); err != nil { // what a node without QSDM-20 does
+		t.Fatal(err)
+	}
+	height := uint64(3)
+	block := &chain.Block{Height: 3, Transactions: []*mempool.Tx{tx}, StateRoot: liveQSDM20Applier(accounts, &height).StateRoot()}
+	for _, activation := range []uint64{0, 4, 1 << 40} {
+		setQSDM20ActivationForReplayTest(t, activation)
+		restored, err := evaluatePersistedState(accounts.Clone(), []*chain.Block{block})
+		if err != nil {
+			t.Fatalf("activation %d: %v", activation, err)
+		}
+		if restored.stateRoot != block.StateRoot || restored.qsdm20Actions != 0 || restored.qsdm20State.Count() != 0 {
+			t.Fatalf("activation %d: restored %+v", activation, restored)
+		}
 	}
 }
 

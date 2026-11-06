@@ -381,18 +381,23 @@ func TestQSDM20ReplayChainWithoutTokensKeepsEveryRoot(t *testing.T) {
 	}
 }
 
-// Block production drops a token transaction below the activation height
-// (it never enters a block, nothing is charged), and a follower refuses a
-// block that carries one.
-func TestQSDM20BlocksRefuseTokenTxBelowActivation(t *testing.T) {
+// Below the activation height the admission gate refuses a token
+// transaction, so this code never puts one in a block. A producer without
+// QSDM-20 (no admission layer, no token store) can: it applies the
+// transaction as a plain CELL transfer. A follower with QSDM-20 accepts that
+// block exactly as before, with no token state, and refuses a block whose
+// root claims the token was made.
+func TestQSDM20BlocksBelowActivationJudgedAsBefore(t *testing.T) {
 	setQSDM20ActivationForTest(t, 100)
 	issuer := newQSDM20Wallet(t)
-	newNode := func() (*BlockProducer, *mempool.Mempool, *EnrollmentAwareApplier, *AccountStore) {
+	newNode := func(tokens bool) (*BlockProducer, *mempool.Mempool, *EnrollmentAwareApplier, *AccountStore) {
 		accounts := NewAccountStore()
 		accounts.Credit("funder", 10)
 		accounts.Credit(issuer.address, 1)
 		aware := NewEnrollmentAwareApplier(accounts, nil)
-		aware.SetQSDM20StateStore(NewQSDM20StateStore())
+		if tokens {
+			aware.SetQSDM20StateStore(NewQSDM20StateStore())
+		}
 		pool := mempool.New(mempool.DefaultConfig())
 		bp := NewBlockProducer(pool, aware, DefaultProducerConfig())
 		aware.SetHeightFn(func() uint64 { return bp.TipHeight() + 1 })
@@ -400,31 +405,52 @@ func TestQSDM20BlocksRefuseTokenTxBelowActivation(t *testing.T) {
 	}
 	create := issuer.signedTx(t, 0, 0, qsdm20Create("EARLY", "Too early", 0, "1", "1", QSDM20MintNone, ""))
 
-	bp, pool, aware, accounts := newNode()
-	if err := pool.Add(create); err != nil { // this pool has no admission checker
+	_, gated, gatedAware, _ := newNode(true)
+	gated.SetAdmissionChecker(QSDM20AdmissionChecker(gatedAware.NextBlockHeight, nil))
+	if err := gated.Add(create); !errors.Is(err, ErrQSDM20Inactive) {
+		t.Fatalf("admission below the activation height: %v", err)
+	}
+
+	oldProducer, pool, _, _ := newNode(false)
+	if err := pool.Add(create); err != nil { // no admission layer, as before QSDM-20
 		t.Fatal(err)
 	}
 	if err := pool.Add(&mempool.Tx{ID: "plain", Sender: "funder", Recipient: "x", Amount: 1, Nonce: 0}); err != nil {
 		t.Fatal(err)
 	}
-	blk, err := bp.ProduceBlock()
+	blk, err := oldProducer.ProduceBlock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(blk.Transactions) != 1 || blk.Transactions[0].ID != "plain" {
-		t.Fatalf("block carries %d transactions; the token transaction must be dropped", len(blk.Transactions))
+	if len(blk.Transactions) != 2 {
+		t.Fatalf("block carries %d transactions, want the token transaction and the plain one", len(blk.Transactions))
 	}
-	if acc, _ := accounts.Get(issuer.address); acc.Nonce != 0 || acc.Balance != 1 {
-		t.Fatalf("dropped token transaction touched the account: %+v", acc)
+	legacy := NewAccountStore()
+	legacy.Credit("funder", 10)
+	legacy.Credit(issuer.address, 1)
+	for _, tx := range blk.Transactions {
+		if err := legacy.ApplyTx(tx); err != nil {
+			t.Fatalf("plain transfer of %s: %v", tx.ID, err)
+		}
 	}
-	if aware.QSDM20StateStore().Count() != 0 {
-		t.Fatal("dropped token transaction made a token")
+	if root := NewEnrollmentAwareApplier(legacy, nil).StateRoot(); root != blk.StateRoot {
+		t.Fatalf("block root %s; the plain transfers give %s", blk.StateRoot, root)
 	}
 
-	// A block that carries it anyway (state root computed as if it were
-	// valid) is refused by a follower.
+	follower, _, followerAware, followerAccounts := newNode(true)
+	if err := follower.TryAppendExternalBlock(blk); err != nil {
+		t.Fatalf("follower refused a block that is valid without QSDM-20: %v", err)
+	}
+	if followerAware.QSDM20StateStore().Count() != 0 {
+		t.Fatal("a block below the activation height made a token")
+	}
+	if got, want := qsdm20AccountsDump(followerAccounts), qsdm20AccountsDump(legacy); got != want {
+		t.Fatalf("follower accounts %s, want %s", got, want)
+	}
+
+	// A block whose root says the token was made is refused.
 	SetQSDM20ActivationHeight(1)
-	_, _, specAware, _ := newNode()
+	_, _, specAware, _ := newNode(true)
 	specAware.SetHeightFn(func() uint64 { return 1 })
 	if err := specAware.ApplyTx(create); err != nil {
 		t.Fatal(err)
@@ -433,11 +459,14 @@ func TestQSDM20BlocksRefuseTokenTxBelowActivation(t *testing.T) {
 	bad := &Block{Height: 0, Timestamp: time.Unix(1700000000, 0), Transactions: []*mempool.Tx{create},
 		StateRoot: specAware.StateRoot(), ProducerID: "peer"}
 	bad.Hash = computeBlockHash(bad)
-	follower, _, followerAware, _ := newNode()
-	if err := follower.TryAppendExternalBlock(bad); err == nil || !errors.Is(err, ErrQSDM20Inactive) {
-		t.Fatalf("follower appended a block with a token transaction below the activation height: %v", err)
+	other, _, otherAware, otherAccounts := newNode(true)
+	if err := other.TryAppendExternalBlock(bad); err == nil {
+		t.Fatal("follower appended a block whose root claims a token below the activation height")
 	}
-	if followerAware.QSDM20StateStore().Count() != 0 {
+	if otherAware.QSDM20StateStore().Count() != 0 {
 		t.Fatal("refused block left token state behind")
+	}
+	if acc, _ := otherAccounts.Get(issuer.address); acc.Nonce != 0 {
+		t.Fatalf("refused block moved the nonce: %+v", acc)
 	}
 }

@@ -144,8 +144,9 @@ nothing is charged and the nonce does not move.
 
 The submit API checks every rule against the current state before the mempool takes a transaction.
 One that passes there but is made invalid by an earlier transaction in the same block (for example,
-the units were spent first) is left out of that block, likewise with nothing charged. A follower
-refuses a block that carries an invalid token transaction.
+the units were spent first) is left out of that block, likewise with nothing charged. From the
+activation height on, a follower refuses a block that carries an invalid token transaction (below it,
+see [Activation](#activation)).
 
 ## State and the state root
 
@@ -179,9 +180,12 @@ first token keep exactly the roots they have today.
 
 The producer and every full node read `qsdm20_activation_height` from their configuration
 (`[consensus] qsdm20_activation_height`, or the environment variable
-`QSDM_QSDM20_ACTIVATION_HEIGHT`). 0 (the default) means switched off: every token transaction is
-refused. Token transactions in a block below the activation height are invalid. Every node must use
-the same value. `GET /api/v1/status` reports it as `consensus_auth.qsdm20_activation_height`, and
+`QSDM_QSDM20_ACTIVATION_HEIGHT`). 0 (the default) means switched off. Below the activation height,
+and always while it is 0, nodes refuse token transactions at admission, so none enters a block, and
+blocks are judged exactly as by a node without QSDM-20: a `qsdm/token/v1` transaction that reaches a
+block anyway (for example from a producer release older than QSDM-20) is a plain CELL transfer of its
+`amount` to its `recipient`, paying its fee and using its nonce, and never touches token state. That
+way adding the code makes no block invalid that is valid today. Every node must use the same value. `GET /api/v1/status` reports it as `consensus_auth.qsdm20_activation_height`, and
 `consensus_auth.qsdm20_active` says whether the next block accepts token transactions.
 
 ## Public API

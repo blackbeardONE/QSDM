@@ -137,11 +137,13 @@ See [Signed transfers](V040_WALLET_SEND_DESIGN.md) and
   `qsdm_tx_gossip_ed25519_rejected_total` (Ed25519 transactions refused) and
   `qsdm_stream_ed25519_retirement_height`.
 - **QSDM-20 tokens.** Native tokens (contract `qsdm/token/v1`) are in the code
-  but switched off: their rules are in [QSDM-20 tokens](QSDM_20.md). A token
-  transaction in a block below `[consensus] qsdm20_activation_height` (env
-  `QSDM_QSDM20_ACTIVATION_HEIGHT`) MUST be refused, and while that height is
-  `0` every token transaction is refused, so the token state stays empty and
-  no state root changes. A release that reports the field shows
+  but switched off: their rules are in [QSDM-20 tokens](QSDM_20.md). Below
+  `[consensus] qsdm20_activation_height` (env `QSDM_QSDM20_ACTIVATION_HEIGHT`),
+  and always while it is `0`, nodes refuse token transactions at admission, and
+  a block is judged exactly as before QSDM-20: a `qsdm/token/v1` transaction
+  that reaches a block anyway is a plain CELL transfer, so no block that is
+  valid today becomes invalid. The token state stays empty and no state root
+  changes. A release that reports the field shows
   `consensus_auth.qsdm20_activation_height` `0` and `qsdm20_active` `false`.
 - **Independent validators.** There is one block producer and no independent
   validators. Multi-validator BFT voting is the next step and has not started

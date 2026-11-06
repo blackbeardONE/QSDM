@@ -8,8 +8,13 @@ package chain
 // and the mempool admission checker. qsdm20_state.go holds the token state.
 //
 // Switched off by default: with no activation height (0) every token
-// transaction is refused at admission and in every block, and the token
-// state stays empty, so no block's state root changes.
+// transaction is refused at admission and the token state stays empty, so
+// no block's state root changes. Below the activation height (always while
+// none is set) a block is judged exactly as by a node without this code: a
+// qsdm/token/v1 transaction that reaches a block anyway, for example from a
+// producer that predates QSDM-20, is a plain CELL transfer
+// (EnrollmentAwareApplier.ApplyTx). Adding this code therefore makes no
+// block invalid that is valid today.
 //
 // Token amounts are integers (math/big) bounded to 2^256 - 1. The only
 // float in this file is the transaction's CELL fee, which every transaction
@@ -144,6 +149,24 @@ func qsdm20HeightFrom(next func() (uint64, bool)) (uint64, error) {
 		return 0, err
 	}
 	return h, nil
+}
+
+// qsdm20RulesAt reports whether the token rules judge a qsdm/token/v1
+// transaction in the next block (next gives its height), and that height.
+// With no activation height they never do, and next is not asked. With one,
+// a missing source fails closed rather than judging at height 0.
+func qsdm20RulesAt(next func() (uint64, bool)) (active bool, height uint64, err error) {
+	if QSDM20ActivationHeight() == 0 {
+		return false, 0, nil
+	}
+	if next == nil {
+		return false, 0, ErrEnrollmentHeightUnset
+	}
+	h, ok := next()
+	if !ok {
+		return false, 0, ErrEnrollmentHeightUnset
+	}
+	return QSDM20ActiveAt(h), h, nil
 }
 
 // QSDM20Action is the payload of a QSDM-20 transaction. Each action carries

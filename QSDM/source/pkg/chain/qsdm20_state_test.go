@@ -349,49 +349,109 @@ func TestQSDM20ReplayedNonceRefused(t *testing.T) {
 	r.refused(alice.signedTx(t, 5, 0, qsdm20Transfer(id, bob.address, "1")), nil)
 }
 
-func TestQSDM20BelowActivationRefused(t *testing.T) {
+func qsdm20AccountsDump(as *AccountStore) string {
+	var b strings.Builder
+	for _, acc := range as.AllAccounts() {
+		b.WriteString(acc.Address + ":" + strconv.FormatFloat(acc.Balance, 'g', -1, 64) + ":" + strconv.FormatUint(acc.Nonce, 10) + ";")
+	}
+	return b.String()
+}
+
+// judgedAsBefore applies tx through the rig's applier and, on a copy of the
+// accounts, through the plain transfer path alone (AccountStore.ApplyTx),
+// which is all a node without QSDM-20 does with a qsdm/token/v1
+// transaction. Both must agree: an error from both or from neither, the same
+// accounts, the same state root, and the token state untouched.
+func (r *qsdm20Rig) judgedAsBefore(tx *mempool.Tx) {
+	r.t.Helper()
+	legacy := r.accounts.Clone()
+	legacyErr := legacy.ApplyTx(tx)
+	tokens, tokenRoot := r.tokens.Count(), r.tokens.StateRoot()
+	err := r.aware.ApplyTx(tx)
+	if (err == nil) != (legacyErr == nil) {
+		r.t.Fatalf("applier: %v; plain transfer: %v", err, legacyErr)
+	}
+	if got, want := qsdm20AccountsDump(r.accounts), qsdm20AccountsDump(legacy); got != want {
+		r.t.Fatalf("accounts differ from the plain transfer:\ngot  %s\nwant %s", got, want)
+	}
+	old := NewEnrollmentAwareApplier(legacy, nil)
+	old.SetTaskStateStore(NewTaskStateStore())
+	old.SetStreamStateStore(NewStreamStateStore())
+	old.SetRecoveryCapsuleStateStore(NewRecoveryCapsuleStateStore())
+	if got, want := r.aware.StateRoot(), old.StateRoot(); got != want {
+		r.t.Fatalf("state root %s; a node without QSDM-20 has %s", got, want)
+	}
+	if r.tokens.Count() != tokens || r.tokens.StateRoot() != tokenRoot {
+		r.t.Fatal("a transaction below the activation height touched the token state")
+	}
+}
+
+// Below the activation height a qsdm/token/v1 transaction that reaches a
+// block is judged as a node without QSDM-20 judges it, so the code makes no
+// block invalid that is valid today. The submit check still refuses it, and
+// the token rules start at the height.
+func TestQSDM20BelowActivationJudgedAsBefore(t *testing.T) {
 	r := newQSDM20Rig(t, 100)
 	alice := r.wallet(1)
 	create := qsdm20Create("ACT", "Activation", 0, "1", "1", QSDM20MintNone, "")
 	r.height = 99
-	r.refused(r.tx(alice, 0, create), ErrQSDM20Inactive)
-	if err := NewQSDM20StateStore().ApplyHistoricalTx(r.tx(alice, 0, create), 99); !errors.Is(err, ErrQSDM20Inactive) {
+	if err := r.aware.CheckQSDM20Tx(r.tx(alice, 0, create)); !errors.Is(err, ErrQSDM20Inactive) {
+		t.Fatalf("submit check below the height: %v", err)
+	}
+	early := r.tx(alice, 1_000, create)
+	r.judgedAsBefore(early)
+	if acc, _ := r.accounts.Get(alice.address); acc.Nonce != 1 {
+		t.Fatalf("the plain transfer did not use the nonce: %+v", acc)
+	}
+	r.judgedAsBefore(early) // its nonce is used now: refused, as before
+	if err := NewQSDM20StateStore().ApplyHistoricalTx(early, 99); !errors.Is(err, ErrQSDM20Inactive) {
 		t.Fatalf("historical replay below the height: %v", err)
 	}
 	r.height = 100
 	tx := r.tx(alice, 0, create)
 	r.mustApply(tx)
+	if r.tokens.Count() != 1 {
+		t.Fatalf("%d tokens at the activation height", r.tokens.Count())
+	}
 	if err := NewQSDM20StateStore().ApplyHistoricalTx(tx, 100); err != nil {
 		t.Fatalf("historical replay at the height: %v", err)
 	}
 }
 
-// Activation height 0 (the default): every token transaction is refused,
-// with or without a height source, and never reaches the plain transfer
-// path (which would bump the nonce and charge the fee).
-func TestQSDM20SwitchedOffRefusesEverywhere(t *testing.T) {
+// Activation height 0 (the default): the submit check and the store refuse
+// every token transaction, and a block that carries one anyway is judged as
+// before QSDM-20 at any height, with or without a height source or a token
+// store.
+func TestQSDM20SwitchedOffJudgesBlocksAsBefore(t *testing.T) {
+	create := qsdm20Create("OFF", "Off", 0, "1", "1", QSDM20MintNone, "")
+	for _, h := range []uint64{0, 1, 1 << 40} {
+		r := newQSDM20Rig(t, 0)
+		alice := r.wallet(2)
+		r.height = h
+		tx := r.tx(alice, 10_000_000, create)
+		if err := r.aware.CheckQSDM20Tx(tx); !errors.Is(err, ErrQSDM20Inactive) {
+			t.Fatalf("CheckQSDM20Tx at %d: %v", h, err)
+		}
+		r.judgedAsBefore(tx)
+		r.judgedAsBefore(tx)
+		r.judgedAsBefore(alice.signedTx(t, 7, 0, create)) // a future nonce
+	}
 	r := newQSDM20Rig(t, 0)
 	alice := r.wallet(2)
-	tx := r.tx(alice, 10_000_000, qsdm20Create("OFF", "Off", 0, "1", "1", QSDM20MintNone, ""))
-	for _, h := range []uint64{0, 1, 1 << 40} {
-		r.height = h
-		r.refused(tx, ErrQSDM20Inactive)
-	}
 	r.aware.SetHeightFn(nil)
-	r.refused(tx, ErrQSDM20Inactive)
+	r.judgedAsBefore(r.tx(alice, 0, create))
+	r.aware.SetQSDM20StateStore(nil)
+	r.judgedAsBefore(r.tx(alice, 0, create))
+	r.judgedAsBefore(newQSDM20Wallet(t).signedTx(t, 0, 0, create)) // no CELL account
+
+	tx := r.tx(alice, 0, create)
 	for _, h := range []uint64{0, 1, 1 << 40} {
 		if err := NewQSDM20StateStore().ApplyHistoricalTx(tx, h); !errors.Is(err, ErrQSDM20Inactive) {
 			t.Fatalf("historical replay at %d: %v", h, err)
 		}
 	}
-	if err := r.tokens.ApplyTx(tx); !errors.Is(err, ErrQSDM20Inactive) {
+	if err := NewQSDM20StateStore().ApplyTx(tx); !errors.Is(err, ErrQSDM20Inactive) {
 		t.Fatalf("store ApplyTx: %v", err)
-	}
-	if err := r.aware.CheckQSDM20Tx(tx); !errors.Is(err, ErrQSDM20Inactive) {
-		t.Fatalf("CheckQSDM20Tx: %v", err)
-	}
-	if acc, _ := r.accounts.Get(alice.address); acc.Nonce != 0 || acc.Balance != 2 {
-		t.Fatalf("switched-off token tx touched the account: %+v", acc)
 	}
 }
 
