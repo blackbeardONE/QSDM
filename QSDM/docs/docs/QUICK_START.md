@@ -53,7 +53,7 @@ full walkthrough.
 
 ## Before you store value
 
-QSDM is a pilot network run by a single block producer during recovery, and it
+QSDM is a pilot network whose blocks come from one producer run by the project, and it
 has not had an independent external audit. Read the
 [Security model](SECURITY_MODEL.md).
 

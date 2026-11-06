@@ -25,7 +25,7 @@ and moved to this repository on 22 April 2026. See
 
 QSDM is a **public pilot network (pre-mainnet)**. Today:
 
-- Blocks come from a **single block producer during recovery**; a backup node
+- Blocks come from **one block producer run by the project**; a backup node
   follows the chain. Live peer count and consensus flags are published at
   [`/api/v1/status`](https://api.qsdm.tech/api/v1/status) and
   [qsdm.tech/network.html](https://qsdm.tech/network.html).

@@ -5,8 +5,9 @@ coin **Cell (CELL)**. Wallet transactions are signed with **ML-DSA-87**, the
 NIST-standardised post-quantum signature scheme (FIPS 204). New CELL is created
 by GPU mining, on NVIDIA hardware today, through the **QSDM Hive** desktop app.
 
-QSDM runs as a **public pilot network (pre-mainnet)** with a **single block
-producer during recovery**. The design aims at many independent validators;
+QSDM runs as a **public pilot network (pre-mainnet)**: transfers follow the
+**Proof-of-Entanglement** rules, and **one block producer run by the project**
+makes the blocks. The design aims at many independent validators;
 that part is not active yet. [Network status](NETWORK_STATUS.md) shows exactly
 what runs today.
 
@@ -34,7 +35,7 @@ Details: [CELL tokenomics](CELL_TOKENOMICS.md).
 
 - Your wallet keys are yours: QSDM software creates them on your device, and
   transfers need your ML-DSA-87 signature.
-- Block production is run by the project during recovery. Consensus messages
+- Block production is run by the project during the pilot. Consensus messages
   must be ML-DSA signed since block 827,000, but there is still only one
   producer; block production by miners is on the [Roadmap](ROADMAP.md), and
   anyone can [run a full node](RUN_A_FULL_NODE.md) that verifies every block.

@@ -120,6 +120,13 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-06: the docs describe the pilot as it runs now.** 22 documents
+  said the network had "a single block producer during recovery"; they now
+  say what is true today: transfers follow the Proof-of-Entanglement rules,
+  and one block producer run by the project makes the blocks. The Feature
+  Summary no longer says the PoE parent rules wait for an activation height:
+  they are enforced from block 816,600. The roadmap names release rc1106.
+
 - **2026-11-06: QSDM's history starts on 10 May 2025.** A new
   [History](QSDM/docs/docs/HISTORY.md) page gives the timeline from the first
   commit in QSDM's first repository,

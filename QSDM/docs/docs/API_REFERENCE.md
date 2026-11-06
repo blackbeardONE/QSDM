@@ -56,7 +56,7 @@ Some endpoints answer differently, so check the HTTP status first:
 
 - mining, receipt and block endpoints may return a **plain-text** body;
 - a paused mining service returns `503 {"error":"mining_unavailable","detail":"…"}` with `Retry-After`;
-- routes paused during recovery return `503 {"status":"read_only","message":"…"}`;
+- routes paused during the pilot return `503 {"status":"read_only","message":"…"}`;
 - unknown or blocked paths return an HTML 404 or 405 page.
 
 | Status | Meaning |
@@ -70,7 +70,7 @@ Some endpoints answer differently, so check the HTTP status first:
 | 409 | Duplicate transaction, or a nonce replay or gap |
 | 422 | Signature does not verify, or a transfer without valid Proof-of-Entanglement parents |
 | 429 | Rate limit |
-| 503 | Paused during recovery, or the service is busy; retry later |
+| 503 | Paused during the pilot, or the service is busy; retry later |
 
 ## Endpoint summary
 
@@ -410,7 +410,7 @@ Responses:
 `GET /wallet/recovery/nonce?sender={address}` read the encrypted recovery
 capsules used by Hive's recovery-phrase feature
 (see [Wallet recovery](WALLET_RECOVERY.md)). Registering new capsules is
-paused during recovery.
+paused during the pilot.
 
 ## Mining
 
@@ -554,4 +554,4 @@ read-only follower node answers with 503. The operator-only admin API under
 `/api/admin/` is left out. The test `TestOpenAPIMatchesRegisteredRoutes` in
 `QSDM/source/pkg/api` fails when the file and the registered routes drift
 apart. The file describes the code; for what the live pilot network accepts
-during recovery, this page is right.
+today, this page is right.

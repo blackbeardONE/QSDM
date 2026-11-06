@@ -13,7 +13,7 @@ or send me some love via paypal or crypto >>
 
 > **Docs:** the user documentation is published at [qsdm.tech/docs](https://qsdm.tech/docs/). Start with [Network status](docs/docs/NETWORK_STATUS.md) for what the live pilot network runs today. The native coin is **Cell (CELL)**; see [`docs/docs/CELL_TOKENOMICS.md`](docs/docs/CELL_TOKENOMICS.md).
 
-**QSDM** is the public product name (called **QSDM+** for a time; see [History](docs/docs/HISTORY.md)). Quantum-Secure Dynamic Mesh Ledger (QSDM) is a non-AI electronic cash system designed for decentralized operation, quantum resistance (ML-DSA-87 wallet signatures) and hardware-agnostic operation. Today it runs as a public pilot network (pre-mainnet) with a single block producer during recovery; see the Network status section of the root `README.md`. The native coin is **Cell (CELL)** — see `docs/docs/CELL_TOKENOMICS.md`.
+**QSDM** is the public product name (called **QSDM+** for a time; see [History](docs/docs/HISTORY.md)). Quantum-Secure Dynamic Mesh Ledger (QSDM) is a non-AI electronic cash system designed for decentralized operation, quantum resistance (ML-DSA-87 wallet signatures) and hardware-agnostic operation. Today it runs as a public pilot network (pre-mainnet) with Proof-of-Entanglement transfers and one block producer run by the project; see the Network status section of the root `README.md`. The native coin is **Cell (CELL)** — see `docs/docs/CELL_TOKENOMICS.md`.
 
 ## Overview
 QSDM supports both **Windows 10+** and **Linux (Ubuntu 24.04+)**. macOS support is in development.

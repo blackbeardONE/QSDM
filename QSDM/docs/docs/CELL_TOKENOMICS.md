@@ -24,8 +24,8 @@
 > update to `QSDM/docs/docs/REBRAND_NOTES.md` and a new entry in
 > `NEXT_STEPS.md` (not yet published).
 >
-> The chain running today is a pilot network (pre-mainnet), run by a single
-> block producer during recovery. Live values are reported by
+> The chain running today is a pilot network (pre-mainnet), with one block
+> producer run by the project. Live values are reported by
 > `GET https://api.qsdm.tech/api/v1/status`.
 
 This document is the normative reference for the Cell coin's supply,
@@ -233,8 +233,8 @@ published activation height.
 
 The structural difference from Bitcoin is that Cell's PoW layer is
 explicitly *additive* — it exists solely to meter coin emission. Consensus
-does not depend on PoW (design target; today a single block producer runs
-the pilot network during recovery). If all miners went offline tomorrow, the
+does not depend on PoW (design target; today one block producer run by the
+project makes the pilot network's blocks). If all miners went offline tomorrow, the
 validators would continue producing blocks; the only thing that would stop is new
 supply creation.
 
