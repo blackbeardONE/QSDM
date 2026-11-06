@@ -51,7 +51,9 @@ func (bp *BlockProducer) blockRangeLocked(from, to uint64, limit int) []*Block {
 }
 
 // BlockRange returns the blocks whose heights lie in [from, to], in height
-// order, in a new slice. Only those pointers are copied.
+// order, in a new slice. Only those pointers are copied. A block that
+// LoadVerifiedJournal loaded may not hold its producer signature in memory:
+// relay blocks with RelayBlocks.
 func (bp *BlockProducer) BlockRange(from, to uint64) []*Block {
 	if bp == nil {
 		return nil

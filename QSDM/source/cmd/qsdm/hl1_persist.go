@@ -121,28 +121,29 @@ func (v *durableChainView) GetBlock(height uint64) (*chain.Block, bool) {
 }
 
 // hl1BlockProvider is the P2P catch-up block provider, clamped to the durable
-// tip.
+// tip: the blocks from `from` on, contiguous, with their producer signatures
+// (chain.BlockProducer.RelayBlocks, which reads back from the journal the
+// signatures the startup load dropped).
 func hl1BlockProvider(p *chain.BlockProducer, d *hl1DurableTip) func(from, to uint64, limit int) []*chain.Block {
 	return func(from, to uint64, limit int) []*chain.Block {
 		if limit <= 0 {
 			limit = 64
 		}
-		out := make([]*chain.Block, 0, limit)
+		out := []*chain.Block{}
 		from, to, ok := hl1ClampRange(d, from, to)
 		if !ok || p == nil {
 			return out
 		}
-		for h := from; h <= to && len(out) < limit; h++ {
-			blk, ok := p.GetBlock(h)
-			if !ok {
-				break
-			}
-			out = append(out, blk)
-			if h == ^uint64(0) {
-				break
-			}
+		blocks, err := p.RelayBlocks(from, to, limit)
+		if err != nil {
+			// Never a wrong block: the blocks before the one that could not
+			// be read back are served, and the operator sees why.
+			hl1Logger().Error("p2p block provider: block not served", "from", from, "to", to, "served", len(blocks), "error_str", err.Error())
 		}
-		return out
+		if len(blocks) == 0 || blocks[0].Height != from {
+			return out // nothing at `from` (a chain that starts above it)
+		}
+		return blocks
 	}
 }
 

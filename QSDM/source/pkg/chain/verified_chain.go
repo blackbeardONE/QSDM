@@ -20,9 +20,9 @@ import (
 // VerifiedChain is a chain that a producer transition has authenticated in
 // full: every block's height, hash, link to its parent, producer and
 // signature, from genesis to a tip at or above the final approved checkpoint
-// (validateProducerTransitionChainLocked). VerifyProducerTransitionChain
-// returns one; RestoreVerifiedChain installs its blocks without verifying
-// them again.
+// (validateProducerTransitionChainLocked). LoadVerifiedJournal and
+// VerifyProducerTransitionChain return one; RestoreVerifiedChain installs its
+// blocks without verifying them again.
 //
 // It is not a flag: it keeps its own copy of the verified slice, and
 // RestoreVerifiedChain accepts only those very *Block values, in their order
@@ -36,6 +36,7 @@ type VerifiedChain struct {
 	epochs   []producerpolicy.Epoch // the schedule the blocks were verified under
 	settings verifySettings         // and the package settings
 	blocks   []*Block               // the verified blocks, genesis first
+	journal  string                 // the journal that holds their stripped signatures, "" if none
 }
 
 // Blocks returns the verified blocks, genesis first, in a new slice that the
@@ -111,6 +112,7 @@ func (bp *BlockProducer) RestoreVerifiedChain(blocks []*Block, v *VerifiedChain)
 		return err
 	}
 	bp.installChainLocked(blocks)
+	bp.journalPath = v.journal
 	return nil
 }
 

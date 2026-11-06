@@ -92,8 +92,12 @@ func TestHL1WiringStartupOrder(t *testing.T) {
 	if len(nl) != 2 {
 		t.Fatalf("hl1RequireFinalNewline called %d times, want 2 (journal, receipts)", len(nl))
 	}
-	if load := s.one(t, "chain.LoadChainNDJSON"); nl[0] >= load {
-		t.Fatal("the journal newline check must precede LoadChainNDJSON")
+	// The journal is loaded by LoadVerifiedJournal under a producer
+	// transition and by LoadChainNDJSON without one.
+	for _, name := range []string{"chain.LoadChainNDJSON", "adminProducer.LoadVerifiedJournal"} {
+		if load := s.one(t, name); nl[0] >= load {
+			t.Fatalf("the journal newline check must precede %s", name)
+		}
 	}
 	if load := s.one(t, "adminReceipts.LoadNDJSON"); nl[1] >= load {
 		t.Fatal("the receipts newline check must precede LoadNDJSON")

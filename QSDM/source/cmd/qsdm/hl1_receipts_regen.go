@@ -90,10 +90,10 @@ type hl1RepairOptions struct {
 
 	// Blocks is the restored chain (S4); its last block is the tip N.
 	Blocks []*chain.Block
-	// Verified is what S4 verified of Blocks
-	// (chain.VerifyProducerTransitionChain), nil without a producer
-	// transition. The scratch replay restores the prefix N-1 through it
-	// instead of verifying every block again.
+	// Verified is what S4 verified of Blocks (chain.LoadVerifiedJournal), nil
+	// without a producer transition. The scratch replay restores the prefix
+	// N-1 through it instead of verifying every block again; the prefix's
+	// stripped signatures could not be verified again anyway.
 	Verified *chain.VerifiedChain
 	// Live is the live state applier, restored and root-checked at N by S4.
 	// It is only read (cloned).

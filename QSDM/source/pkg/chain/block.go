@@ -192,6 +192,10 @@ type BlockProducer struct {
 	// Entanglement parent rules (poe.go). Built only while a PoE
 	// activation height is configured; it has its own lock.
 	poeHist poeHistory
+	// journalPath is the journal that holds the producer signatures
+	// LoadVerifiedJournal dropped from this chain's blocks (RelayBlocks
+	// reads them back). Set by RestoreVerifiedChain; guarded by mu.
+	journalPath string
 }
 
 // ProducerConfig configures the block producer.
@@ -820,7 +824,9 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 }
 
 // GetBlock returns a block by height: an index computation on the contiguous
-// chain, not a walk (block_range.go).
+// chain, not a walk (block_range.go). A block that LoadVerifiedJournal loaded
+// may not hold its producer signature in memory: relay blocks with
+// RelayBlocks.
 func (bp *BlockProducer) GetBlock(height uint64) (*Block, bool) {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
@@ -929,8 +935,8 @@ func (bp *BlockProducer) AllBlocks() []*Block {
 // authenticated in full (validateProducerTransitionChainLocked:
 // hash, links, the producer schedule and the signature); without
 // one every hash is recomputed and every link and height checked.
-// Blocks that were authenticated already
-// (VerifyProducerTransitionChain) are restored without being
+// Blocks that were authenticated already (LoadVerifiedJournal,
+// VerifyProducerTransitionChain) are restored without being
 // verified again by RestoreVerifiedChain.
 func (bp *BlockProducer) RestoreChain(blocks []*Block) error {
 	if bp == nil {

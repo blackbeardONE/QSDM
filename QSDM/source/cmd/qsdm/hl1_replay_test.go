@@ -349,30 +349,34 @@ func hl1rRestore(t *testing.T, dir string, policy *producerpolicy.Transition) (*
 	return st, blocks, err
 }
 
-// hl1rRestoreVerified is hl1rRestore, also returning what the producer
-// transition check verified (nil without a producer transition), which
-// main() hands to S4r. As in main(), the restore does not verify the
-// blocks again.
+// hl1rRestoreVerified is hl1rRestore, also returning what the journal load
+// verified (nil without a producer transition), which main() hands to S4r.
+// As in main(), a producer transition loads the journal with
+// LoadVerifiedJournal, which strips the verified signatures from memory, and
+// restores it with RestoreVerifiedChain.
 func hl1rRestoreVerified(t *testing.T, dir string, policy *producerpolicy.Transition) (*hl1ReplayStack, []*chain.Block, *chain.VerifiedChain, error) {
 	t.Helper()
 	journal := filepath.Join(dir, hl1JournalName)
 	if err := hl1RequireFinalNewline(hl1OSFS{}, journal); err != nil {
 		return nil, nil, nil, err
 	}
-	blocks, err := chain.LoadChainNDJSON(journal)
+	st, err := hl1NewReplayStack(dir, nil, nil, policy, logging.NewSilentLogger())
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	var blocks []*chain.Block
+	var verified *chain.VerifiedChain
+	if policy != nil {
+		verified, err = st.producer.LoadVerifiedJournal(journal)
+		blocks = verified.Blocks()
+	} else {
+		blocks, err = chain.LoadChainNDJSON(journal)
+	}
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	if len(blocks) == 0 {
 		return nil, nil, nil, errors.New("empty journal")
-	}
-	st, err := hl1NewReplayStack(dir, nil, nil, policy, logging.NewSilentLogger())
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	verified, err := st.producer.VerifyProducerTransitionChain(blocks)
-	if err != nil {
-		return nil, nil, nil, err
 	}
 	if _, dropped := canonicalPersistedChain(blocks); dropped != 0 {
 		return nil, nil, nil, errors.New("forked journal")

@@ -2299,20 +2299,25 @@ func main() {
 	if err := hl1RequireFinalNewline(hl1OSFS{}, chainStatePath); err != nil {
 		fatalRestore("chain restore: journal: %v", err)
 	}
-	if persistedBlocks, restoreErr := chain.LoadChainNDJSON(chainStatePath); restoreErr != nil {
+	// With a producer transition the load authenticates every block once
+	// (hash, links, schedule, ML-DSA-87) and keeps no verified signature in
+	// memory but the tip's; RelayBlocks reads them back from the journal.
+	// RestoreVerifiedChain installs exactly the verified blocks without
+	// verifying them again.
+	var persistedBlocks []*chain.Block
+	var verifiedChain *chain.VerifiedChain
+	var restoreErr error
+	if cfg.ProducerTransition != nil {
+		if verifiedChain, restoreErr = adminProducer.LoadVerifiedJournal(chainStatePath); restoreErr != nil {
+			fatalRestore("producer transition persisted chain: %v", restoreErr)
+		}
+		persistedBlocks = verifiedChain.Blocks()
+	} else {
+		persistedBlocks, restoreErr = chain.LoadChainNDJSON(chainStatePath)
+	}
+	if restoreErr != nil {
 		fatalRestore("chain restore: read %s: %v", chainStatePath, restoreErr)
 	} else if len(persistedBlocks) > 0 {
-		// With a producer transition every block is authenticated once here
-		// (hash, links, schedule, ML-DSA-87); RestoreVerifiedChain below
-		// installs exactly these blocks without verifying them again.
-		var verifiedChain *chain.VerifiedChain
-		if cfg.ProducerTransition != nil {
-			v, err := adminProducer.VerifyProducerTransitionChain(persistedBlocks)
-			if err != nil {
-				fatalRestore("producer transition persisted chain: %v", err)
-			}
-			verifiedChain = v
-		}
 		restoreBlocks, droppedForkBlocks := canonicalPersistedChain(persistedBlocks)
 		if cfg.ProducerTransition != nil && droppedForkBlocks != 0 {
 			fatalRestore("producer transition: automatic journal canonicalization is disabled; preserve immutable history and review the suffix")
@@ -3905,8 +3910,10 @@ func emissionProbeFromProducer(p *chain.BlockProducer) api.MiningEmissionProbe {
 // the last N block headers.
 //
 // Each call copies only the requested range under bp.mu
-// (BlockRange: an index computation on the contiguous chain)
-// and projects it after the lock is released.
+// (BlockRange, RelayBlocks: an index computation on the
+// contiguous chain) and projects it after the lock is released.
+// Full blocks come from RelayBlocks, which reads back from the
+// journal the producer signatures the startup load dropped.
 //
 // HL1 (c): the probe is clamped to the durable tip. Tip reports it (0 while
 // unset), and no range reaches above it (W5).
@@ -3957,7 +3964,12 @@ func (p blocksStoreProbe) BlocksInRange(from, to uint64) []json.RawMessage {
 	if !ok {
 		return nil
 	}
-	blocks := p.producer.BlockRange(from, to)
+	blocks, err := p.producer.RelayBlocks(from, to, 0)
+	if err != nil {
+		// Never a wrong block: the blocks before the one that could not be
+		// read back are served, and the operator sees why.
+		hl1Logger().Error("chain blocks: block not served", "from", from, "to", to, "served", len(blocks), "error_str", err.Error())
+	}
 	out := make([]json.RawMessage, 0, len(blocks))
 	for _, b := range blocks {
 		raw, err := json.Marshal(b)
