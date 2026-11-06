@@ -100,6 +100,7 @@ governance:
 # Consensus (see the [consensus] section of qsdm.toml.example).
 # consensus:
 #   stream_ed25519_retirement_height: 0  # CELL stream opens (Ed25519 session keys) refused from this height; 0 = never; same value on every validator; env QSDM_STREAM_ED25519_RETIREMENT_HEIGHT
+#   qsdm20_activation_height: 0  # QSDM-20 token transactions valid from this height; 0 = off; same value on every validator; env QSDM_QSDM20_ACTIVATION_HEIGHT
 #   producer_transition:  # which consensus key may sign each height; same table on every node; see QSDM/docs/docs/PRODUCER_TRANSITION.md
 #     version: 2  # version 1 names one hand-over with the scalar keys instead of epochs
 #     historical_prefix_bytes: 0

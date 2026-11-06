@@ -103,6 +103,11 @@ type ConsensusAuthInfo struct {
 	// rule governs the next block.
 	StreamEd25519RetirementHeight   uint64 `json:"stream_ed25519_retirement_height"`
 	StreamEd25519SessionKeysRetired bool   `json:"stream_ed25519_session_keys_retired"`
+	// QSDM20ActivationHeight is the first height at which QSDM-20 token
+	// transactions are valid (0 = switched off). QSDM20Active reports whether
+	// the next block accepts them.
+	QSDM20ActivationHeight uint64 `json:"qsdm20_activation_height"`
+	QSDM20Active           bool   `json:"qsdm20_active"`
 }
 
 // MiningInfo advertises the validator's mining-consensus posture so
@@ -383,6 +388,8 @@ func (h *Handlers) buildConsensusAuthInfo(chainTip uint64) ConsensusAuthInfo {
 		Ed25519TxAccepted:                   false,
 		StreamEd25519RetirementHeight:       chain.StreamEd25519RetirementHeight(),
 		StreamEd25519SessionKeysRetired:     chain.StreamEd25519SessionKeysRetiredAt(chainTip + 1),
+		QSDM20ActivationHeight:              chain.QSDM20ActivationHeight(),
+		QSDM20Active:                        chain.QSDM20ActiveAt(chainTip + 1),
 	}
 }
 

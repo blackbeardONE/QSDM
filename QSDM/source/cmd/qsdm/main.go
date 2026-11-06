@@ -1646,6 +1646,21 @@ func main() {
 			"config", "[consensus] stream_ed25519_retirement_height",
 			"env", "QSDM_STREAM_ED25519_RETIREMENT_HEIGHT")
 	}
+	// QSDM-20 tokens (qsdm/token/v1, QSDM/docs/docs/QSDM_20.md): below this
+	// height every token transaction is refused at admission, when producing
+	// and when replaying blocks. Zero, the default, keeps them off, and the
+	// state root never gains its qsdm-20 segment.
+	chain.SetQSDM20ActivationHeight(cfg.QSDM20ActivationHeight)
+	if cfg.QSDM20ActivationHeight > 0 {
+		logger.Info("QSDM-20 tokens scheduled",
+			"from_height", cfg.QSDM20ActivationHeight,
+			"contract", chain.QSDM20ContractID,
+			"warning", "every validator must use this exact value")
+	} else {
+		logger.Info("QSDM-20 tokens are off (no activation height)",
+			"config", "[consensus] qsdm20_activation_height",
+			"env", "QSDM_QSDM20_ACTIVATION_HEIGHT")
+	}
 	chain.SetRequireSignedCertificates(cfg.RequireSignedVotes)
 	chain.SetRequireSignedBlocks(cfg.RequireSignedVotes)
 	chain.SetRequireEvidenceProof(cfg.RequireSignedVotes)

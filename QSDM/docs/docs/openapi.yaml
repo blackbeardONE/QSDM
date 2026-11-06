@@ -6379,6 +6379,8 @@ components:
         - ed25519_tx_accepted
         - stream_ed25519_retirement_height
         - stream_ed25519_session_keys_retired
+        - qsdm20_activation_height
+        - qsdm20_active
       properties:
         signed_consensus_supported:
           type: boolean
@@ -6442,6 +6444,17 @@ components:
         stream_ed25519_session_keys_retired:
           type: boolean
           description: Whether the stream Ed25519 retirement governs the next block (chain tip + 1).
+        qsdm20_activation_height:
+          type: integer
+          format: int64
+          description: |
+            First height at which QSDM-20 token transactions (contract
+            qsdm/token/v1, see QSDM_20.md) are valid ([consensus]
+            qsdm20_activation_height or QSDM_QSDM20_ACTIVATION_HEIGHT); 0
+            means switched off, and every token transaction is refused.
+        qsdm20_active:
+          type: boolean
+          description: Whether the next block (chain tip + 1) accepts QSDM-20 token transactions.
 
     # ------------------------------------------------------------------
     # Versions
