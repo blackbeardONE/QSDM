@@ -84,10 +84,14 @@ var publicReadPaths = map[string]struct{}{
 	"/api/v1/chain/parents":   {},
 	"/api/v1/mining/blocks":   {},
 	"/api/v1/mining/emission": {},
+	"/api/v1/qsdm20/tokens":   {},
 }
 
-// isPublicReadPath reports whether p is one of publicReadPaths or a single
-// receipt (/api/v1/receipts/{tx_id}). Paths that are not clean never match.
+// isPublicReadPath reports whether p is one of publicReadPaths, a single
+// receipt (/api/v1/receipts/{tx_id}), or a QSDM-20 read: a token
+// (/api/v1/qsdm20/tokens/{id}), its holders (/api/v1/qsdm20/tokens/{id}/holders)
+// or an address's balances (/api/v1/qsdm20/balances/{address}). Paths that
+// are not clean never match.
 func isPublicReadPath(p string) bool {
 	if p == "" || strings.Contains(p, "..") || strings.Contains(p, "//") {
 		return false
@@ -97,6 +101,13 @@ func isPublicReadPath(p string) bool {
 	}
 	if id, ok := strings.CutPrefix(p, "/api/v1/receipts/"); ok {
 		return id != "" && !strings.Contains(id, "/")
+	}
+	if rest, ok := strings.CutPrefix(p, "/api/v1/qsdm20/tokens/"); ok {
+		id, sub, hasSub := strings.Cut(rest, "/")
+		return id != "" && (!hasSub || sub == "holders")
+	}
+	if address, ok := strings.CutPrefix(p, "/api/v1/qsdm20/balances/"); ok {
+		return address != "" && !strings.Contains(address, "/")
 	}
 	return false
 }
