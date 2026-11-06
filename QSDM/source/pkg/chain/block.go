@@ -709,15 +709,12 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 			return fmt.Errorf("%w: %v", ErrSealGuardBlocked, guardErr)
 		}
 	}
-	for _, b := range bp.chain {
-		if b.Height == blk.Height {
-			if b.Hash == blk.Hash {
-				bp.mu.Unlock()
-				return nil
-			}
-			bp.mu.Unlock()
-			return &ExternalAppendConflictError{Height: blk.Height, ExistingHash: b.Hash, NewHash: blk.Hash}
+	if b, ok := bp.blockAtLocked(blk.Height); ok {
+		bp.mu.Unlock()
+		if b.Hash == blk.Hash {
+			return nil
 		}
+		return &ExternalAppendConflictError{Height: blk.Height, ExistingHash: b.Hash, NewHash: blk.Hash}
 	}
 	if len(bp.chain) > 0 {
 		last := bp.chain[len(bp.chain)-1]
@@ -760,15 +757,12 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	}
 
 	bp.mu.Lock()
-	for _, b := range bp.chain {
-		if b.Height == blk.Height {
-			if b.Hash == blk.Hash {
-				bp.mu.Unlock()
-				return nil
-			}
-			bp.mu.Unlock()
-			return &ExternalAppendConflictError{Height: blk.Height, ExistingHash: b.Hash, NewHash: blk.Hash}
+	if b, ok := bp.blockAtLocked(blk.Height); ok {
+		bp.mu.Unlock()
+		if b.Hash == blk.Hash {
+			return nil
 		}
+		return &ExternalAppendConflictError{Height: blk.Height, ExistingHash: b.Hash, NewHash: blk.Hash}
 	}
 	if len(bp.chain) > 0 {
 		last := bp.chain[len(bp.chain)-1]
@@ -825,16 +819,12 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	return nil
 }
 
-// GetBlock returns a block by height.
+// GetBlock returns a block by height: an index computation on the contiguous
+// chain, not a walk (block_range.go).
 func (bp *BlockProducer) GetBlock(height uint64) (*Block, bool) {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
-	for _, b := range bp.chain {
-		if b.Height == height {
-			return b, true
-		}
-	}
-	return nil, false
+	return bp.blockAtLocked(height)
 }
 
 // LatestBlock returns the chain tip.
@@ -990,10 +980,8 @@ func (bp *BlockProducer) Headers(from, to uint64) []BlockHeader {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
 	var out []BlockHeader
-	for _, b := range bp.chain {
-		if b.Height >= from && b.Height <= to {
-			out = append(out, b.Header())
-		}
+	for _, b := range bp.blockRangeLocked(from, to, 0) {
+		out = append(out, b.Header())
 	}
 	return out
 }

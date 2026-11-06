@@ -3897,15 +3897,9 @@ func emissionProbeFromProducer(p *chain.BlockProducer) api.MiningEmissionProbe {
 // api.MiningBlocksProbe so the public chain dashboard can list
 // the last N block headers.
 //
-// The probe is intentionally O(N) over bp.AllBlocks() per call
-// because (a) AllBlocks already takes the bp.mu lock and returns
-// a snapshot copy so we don't hold the producer lock while
-// projecting, and (b) for the current testnet the chain is
-// small enough that a full walk to filter by [from, to] runs in
-// microseconds. When the chain grows past a few hundred thousand
-// blocks, replace this with a height-indexed accessor in
-// pkg/chain/block.go (BlockProducer.BlockAtHeight) and switch
-// HeadersInRange to a slice operation.
+// Each call copies only the requested range under bp.mu
+// (BlockRange: an index computation on the contiguous chain)
+// and projects it after the lock is released.
 //
 // HL1 (c): the probe is clamped to the durable tip. Tip reports it (0 while
 // unset), and no range reaches above it (W5).
@@ -3930,15 +3924,9 @@ func (p blocksStoreProbe) HeadersInRange(from, to uint64) []api.MiningBlockHeade
 	if !ok {
 		return nil
 	}
-	all := p.producer.AllBlocks()
-	out := make([]api.MiningBlockHeader, 0, 32)
-	for _, b := range all {
-		if b == nil {
-			continue
-		}
-		if b.Height < from || b.Height > to {
-			continue
-		}
+	blocks := p.producer.BlockRange(from, to)
+	out := make([]api.MiningBlockHeader, 0, len(blocks))
+	for _, b := range blocks {
 		hdr := b.Header()
 		out = append(out, api.MiningBlockHeader{
 			Height:     hdr.Height,
@@ -3962,15 +3950,9 @@ func (p blocksStoreProbe) BlocksInRange(from, to uint64) []json.RawMessage {
 	if !ok {
 		return nil
 	}
-	all := p.producer.AllBlocks()
-	out := make([]json.RawMessage, 0, 16)
-	for _, b := range all {
-		if b == nil {
-			continue
-		}
-		if b.Height < from || b.Height > to {
-			continue
-		}
+	blocks := p.producer.BlockRange(from, to)
+	out := make([]json.RawMessage, 0, len(blocks))
+	for _, b := range blocks {
 		raw, err := json.Marshal(b)
 		if err != nil {
 			continue
