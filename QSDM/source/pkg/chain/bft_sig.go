@@ -43,11 +43,20 @@ var ErrBFTBadSignature = errors.New("chain: bft message signature invalid")
 type BFTWireAuth struct {
 	PublicKey []byte `json:"public_key,omitempty"`
 	Signature []byte `json:"signature,omitempty"`
+
+	// stripped is set only on the producer_auth of a block that
+	// LoadVerifiedJournal loaded: its signature was verified and is no
+	// longer in memory (Signature is empty), and this says where in the
+	// journal it is (block_sig_journal.go). Neither JSON nor code outside
+	// this package can set it.
+	stripped *strippedSignature
 }
 
-// Signed reports whether both halves of the authenticator are present.
+// Signed reports whether both halves of the authenticator are present. A
+// stripped block signature (Stripped) is signed: its signature was verified
+// and is in the journal.
 func (a BFTWireAuth) Signed() bool {
-	return len(a.PublicKey) > 0 && len(a.Signature) > 0
+	return len(a.PublicKey) > 0 && (len(a.Signature) > 0 || a.stripped != nil)
 }
 
 // BFTValidatorAddress derives the self-certifying validator identity for an
@@ -117,6 +126,9 @@ func signAuth(signer BFTSigner, digest []byte) (BFTWireAuth, error) {
 // gap where a valid signature by ANY key would authorise a vote attributed
 // to someone else.
 func verifyAuth(auth BFTWireAuth, digest []byte, claimedSigner string) error {
+	if auth.stripped != nil {
+		return ErrBlockSignatureStripped
+	}
 	if !auth.Signed() {
 		return ErrBFTUnsigned
 	}

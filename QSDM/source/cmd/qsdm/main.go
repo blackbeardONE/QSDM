@@ -2299,14 +2299,25 @@ func main() {
 	if err := hl1RequireFinalNewline(hl1OSFS{}, chainStatePath); err != nil {
 		fatalRestore("chain restore: journal: %v", err)
 	}
-	if persistedBlocks, restoreErr := chain.LoadChainNDJSON(chainStatePath); restoreErr != nil {
+	// With a producer transition the load authenticates every block once
+	// (hash, links, schedule, ML-DSA-87) and keeps no verified signature in
+	// memory but the tip's; RelayBlocks reads them back from the journal.
+	// RestoreVerifiedChain installs exactly the verified blocks without
+	// verifying them again.
+	var persistedBlocks []*chain.Block
+	var verifiedChain *chain.VerifiedChain
+	var restoreErr error
+	if cfg.ProducerTransition != nil {
+		if verifiedChain, restoreErr = adminProducer.LoadVerifiedJournal(chainStatePath); restoreErr != nil {
+			fatalRestore("producer transition persisted chain: %v", restoreErr)
+		}
+		persistedBlocks = verifiedChain.Blocks()
+	} else {
+		persistedBlocks, restoreErr = chain.LoadChainNDJSON(chainStatePath)
+	}
+	if restoreErr != nil {
 		fatalRestore("chain restore: read %s: %v", chainStatePath, restoreErr)
 	} else if len(persistedBlocks) > 0 {
-		if cfg.ProducerTransition != nil {
-			if err := adminProducer.ValidateProducerTransitionChain(persistedBlocks); err != nil {
-				fatalRestore("producer transition persisted chain: %v", err)
-			}
-		}
 		restoreBlocks, droppedForkBlocks := canonicalPersistedChain(persistedBlocks)
 		if cfg.ProducerTransition != nil && droppedForkBlocks != 0 {
 			fatalRestore("producer transition: automatic journal canonicalization is disabled; preserve immutable history and review the suffix")
@@ -2362,7 +2373,7 @@ func main() {
 				"chain_path", chainStatePath,
 				"backup_path", restoredState.backupPath)
 		}
-		if err := adminProducer.RestoreChain(restoreBlocks); err != nil {
+		if err := adminProducer.RestoreVerifiedChain(restoreBlocks, verifiedChain); err != nil {
 			fatalRestore("chain restore: producer hydrate from %s (%d blocks): %v",
 				chainStatePath, len(restoreBlocks), err)
 		}
@@ -2501,6 +2512,7 @@ func main() {
 			Transition:     cfg.ProducerTransition,
 			Authorized:     cfg.AuthorizedBlockProducers,
 			Blocks:         hl1RestoredBlocks,
+			Verified:       verifiedChain,
 			Live:           hl1LiveApplier,
 			Receipts:       adminReceipts,
 			FS:             hl1OSFS{},
@@ -3897,15 +3909,11 @@ func emissionProbeFromProducer(p *chain.BlockProducer) api.MiningEmissionProbe {
 // api.MiningBlocksProbe so the public chain dashboard can list
 // the last N block headers.
 //
-// The probe is intentionally O(N) over bp.AllBlocks() per call
-// because (a) AllBlocks already takes the bp.mu lock and returns
-// a snapshot copy so we don't hold the producer lock while
-// projecting, and (b) for the current testnet the chain is
-// small enough that a full walk to filter by [from, to] runs in
-// microseconds. When the chain grows past a few hundred thousand
-// blocks, replace this with a height-indexed accessor in
-// pkg/chain/block.go (BlockProducer.BlockAtHeight) and switch
-// HeadersInRange to a slice operation.
+// Each call copies only the requested range under bp.mu
+// (BlockRange, RelayBlocks: an index computation on the
+// contiguous chain) and projects it after the lock is released.
+// Full blocks come from RelayBlocks, which reads back from the
+// journal the producer signatures the startup load dropped.
 //
 // HL1 (c): the probe is clamped to the durable tip. Tip reports it (0 while
 // unset), and no range reaches above it (W5).
@@ -3930,15 +3938,9 @@ func (p blocksStoreProbe) HeadersInRange(from, to uint64) []api.MiningBlockHeade
 	if !ok {
 		return nil
 	}
-	all := p.producer.AllBlocks()
-	out := make([]api.MiningBlockHeader, 0, 32)
-	for _, b := range all {
-		if b == nil {
-			continue
-		}
-		if b.Height < from || b.Height > to {
-			continue
-		}
+	blocks := p.producer.BlockRange(from, to)
+	out := make([]api.MiningBlockHeader, 0, len(blocks))
+	for _, b := range blocks {
 		hdr := b.Header()
 		out = append(out, api.MiningBlockHeader{
 			Height:     hdr.Height,
@@ -3962,15 +3964,14 @@ func (p blocksStoreProbe) BlocksInRange(from, to uint64) []json.RawMessage {
 	if !ok {
 		return nil
 	}
-	all := p.producer.AllBlocks()
-	out := make([]json.RawMessage, 0, 16)
-	for _, b := range all {
-		if b == nil {
-			continue
-		}
-		if b.Height < from || b.Height > to {
-			continue
-		}
+	blocks, err := p.producer.RelayBlocks(from, to, 0)
+	if err != nil {
+		// Never a wrong block: the blocks before the one that could not be
+		// read back are served, and the operator sees why.
+		hl1Logger().Error("chain blocks: block not served", "from", from, "to", to, "served", len(blocks), "error_str", err.Error())
+	}
+	out := make([]json.RawMessage, 0, len(blocks))
+	for _, b := range blocks {
 		raw, err := json.Marshal(b)
 		if err != nil {
 			continue

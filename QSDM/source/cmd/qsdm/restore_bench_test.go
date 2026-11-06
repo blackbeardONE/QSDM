@@ -16,15 +16,20 @@ package main
 //	QSDM_RESTORE_BENCH_HEAPPROFILE=<file>  (boot, optional: a heap profile taken
 //	                                        after the restore and a GC)
 //	QSDM_RESTORE_BENCH_REMARSHAL=1         (boot, optional: after the measurement,
-//	                                        re-encode every restored block, compare
-//	                                        it with its journal line and hash the
-//	                                        re-encoded journal, to compare builds)
+//	                                        re-encode every restored block as the
+//	                                        node relays it (RelayBlocks, which reads
+//	                                        stripped signatures back from the
+//	                                        journal), compare it with its journal
+//	                                        line and hash the re-encoded journal,
+//	                                        to compare builds)
 //
 // boot    main()'s restore block: the consensus settings, the transition
-//         prefix check, the journal load, the producer transition check of
-//         the whole chain (every block hash and signature), the snapshot
-//         pair's state root check and the producer hydrate
-//         (hl1ReplayStack.restore).
+//         prefix check, the journal load (with a producer transition,
+//         chain.LoadVerifiedJournal: every block's hash and signature
+//         verified once, and the verified signatures stripped from memory;
+//         load_seconds includes that verification), the snapshot pair's
+//         state root check and the producer hydrate (hl1ReplayStack.restore,
+//         which does not verify the blocks again).
 // import  the checks of qsdm --snapshot-import (snapshotVerifyDir), without
 //         the staging copy and the checkpoint pin.
 //
@@ -60,6 +65,7 @@ import (
 	"time"
 
 	"github.com/blackbeardONE/QSDM/internal/logging"
+	"github.com/blackbeardONE/QSDM/pkg/api"
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/config"
 	"github.com/blackbeardONE/QSDM/pkg/producerpolicy"
@@ -69,6 +75,7 @@ type restoreBenchReport struct {
 	Phase              string  `json:"phase"`
 	Blocks             int     `json:"blocks"`
 	SignedBlocks       int     `json:"signed_blocks,omitempty"`
+	StrippedBlocks     int     `json:"stripped_blocks,omitempty"`
 	Transactions       int     `json:"transactions,omitempty"`
 	ProducerKeys       int     `json:"producer_keys,omitempty"`
 	ProducerKeyArrays  int     `json:"producer_key_arrays,omitempty"`
@@ -162,7 +169,7 @@ func TestRestoreBench(t *testing.T) {
 		restoreBenchCount(blocks, &rep)
 		if os.Getenv("QSDM_RESTORE_BENCH_REMARSHAL") == "1" {
 			t0 := time.Now()
-			n, bad, sum := restoreBenchRemarshal(t, journal, blocks)
+			n, bad, sum := restoreBenchRemarshal(t, journal, st.producer, blocks)
 			rep.RemarshalLines, rep.RemarshalMismatch, rep.RemarshalSHA256 = n, &bad, sum
 			rep.RemarshalSeconds = time.Since(t0).Seconds()
 		}
@@ -204,9 +211,21 @@ func restoreBenchBoot(t *testing.T, dir, scratch string, c restoreBenchConsensus
 	if err := hl1RequireFinalNewline(hl1OSFS{}, journal); err != nil {
 		t.Fatal(err)
 	}
-	t0 := time.Now()
-	blocks, err := chain.LoadChainNDJSON(journal)
+	st, err := hl1NewReplayStack(scratch, c.governance, c.authorized, c.transition, logging.NewSilentLogger())
 	if err != nil {
+		t.Fatal(err)
+	}
+	// As main() loads the journal: with a producer transition, every block
+	// verified once and its signature stripped.
+	t0 := time.Now()
+	var blocks []*chain.Block
+	var verified *chain.VerifiedChain
+	if c.transition != nil {
+		if verified, err = st.producer.LoadVerifiedJournal(journal); err != nil {
+			t.Fatalf("producer transition persisted chain: %v", err)
+		}
+		blocks = verified.Blocks()
+	} else if blocks, err = chain.LoadChainNDJSON(journal); err != nil {
 		t.Fatal(err)
 	}
 	rep.LoadSeconds = time.Since(t0).Seconds()
@@ -214,17 +233,10 @@ func restoreBenchBoot(t *testing.T, dir, scratch string, c restoreBenchConsensus
 		t.Fatal("empty journal")
 	}
 	t1 := time.Now()
-	st, err := hl1NewReplayStack(scratch, c.governance, c.authorized, c.transition, logging.NewSilentLogger())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.producer.ValidateProducerTransitionChain(blocks); err != nil {
-		t.Fatalf("producer transition persisted chain: %v", err)
-	}
 	if _, dropped := canonicalPersistedChain(blocks); dropped != 0 {
 		t.Fatalf("journal contains %d forked duplicate block(s)", dropped)
 	}
-	if err := st.restore(blocks, filepath.Join(dir, hl1AccountsName), filepath.Join(dir, hl1EnrollmentName),
+	if err := st.restore(blocks, verified, filepath.Join(dir, hl1AccountsName), filepath.Join(dir, hl1EnrollmentName),
 		filepath.Join(scratch, hl1ReceiptsName)); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
@@ -250,9 +262,9 @@ func restoreBenchHeapProfile(t *testing.T, path string) {
 	}
 }
 
-// restoreBenchCount counts the restored blocks, signed blocks and
-// transactions, and the distinct producer public keys: by value and by
-// backing array.
+// restoreBenchCount counts the restored blocks, signed blocks, blocks whose
+// signature was stripped and transactions, and the distinct producer public
+// keys: by value and by backing array.
 func restoreBenchCount(blocks []*chain.Block, rep *restoreBenchReport) {
 	keys := map[string]struct{}{}
 	arrays := map[*byte]struct{}{}
@@ -262,6 +274,9 @@ func restoreBenchCount(blocks []*chain.Block, rep *restoreBenchReport) {
 		if b.ProducerAuth.Signed() {
 			rep.SignedBlocks++
 		}
+		if b.ProducerAuth.Stripped() {
+			rep.StrippedBlocks++
+		}
 		if pk := b.ProducerAuth.PublicKey; len(pk) > 0 {
 			keys[string(pk)] = struct{}{}
 			arrays[&pk[0]] = struct{}{}
@@ -270,12 +285,16 @@ func restoreBenchCount(blocks []*chain.Block, rep *restoreBenchReport) {
 	rep.ProducerKeys, rep.ProducerKeyArrays = len(keys), len(arrays)
 }
 
-// restoreBenchRemarshal re-encodes every restored block and compares it with
-// its journal line. It returns the number of lines compared, how many differ
-// (a block written before a field existed re-encodes with it) and the SHA-256
-// of the re-encoded journal (each block as json.Marshal encodes it, then a
-// newline).
-func restoreBenchRemarshal(t *testing.T, journal string, blocks []*chain.Block) (int, int, string) {
+// restoreBenchRemarshal re-encodes every restored block as the node relays it
+// (producer.RelayBlocks, in pages of api.ChainBlocksMaxLimit blocks, as GET
+// /api/v1/chain/blocks reads them: a block whose signature was stripped is
+// read back from the journal) and compares it with its journal line. It
+// returns the number of lines compared, how many differ (a block written
+// before a field existed re-encodes with it) and the SHA-256 of the
+// re-encoded journal (each block as json.Marshal encodes it, then a newline):
+// a build that strips signatures must give the same figures as one that
+// keeps them.
+func restoreBenchRemarshal(t *testing.T, journal string, producer *chain.BlockProducer, blocks []*chain.Block) (int, int, string) {
 	t.Helper()
 	f, err := os.Open(journal)
 	if err != nil {
@@ -286,6 +305,7 @@ func restoreBenchRemarshal(t *testing.T, journal string, blocks []*chain.Block) 
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024) // LoadChainNDJSON's limits
 	n, bad := 0, 0
 	sum := sha256.New()
+	var page []*chain.Block
 	for sc.Scan() {
 		line := sc.Bytes()
 		if len(line) == 0 {
@@ -294,7 +314,21 @@ func restoreBenchRemarshal(t *testing.T, journal string, blocks []*chain.Block) 
 		if n >= len(blocks) {
 			t.Fatalf("the journal holds more blocks than were restored (%d)", len(blocks))
 		}
-		data, err := json.Marshal(blocks[n])
+		if len(page) == 0 {
+			h := blocks[n].Height
+			if page, err = producer.RelayBlocks(h, h+api.ChainBlocksMaxLimit-1, 0); err != nil {
+				t.Fatalf("relay from height %d: %v", h, err)
+			}
+			if len(page) == 0 {
+				t.Fatalf("nothing relayed at height %d", h)
+			}
+		}
+		relayed := page[0]
+		page = page[1:]
+		if relayed.Height != blocks[n].Height || relayed.Hash != blocks[n].Hash {
+			t.Fatalf("relayed block %d (%s) for the restored block %d (%s)", relayed.Height, relayed.Hash, blocks[n].Height, blocks[n].Hash)
+		}
+		data, err := json.Marshal(relayed)
 		if err != nil {
 			t.Fatal(err)
 		}

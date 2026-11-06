@@ -301,10 +301,11 @@ func hl1RunReplay(o hl1ReplayOptions) (res hl1ReplayResult, err error) {
 	if err != nil {
 		return res, err
 	}
-	if err := st.producer.ValidateProducerTransitionChain(blocks); err != nil {
+	verified, err := st.producer.VerifyProducerTransitionChain(blocks)
+	if err != nil {
 		return res, fmt.Errorf("producer transition persisted chain: %w", err)
 	}
-	if err := st.restore(blocks[:len(blocks)-1], res.PairAccounts, res.PairEnroll, receipts); err != nil {
+	if err := st.restore(blocks[:len(blocks)-1], verified, res.PairAccounts, res.PairEnroll, receipts); err != nil {
 		return res, fmt.Errorf("restore of the J-1 prefix: %w", err)
 	}
 
@@ -430,8 +431,10 @@ func hl1NewReplayStack(stateDir string, governance, authorized []string, transit
 // restore is main()'s restore block for blocks and the given snapshot pair,
 // without its journal rewrites: the pair must reproduce the tip's state root
 // exactly (no tail reconciliation), and the receipts (already pre-trimmed)
-// must end with "\n" and load.
-func (s *hl1ReplayStack) restore(blocks []*chain.Block, accountsPath, enrollmentPath, receiptsPath string) error {
+// must end with "\n" and load. verified is what s.producer verified of
+// blocks (chain.VerifiedChain: blocks, or a prefix of them, restore without
+// being verified again); nil verifies every block.
+func (s *hl1ReplayStack) restore(blocks []*chain.Block, verified *chain.VerifiedChain, accountsPath, enrollmentPath, receiptsPath string) error {
 	if len(blocks) == 0 {
 		return errors.New("no blocks to restore")
 	}
@@ -440,7 +443,7 @@ func (s *hl1ReplayStack) restore(blocks []*chain.Block, accountsPath, enrollment
 	if err != nil {
 		return err
 	}
-	if err := s.producer.RestoreChain(blocks); err != nil {
+	if err := s.producer.RestoreVerifiedChain(blocks, verified); err != nil {
 		return fmt.Errorf("producer hydrate (%d blocks): %w", len(blocks), err)
 	}
 	if err := s.v2.TaskState.RestoreFromChainReplay(restored.taskState); err != nil {

@@ -192,6 +192,10 @@ type BlockProducer struct {
 	// Entanglement parent rules (poe.go). Built only while a PoE
 	// activation height is configured; it has its own lock.
 	poeHist poeHistory
+	// journalPath is the journal that holds the producer signatures
+	// LoadVerifiedJournal dropped from this chain's blocks (RelayBlocks
+	// reads them back). Set by RestoreVerifiedChain; guarded by mu.
+	journalPath string
 }
 
 // ProducerConfig configures the block producer.
@@ -709,15 +713,12 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 			return fmt.Errorf("%w: %v", ErrSealGuardBlocked, guardErr)
 		}
 	}
-	for _, b := range bp.chain {
-		if b.Height == blk.Height {
-			if b.Hash == blk.Hash {
-				bp.mu.Unlock()
-				return nil
-			}
-			bp.mu.Unlock()
-			return &ExternalAppendConflictError{Height: blk.Height, ExistingHash: b.Hash, NewHash: blk.Hash}
+	if b, ok := bp.blockAtLocked(blk.Height); ok {
+		bp.mu.Unlock()
+		if b.Hash == blk.Hash {
+			return nil
 		}
+		return &ExternalAppendConflictError{Height: blk.Height, ExistingHash: b.Hash, NewHash: blk.Hash}
 	}
 	if len(bp.chain) > 0 {
 		last := bp.chain[len(bp.chain)-1]
@@ -760,15 +761,12 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	}
 
 	bp.mu.Lock()
-	for _, b := range bp.chain {
-		if b.Height == blk.Height {
-			if b.Hash == blk.Hash {
-				bp.mu.Unlock()
-				return nil
-			}
-			bp.mu.Unlock()
-			return &ExternalAppendConflictError{Height: blk.Height, ExistingHash: b.Hash, NewHash: blk.Hash}
+	if b, ok := bp.blockAtLocked(blk.Height); ok {
+		bp.mu.Unlock()
+		if b.Hash == blk.Hash {
+			return nil
 		}
+		return &ExternalAppendConflictError{Height: blk.Height, ExistingHash: b.Hash, NewHash: blk.Hash}
 	}
 	if len(bp.chain) > 0 {
 		last := bp.chain[len(bp.chain)-1]
@@ -825,16 +823,14 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	return nil
 }
 
-// GetBlock returns a block by height.
+// GetBlock returns a block by height: an index computation on the contiguous
+// chain, not a walk (block_range.go). A block that LoadVerifiedJournal loaded
+// may not hold its producer signature in memory: relay blocks with
+// RelayBlocks.
 func (bp *BlockProducer) GetBlock(height uint64) (*Block, bool) {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
-	for _, b := range bp.chain {
-		if b.Height == height {
-			return b, true
-		}
-	}
-	return nil, false
+	return bp.blockAtLocked(height)
 }
 
 // LatestBlock returns the chain tip.
@@ -935,12 +931,13 @@ func (bp *BlockProducer) AllBlocks() []*Block {
 //     reports correctly in the genesis-already-sealed branch of
 //     cmd/qsdm/main.go without re-running the seed tx.
 //
-// Validation is deliberately minimal: this method trusts the
-// caller's persisted log. Tampering detection lives elsewhere
-// (block hashes are content-addressed and BFT/POL state machines
-// re-verify on the wire). A malformed log here surfaces as a
-// state-root mismatch the next time ApplyTx runs against the
-// restored AccountStore — operator-visible, not silent.
+// Every block is checked: with a producer transition each one is
+// authenticated in full (validateProducerTransitionChainLocked:
+// hash, links, the producer schedule and the signature); without
+// one every hash is recomputed and every link and height checked.
+// Blocks that were authenticated already (LoadVerifiedJournal,
+// VerifyProducerTransitionChain) are restored without being
+// verified again by RestoreVerifiedChain.
 func (bp *BlockProducer) RestoreChain(blocks []*Block) error {
 	if bp == nil {
 		return fmt.Errorf("chain: nil producer")
@@ -950,30 +947,43 @@ func (bp *BlockProducer) RestoreChain(blocks []*Block) error {
 	if len(bp.chain) != 0 {
 		return fmt.Errorf("chain: RestoreChain called on a non-empty producer (have %d blocks)", len(bp.chain))
 	}
-	if err := bp.validateProducerTransitionChainLocked(blocks); err != nil {
-		return err
+	if bp.producerTransition != nil {
+		// This checks every block's hash, height and link as well; the
+		// loop below would only compute each hash again.
+		if err := bp.validateProducerTransitionChainLocked(blocks); err != nil {
+			return err
+		}
+	} else {
+		for i, blk := range blocks {
+			if blk == nil {
+				return fmt.Errorf("chain: RestoreChain encountered nil block at index %d", i)
+			}
+			if want := computeBlockHash(blk); blk.Hash != want {
+				return fmt.Errorf("chain: RestoreChain invalid block hash at index %d height %d", i, blk.Height)
+			}
+			if i > 0 {
+				prev := blocks[i-1]
+				if blk.Height != prev.Height+1 {
+					return fmt.Errorf("chain: RestoreChain non-contiguous heights at index %d (prev %d, this %d)",
+						i, prev.Height, blk.Height)
+				}
+				if blk.PrevHash != prev.Hash {
+					return fmt.Errorf("chain: RestoreChain broken hash link at index %d height %d", i, blk.Height)
+				}
+			}
+		}
 	}
 	if len(blocks) == 0 {
 		return nil
 	}
-	for i, blk := range blocks {
-		if blk == nil {
-			return fmt.Errorf("chain: RestoreChain encountered nil block at index %d", i)
-		}
-		if want := computeBlockHash(blk); blk.Hash != want {
-			return fmt.Errorf("chain: RestoreChain invalid block hash at index %d height %d", i, blk.Height)
-		}
-		if i > 0 {
-			prev := blocks[i-1]
-			if blk.Height != prev.Height+1 {
-				return fmt.Errorf("chain: RestoreChain non-contiguous heights at index %d (prev %d, this %d)",
-					i, prev.Height, blk.Height)
-			}
-			if blk.PrevHash != prev.Hash {
-				return fmt.Errorf("chain: RestoreChain broken hash link at index %d height %d", i, blk.Height)
-			}
-		}
-	}
+	bp.installChainLocked(blocks)
+	return nil
+}
+
+// installChainLocked makes checked blocks (at least one) the producer's chain:
+// RestoreChain and RestoreVerifiedChain. bp.mu must be held and the chain
+// empty.
+func (bp *BlockProducer) installChainLocked(blocks []*Block) {
 	bp.chain = blocks
 	tip := blocks[len(blocks)-1]
 	bp.tipHeight.Store(tip.Height)
@@ -982,7 +992,6 @@ func (bp *BlockProducer) RestoreChain(blocks []*Block) error {
 	// admission path (which never takes bp.mu) is ready before the first
 	// block is produced or appended. No-op without an activation height.
 	bp.ensurePoEHistoryLocked()
-	return nil
 }
 
 // Headers returns block headers for a range of heights.
@@ -990,10 +999,8 @@ func (bp *BlockProducer) Headers(from, to uint64) []BlockHeader {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
 	var out []BlockHeader
-	for _, b := range bp.chain {
-		if b.Height >= from && b.Height <= to {
-			out = append(out, b.Header())
-		}
+	for _, b := range bp.blockRangeLocked(from, to, 0) {
+		out = append(out, b.Header())
 	}
 	return out
 }

@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/blackbeardONE/QSDM/pkg/producerpolicy"
@@ -43,6 +44,15 @@ func (bp *BlockProducer) SetProducerTransition(p *producerpolicy.Transition) err
 // from_height-1 must carry the epoch's checkpoint hash and block from_height
 // must extend it.
 func validateTransitionBlock(epochs []producerpolicy.Epoch, b *Block) error {
+	if err := checkTransitionSchedule(epochs, b); err != nil {
+		return err
+	}
+	return VerifyBlockSignature(b)
+}
+
+// checkTransitionSchedule is validateTransitionBlock without the signature
+// verification: the checkpoints and the producer the schedule requires.
+func checkTransitionSchedule(epochs []producerpolicy.Epoch, b *Block) error {
 	if b == nil {
 		return fmt.Errorf("chain: nil transition block")
 	}
@@ -67,7 +77,7 @@ func validateTransitionBlock(epochs []producerpolicy.Epoch, b *Block) error {
 	} else if b.ProducerAuth.Signed() && b.ProducerID != epochs[0].ProducerID {
 		return fmt.Errorf("%w: signed historical producer %q", ErrExternalProducerNotAuthorized, b.ProducerID)
 	}
-	return VerifyBlockSignature(b)
+	return nil
 }
 
 // finalCheckpointHeight is the last pinned hand-over checkpoint (version 1:
@@ -79,6 +89,8 @@ func finalCheckpointHeight(epochs []producerpolicy.Epoch) uint64 {
 // ValidateProducerTransitionChain authenticates a complete genesis-to-tip
 // journal before startup is allowed to replay or repair persisted state. It is
 // a no-op for nodes using the original flat allowlist policy.
+// VerifyProducerTransitionChain also returns what it verified, so that
+// RestoreVerifiedChain does not verify it again.
 func (bp *BlockProducer) ValidateProducerTransitionChain(blocks []*Block) error {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
@@ -91,26 +103,47 @@ func (bp *BlockProducer) validateProducerTransitionChainLocked(blocks []*Block) 
 	}
 	epochs := bp.producerEpochs
 	if len(blocks) == 0 || blocks[0] == nil || blocks[0].Height != 0 || blocks[0].PrevHash != "" {
-		return fmt.Errorf("chain: producer transition requires history starting at genesis")
+		return errTransitionNoGenesis
 	}
 	if blocks[len(blocks)-1] == nil || blocks[len(blocks)-1].Height < finalCheckpointHeight(epochs) {
-		return fmt.Errorf("chain: producer transition requires the complete approved checkpoint")
+		return errTransitionIncomplete
 	}
 	for i, b := range blocks {
-		if b == nil || b.Height != uint64(i) {
-			return fmt.Errorf("chain: producer transition history is not contiguous at index %d", i)
+		var prev *Block
+		if i > 0 {
+			prev = blocks[i-1]
 		}
-		if b.Hash != computeBlockHash(b) {
-			return fmt.Errorf("chain: producer transition invalid block hash at height %d", b.Height)
-		}
-		if i > 0 && b.PrevHash != blocks[i-1].Hash {
-			return fmt.Errorf("chain: producer transition broken linkage at height %d", b.Height)
-		}
-		if err := validateTransitionBlock(epochs, b); err != nil {
+		if err := verifyTransitionChainBlock(epochs, prev, b, uint64(i)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+var (
+	errTransitionNoGenesis  = errors.New("chain: producer transition requires history starting at genesis")
+	errTransitionIncomplete = errors.New("chain: producer transition requires the complete approved checkpoint")
+)
+
+// verifyTransitionChainBlock authenticates b as the block at index i of a
+// chain that starts at genesis, after prev (nil at index 0): its height, its
+// hash, its link to prev, the producer schedule and its signature. The hash
+// is computed once; the signature check relies on that comparison instead of
+// computing it again.
+func verifyTransitionChainBlock(epochs []producerpolicy.Epoch, prev, b *Block, i uint64) error {
+	if b == nil || b.Height != i {
+		return fmt.Errorf("chain: producer transition history is not contiguous at index %d", i)
+	}
+	if b.Hash != computeBlockHash(b) {
+		return fmt.Errorf("chain: producer transition invalid block hash at height %d", b.Height)
+	}
+	if prev != nil && b.PrevHash != prev.Hash {
+		return fmt.Errorf("chain: producer transition broken linkage at height %d", b.Height)
+	}
+	if err := checkTransitionSchedule(epochs, b); err != nil {
+		return err
+	}
+	return verifyBlockSignature(b, true)
 }
 
 // checkTransitionExtensionLocked prevents any suffix from being accepted unless

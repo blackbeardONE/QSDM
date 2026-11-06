@@ -98,6 +98,23 @@ attempt to retroactively enumerate that history.
 
 ### Changed
 
+- **2026-11-06: a node starts about six times faster in a third of the
+  memory, from the next release.** A start verifies each block's ML-DSA-87
+  signature once instead of twice, on every core, and computes each block
+  hash once instead of five times. Once a signature is verified, the node
+  keeps it only in its journal (`qsdm_chain.ndjson`), with the line's
+  position and a 16-byte digest in memory: `GET /api/v1/chain/blocks` and
+  the peer-to-peer catch-up read it back and check it against that digest
+  before they send the block, and refuse rather than send a block whose line
+  changed. Finding a block by its height is now an index lookup instead of a
+  walk of the whole chain under the producer's lock (mining work, block
+  requests from peers, the chain API). On a copy of the public chain at
+  height 880,376 a start took about 30 seconds instead of about 3 minutes and
+  peaked at 1.9 GiB instead of 5.8 GiB, and every block is served byte for
+  byte as before. No consensus change. The producer and the full-node
+  release get this with their next releases;
+  [Run a full node](QSDM/docs/docs/RUN_A_FULL_NODE.md#memory) has the
+  figures.
 - **2026-11-06: QSDM Wallet extension 0.6.0, and browsers may read the
   public API.** The extension's toolbar popup is now a full wallet: the CELL
   balance with hide and refresh, CELL sent from this browser that is not in a

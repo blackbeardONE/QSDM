@@ -31,6 +31,13 @@ var ErrBlockUnsigned = errors.New("chain: block has no producer signature")
 // not verify against its ProducerID.
 var ErrBlockBadSignature = errors.New("chain: block producer signature invalid")
 
+// ErrBlockSignatureStripped is returned for a block whose producer signature
+// was verified when its journal was loaded and then dropped from memory
+// (LoadVerifiedJournal, block_sig_journal.go). Such a block is signed, but
+// it can be neither verified nor encoded: RelayBlocks reads its signature
+// back from the journal.
+var ErrBlockSignatureStripped = errors.New("chain: block producer signature is not held in memory (verified at load; it is read back from the journal)")
+
 // requireSignedBlocks gates inbound enforcement for rolling upgrades.
 // Invalid signatures are always fatal.
 var requireSignedBlocks atomic.Bool
@@ -130,10 +137,22 @@ func SignBlock(b *Block, signer BFTSigner) error {
 }
 
 // VerifyBlockSignature checks a block's producer signature. An attached
-// signature is always verified; the policy flag governs unsigned blocks.
+// signature is always verified; the policy flag governs unsigned blocks. A
+// block whose verified signature was dropped from memory returns
+// ErrBlockSignatureStripped.
 func VerifyBlockSignature(b *Block) error {
+	return verifyBlockSignature(b, false)
+}
+
+// verifyBlockSignature is VerifyBlockSignature. hashChecked reports that the
+// caller has just compared b.Hash with computeBlockHash(b), which is then not
+// computed again.
+func verifyBlockSignature(b *Block, hashChecked bool) error {
 	if b == nil {
 		return errors.New("chain: nil block")
+	}
+	if b.ProducerAuth.Stripped() {
+		return ErrBlockSignatureStripped
 	}
 	if !b.ProducerAuth.Signed() {
 		if SignedBlocksRequiredAt(b.Height) {
@@ -141,8 +160,10 @@ func VerifyBlockSignature(b *Block) error {
 		}
 		return nil
 	}
-	if want := computeBlockHash(b); want != b.Hash {
-		return fmt.Errorf("%w: block hash does not match its contents", ErrBlockBadSignature)
+	if !hashChecked {
+		if want := computeBlockHash(b); want != b.Hash {
+			return fmt.Errorf("%w: block hash does not match its contents", ErrBlockBadSignature)
+		}
 	}
 	if err := verifyAuth(b.ProducerAuth, blockSigDigest(b), b.ProducerID); err != nil {
 		return fmt.Errorf("%w: %v", ErrBlockBadSignature, err)
