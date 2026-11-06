@@ -83,6 +83,7 @@ type EnrollmentAwareApplier struct {
 	tasks      *TaskStateStore
 	streams    *StreamStateStore
 	recovery   *RecoveryCapsuleStateStore
+	tokens     *QSDM20StateStore
 
 	mu         sync.RWMutex
 	heightFn   func() uint64
@@ -267,6 +268,20 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		}
 		return recovery.ApplyEconomicTx(tx, a.accounts)
 	}
+	if tx.ContractID == QSDM20ContractID {
+		// QSDM-20 tokens (qsdm20.go). Refused below the activation height
+		// and always while no height is set, before anything is charged; a
+		// token transaction never falls through to the plain transfer path.
+		tokens := a.QSDM20StateStore()
+		if tokens == nil {
+			return ErrQSDM20StateNotWired
+		}
+		h, err := a.qsdm20Height()
+		if err != nil {
+			return err
+		}
+		return tokens.ApplyEconomicTxAtHeight(tx, a.accounts, h)
+	}
 	if tx.ContractID == WalletTransferContractID {
 		return ApplyWalletTransferTx(a.accounts, tx)
 	}
@@ -337,6 +352,61 @@ func (a *EnrollmentAwareApplier) RecoveryCapsuleStateStore() *RecoveryCapsuleSta
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.recovery
+}
+
+// SetQSDM20StateStore installs (or clears) the QSDM-20 token state store.
+// Token transactions fail closed until a store is attached.
+func (a *EnrollmentAwareApplier) SetQSDM20StateStore(tokens *QSDM20StateStore) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.tokens = tokens
+}
+
+// QSDM20StateStore returns the configured QSDM-20 token state store.
+func (a *EnrollmentAwareApplier) QSDM20StateStore() *QSDM20StateStore {
+	if a == nil {
+		return nil
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.tokens
+}
+
+// NextBlockHeight is the height of the block the next applied transaction
+// belongs to, from the installed height source (normally tip + 1). ok is
+// false when no source is installed.
+func (a *EnrollmentAwareApplier) NextBlockHeight() (uint64, bool) {
+	if a == nil {
+		return 0, false
+	}
+	return a.currentHeight()
+}
+
+// qsdm20Height is the height a token transaction is applied at, or the
+// refusal: switched off, below the activation height, or no height source.
+func (a *EnrollmentAwareApplier) qsdm20Height() (uint64, error) {
+	return qsdm20HeightFrom(a.NextBlockHeight)
+}
+
+// CheckQSDM20Tx reports whether tx would apply in the next block on the
+// current state: the activation height, every stateless check and the
+// signature, the token rules, and the sender's CELL account (it must exist,
+// carry tx's nonce and cover the fee). It changes nothing.
+func (a *EnrollmentAwareApplier) CheckQSDM20Tx(tx *mempool.Tx) error {
+	if a == nil {
+		return errors.New("chain: nil EnrollmentAwareApplier")
+	}
+	tokens := a.QSDM20StateStore()
+	if tokens == nil {
+		return ErrQSDM20StateNotWired
+	}
+	if _, err := a.qsdm20Height(); err != nil {
+		return err
+	}
+	return tokens.CheckEconomicTx(tx, a.accounts)
 }
 
 // SetGovApplier installs (or clears) the governance applier.
@@ -435,6 +505,17 @@ func (a *EnrollmentAwareApplier) StateRoot() string {
 		h.Write([]byte(root))
 		h.Write([]byte("\nwallet-recovery:"))
 		h.Write([]byte(recovery.StateRoot()))
+		root = hex.EncodeToString(h.Sum(nil))
+	}
+	// QSDM-20 tokens join the root once the first token exists, so every
+	// block before it keeps its root.
+	tokens := a.QSDM20StateStore()
+	if tokens != nil && tokens.Count() > 0 {
+		h := sha256.New()
+		h.Write([]byte("state:"))
+		h.Write([]byte(root))
+		h.Write([]byte("\nqsdm-20:"))
+		h.Write([]byte(tokens.StateRoot()))
 		root = hex.EncodeToString(h.Sum(nil))
 	}
 	if enrollmentStateRootActiveAt(a.rootHeight.Load()) {
@@ -590,6 +671,10 @@ var (
 	// ErrRecoveryCapsuleStateNotWired is returned when a signed recovery
 	// capsule transaction reaches a node that has not installed its store.
 	ErrRecoveryCapsuleStateNotWired = errors.New("chain: wallet recovery capsule tx received but no RecoveryCapsuleStateStore is wired")
+
+	// ErrQSDM20StateNotWired is returned when a QSDM-20 token transaction
+	// reaches a node that has not installed its store.
+	ErrQSDM20StateNotWired = errors.New("chain: QSDM-20 token tx received but no QSDM20StateStore is wired")
 )
 
 // Compile-time interface assertions.
@@ -647,6 +732,7 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 	liveTasks := a.tasks
 	liveStreams := a.streams
 	liveRecovery := a.recovery
+	liveTokens := a.tokens
 	clone.heightFn = a.heightFn
 	a.mu.RUnlock()
 	if liveTasks != nil {
@@ -657,6 +743,9 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 	}
 	if liveRecovery != nil {
 		clone.recovery = liveRecovery.ChainReplayClone().(*RecoveryCapsuleStateStore)
+	}
+	if liveTokens != nil {
+		clone.tokens = liveTokens.ChainReplayClone().(*QSDM20StateStore)
 	}
 	if liveSlasher != nil {
 		sm, ok := sharedMutator.(SlasherStateMutator)
@@ -752,6 +841,16 @@ func (a *EnrollmentAwareApplier) RestoreFromChainReplay(from ChainReplayApplier)
 	}
 	if liveRecovery != nil {
 		if err := liveRecovery.RestoreFromChainReplay(otherRecovery); err != nil {
+			return err
+		}
+	}
+	liveTokens := a.QSDM20StateStore()
+	otherTokens := other.QSDM20StateStore()
+	if (liveTokens == nil) != (otherTokens == nil) {
+		return errors.New("chain: RestoreFromChainReplay QSDM-20 token state presence mismatch")
+	}
+	if liveTokens != nil {
+		if err := liveTokens.RestoreFromChainReplay(otherTokens); err != nil {
 			return err
 		}
 	}

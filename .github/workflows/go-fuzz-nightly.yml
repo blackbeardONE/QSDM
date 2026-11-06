@@ -41,6 +41,8 @@ jobs:
           - { pkg: pkg/chain, target: FuzzStreamEd25519Retirement }
           - { pkg: pkg/chain, target: FuzzDecodeRecoveryCapsuleTx }
           - { pkg: pkg/chain, target: FuzzVerifyRecoveryCapsuleTx }
+          - { pkg: pkg/chain, target: FuzzDecodeQSDM20Payload }
+          - { pkg: pkg/chain, target: FuzzVerifyQSDM20Tx }
           - { pkg: pkg/chain, target: FuzzDecodeTaskActionTx }
           - { pkg: pkg/chain, target: FuzzVerifyTaskActionSignature }
           - { pkg: pkg/chain, target: FuzzValidateUntrustedEvidence }
