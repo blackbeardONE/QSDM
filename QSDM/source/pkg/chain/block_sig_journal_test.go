@@ -412,8 +412,10 @@ func TestRelayBlocksRefusesAChangedJournal(t *testing.T) {
 	})
 }
 
-// TestRelayBlocksAfterAppends: blocks appended after the startup load keep
-// their signatures and relay from memory, next to the stripped ones.
+// TestRelayBlocksAfterAppends: with the journal not attached to the producer
+// (KeepSignaturesInJournal, block_sig_append_test.go), blocks appended after
+// the startup load keep their signatures and relay from memory, next to the
+// stripped ones.
 func TestRelayBlocksAfterAppends(t *testing.T) {
 	f := newJournalFixture(t, 14)
 	const boot = 10

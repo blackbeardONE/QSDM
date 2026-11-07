@@ -39,10 +39,16 @@ CHAIN_FILES=(qsdm_chain.ndjson qsdm_accounts.json qsdm_enrollment.json qsdm_stak
 DEFAULT_API=https://api.qsdm.tech/api/v1
 DEFAULT_WEBSITE=https://qsdm.tech/fullnode.html
 GITHUB_DOWNLOADS=https://github.com/blackbeardONE/QSDM/releases/download
-# What today's full-node release needs to start at about 1 020 000 blocks: about 10.4 GiB, and about
-# 1.6 GiB more for every 100 000 blocks after that (RUN_A_FULL_NODE.md, "Memory"). Revisit with the
-# next full-node release, which needs less.
-NEED_MEM_KB=$((11 * 1024 * 1024))
+# The memory a full-node release needs (RUN_A_FULL_NODE.md, "Memory"). fullnode-rc1019 loads the whole chain
+# with its signatures: a start needs about 10.4 GiB at 1 020 000 blocks and about 1.6 GiB more for every
+# 100 000 blocks after that. The releases after it keep verified signatures in the journal: the import and a
+# start each peak at about 2 GiB at 880 376 blocks, and a running node holds about 0.5 GiB more for every
+# 100 000 blocks it appends until its next restart. 5.5 GiB lets a "6 GB" server (about 5.8 GiB) install them.
+RC1019_RELEASE=hardened-legacy-20261019-d7ffcd4-hl2-edge-go1269-ids-pqe-rc1019
+RC1019_NEED_MEM_KB=$((11 * 1024 * 1024))
+NEED_MEM_KB=$((11 * 1024 * 1024 / 2))
+# Where MemTotal is read. The installer's test points QSDM_FULLNODE_MEMINFO at a made-up file.
+MEMINFO=${QSDM_FULLNODE_MEMINFO:-/proc/meminfo}
 NEED_DISK_KB=$((15 * 1000 * 1000))
 
 # Options.
@@ -1100,13 +1106,18 @@ detect_import_state() {
 }
 
 check_resources() {
-  local mem_kb avail_kb
+  local mem_kb avail_kb need_kb=$NEED_MEM_KB
+  local why="Importing the snapshot and starting the node each need about 2 GB at 880 376 blocks, and a running node holds about 0.5 GB more for every 100 000 blocks it adds until it restarts."
   if [[ $SKIP_RESOURCE_CHECK == 1 ]]; then
     return 0
   fi
-  mem_kb=$(awk '/^MemTotal:/ { print $2; exit }' /proc/meminfo 2>/dev/null || true)
-  if [[ $mem_kb =~ ^[0-9]+$ ]] && ((mem_kb < NEED_MEM_KB)); then
-    stop "This server has about $((mem_kb / 1024 / 1024)) GB of memory. A full node needs more: the import, and every start, load the whole chain into memory. A start needs about 10.4 GB at 1 020 000 blocks, and about 1.6 GB more for every 100 000 blocks after that." \
+  if [[ $RELEASE == "$RC1019_RELEASE" ]]; then
+    need_kb=$RC1019_NEED_MEM_KB
+    why="This release loads the whole chain into memory: a start needs about 10.4 GB at 1 020 000 blocks, and about 1.6 GB more for every 100 000 blocks after that."
+  fi
+  mem_kb=$(awk '/^MemTotal:/ { print $2; exit }' "$MEMINFO" 2>/dev/null || true)
+  if [[ $mem_kb =~ ^[0-9]+$ ]] && ((mem_kb < need_kb)); then
+    stop "This server has about $((mem_kb / 1024 / 1024)) GB of memory. A full node needs more. $why" \
       "Use a server with more memory (\"What you need\" in RUN_A_FULL_NODE.md has the figures). If you are sure, run the same command with --skip-resource-check."
   fi
   if [[ $IMPORT_DONE == 1 ]] || compgen -G "$DL/qsdm-snapshot-*" >/dev/null; then

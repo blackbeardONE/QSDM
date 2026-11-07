@@ -98,6 +98,90 @@ func TestHL1RelayPathsServeStrippedBlocks(t *testing.T) {
 	}
 }
 
+// TestHL1RelayPathsServeAppendedBlocks: on a running producer under a
+// producer transition, the blocks it sealed since its start keep their
+// signatures only in the journal once the next block is durable (main()
+// attaches the journal: chain.KeepSignaturesInJournal). Both relay paths
+// serve every block as exactly its journal line and as it was sealed, and a
+// line changed under the running node is refused, never served wrong.
+func TestHL1RelayPathsServeAppendedBlocks(t *testing.T) {
+	dir := t.TempDir()
+	policy, repl := hl1rTransitionPrefix(t, dir, 2)
+	c := hl1rStartCore(t, dir, policy, repl)
+	start := c.st.producer.TipHeight() // the tip the start restored keeps its signature
+	sealed := map[uint64][]byte{}
+	for i := 0; i < 6; i++ {
+		b := c.seal()
+		sealed[b.Height] = mustJSON(t, b)
+	}
+	tip := c.st.producer.TipHeight()
+	for _, b := range c.st.producer.AllBlocks() {
+		want := b.Height < start || (b.Height > start && b.Height < tip)
+		if b.ProducerAuth.Stripped() != want || (want && len(b.ProducerAuth.Signature) != 0) {
+			t.Fatalf("block %d (start %d, tip %d): stripped %v, want %v", b.Height, start, tip, b.ProducerAuth.Stripped(), want)
+		}
+	}
+	durable := &hl1DurableTip{}
+	durable.Store(tip)
+	journal := filepath.Join(dir, hl1JournalName)
+	data, err := os.ReadFile(journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := bytes.Split(bytes.TrimSuffix(data, []byte("\n")), []byte("\n"))
+	if uint64(len(lines)) != tip+1 {
+		t.Fatalf("journal holds %d lines, want %d", len(lines), tip+1)
+	}
+	probe := blocksProbeFromProducer(c.st.producer, durable)
+	provider := hl1BlockProvider(c.st.producer, durable)
+	raw := probe.BlocksInRange(0, 100)
+	served := provider(0, 100, 64)
+	if uint64(len(raw)) != tip+1 || uint64(len(served)) != tip+1 {
+		t.Fatalf("/chain/blocks served %d blocks, the P2P provider %d, want %d", len(raw), len(served), tip+1)
+	}
+	for i := range raw {
+		p2p := mustJSON(t, served[i])
+		if !bytes.Equal(raw[i], lines[i]) || !bytes.Equal(p2p, lines[i]) {
+			t.Fatalf("block %d is not served as its journal line", i)
+		}
+		if want, ok := sealed[uint64(i)]; ok && !bytes.Equal(p2p, want) {
+			t.Fatalf("block %d is not served as it was sealed", i)
+		}
+		if err := chain.VerifyBlockSignature(served[i]); err != nil {
+			t.Fatalf("P2P block %d does not verify: %v", i, err)
+		}
+	}
+
+	// A signature byte changed in the line of an appended, stripped block.
+	bad := start + 2
+	at := 0
+	for _, l := range lines[:bad] {
+		at += len(l) + 1
+	}
+	line := data[at : at+len(lines[bad])]
+	sig := bytes.Index(line, []byte(`"signature":"`)) + len(`"signature":"`) + 20
+	if line[sig] == 'A' {
+		line[sig] = 'B'
+	} else {
+		line[sig] = 'A'
+	}
+	if err := os.WriteFile(journal, data, 0o644); err != nil { // the core still holds it open
+		t.Fatal(err)
+	}
+	if got := probe.BlocksInRange(0, 100); uint64(len(got)) != bad {
+		t.Fatalf("/chain/blocks served %d blocks, want the %d before the changed line", len(got), bad)
+	}
+	if got := provider(0, 100, 64); uint64(len(got)) != bad {
+		t.Fatalf("P2P provider served %d blocks, want %d", len(got), bad)
+	}
+	if got := provider(bad, 100, 64); len(got) != 0 {
+		t.Fatalf("P2P provider served %d blocks from the changed line", len(got))
+	}
+	if got := provider(tip, tip, 1); len(got) != 1 || !bytes.Equal(mustJSON(t, got[0]), lines[tip]) {
+		t.Fatal("the tip is not served")
+	}
+}
+
 // TestHL1RelayPathsRefuseAChangedJournal: a stripped block whose journal line
 // no longer holds its verified signature is not served by either path; the
 // blocks before it are.

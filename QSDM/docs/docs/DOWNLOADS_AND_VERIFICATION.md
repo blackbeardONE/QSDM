@@ -25,7 +25,7 @@ validator and home gateway builds) come with their own `SHA256SUMS` files.
 > [!NOTE]
 > The Core validator package on the download page (v0.4.7-rc.9) is an operator
 > build. It is not the release that runs the public pilot network today
-> (`hardened-legacy-20261106-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1106`, see [Network status](NETWORK_STATUS.md)).
+> (`hardened-legacy-20261107-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1107`, see [Network status](NETWORK_STATUS.md)).
 
 > [!IMPORTANT]
 > **Upgrading from Hive 1.4.20 (Windows) or 1.4.17 (Linux):** install 1.4.22 by

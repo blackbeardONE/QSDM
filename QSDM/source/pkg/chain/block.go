@@ -192,10 +192,16 @@ type BlockProducer struct {
 	// Entanglement parent rules (poe.go). Built only while a PoE
 	// activation height is configured; it has its own lock.
 	poeHist poeHistory
-	// journalPath is the journal that holds the producer signatures
-	// LoadVerifiedJournal dropped from this chain's blocks (RelayBlocks
-	// reads them back). Set by RestoreVerifiedChain; guarded by mu.
+	// journalPath is the journal that holds the producer signatures dropped
+	// from this chain's blocks (RelayBlocks reads them back): set by
+	// RestoreVerifiedChain for the signatures LoadVerifiedJournal dropped,
+	// or by KeepSignaturesInJournal while no signature is dropped yet.
+	// Guarded by mu.
 	journalPath string
+	// appendTail is the last block an attached journal wrote and located
+	// (KeepSignaturesInJournal, block_sig_journal.go): its signature is
+	// dropped once the next block is durable right after it. Guarded by mu.
+	appendTail journaledBlock
 }
 
 // ProducerConfig configures the block producer.
@@ -824,7 +830,8 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 }
 
 // GetBlock returns a block by height: an index computation on the contiguous
-// chain, not a walk (block_range.go). A block that LoadVerifiedJournal loaded
+// chain, not a walk (block_range.go). A block that LoadVerifiedJournal loaded,
+// or that was appended and journaled before the tip (KeepSignaturesInJournal),
 // may not hold its producer signature in memory: relay blocks with
 // RelayBlocks.
 func (bp *BlockProducer) GetBlock(height uint64) (*Block, bool) {

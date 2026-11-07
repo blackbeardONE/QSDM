@@ -49,7 +49,7 @@ The manual steps below are what the script does. Use them if you prefer to do it
 | | |
 |---|---|
 | OS and CPU | Linux on x86_64 |
-| RAM | 16 GB with today's full-node release: it needs about 10.4 GiB at 1 020 000 blocks and about 1.6 GiB more for every 100 000 blocks after that (11.6 days at 10 seconds per block). The installer stops below 11 GiB. See [Memory](#memory). |
+| RAM | 6 GB for fullnode-rc1107: the import and a start each peak at about 2 GiB at 880 376 blocks, and a running node holds about 0.5 GiB more for every 100 000 blocks it appends until its next restart (11.6 days at 10 seconds per block). The installer stops below 5.5 GiB (below 11 GiB for the older fullnode-rc1019). See [Memory](#memory). |
 | Disk | about 15 GB during setup (download, unpacked snapshot, state), about 6 GB afterwards, growing with the chain |
 | Network | outbound HTTPS to `api.qsdm.tech`; no inbound port |
 | Tools | `curl`, `sha256sum`, `tar`, Python 3; `qsdmcli` for the release signature check (optional, see step 2) |
@@ -60,8 +60,8 @@ The import and every start load the whole chain into memory, and the node keeps 
 memory a node needs grows with the chain. Go's garbage collector lets the heap grow to about twice what is in use
 before it collects, so the peak is about twice the heap, and a running node can use about as much as a start.
 
-The code on main is lighter in five ways that come with the next full-node release. Today's release, the one on
-qsdm.tech/fullnode.html that the installer installs, has none of them:
+fullnode-rc1107 (7 November 2026), the release qsdm.tech/fullnode.html names and the installer installs, is lighter
+than fullnode-rc1019 in five ways:
 
 - it shares the values that repeat across blocks in memory (the producer's public key, which every block it signs
   carries, and repeated strings);
@@ -82,11 +82,11 @@ qsdm.tech/fullnode.html that the installer installs, has none of them:
   offline `--hl1-tail-replay` read the journal the same way.
 
 Measured with `cmd/qsdm/restore_bench_test.go` on a copy of the public chain at height 880 376 (880 377 blocks, a
-5.0 GB journal), with Go's default settings, on Windows x86-64 with a 16-thread laptop CPU; the import from the next
-release on a slower desktop (two Xeon E5-2670 from 2012, 32 threads, 32 GB, Windows x86-64) with Go on 4 threads,
-where the import before this change took 204 seconds and peaked at 5.5 GiB:
+5.0 GB journal), with Go's default settings, on Windows x86-64 with a 16-thread laptop CPU; the import with
+fullnode-rc1107's code on a slower desktop (two Xeon E5-2670 from 2012, 32 threads, 32 GB, Windows x86-64) with Go
+on 4 threads, where the import before its last change took 204 seconds and peaked at 5.5 GiB:
 
-| | Today's release | From the next release |
+| | fullnode-rc1019 | fullnode-rc1107 |
 |---|---:|---:|
 | Start (the restore every start runs), peak | 8.2 GiB | 1.9 GiB |
 | Go heap after the start | 4.1 GiB | 1.0 GiB |
@@ -100,7 +100,7 @@ where the import before this change took 204 seconds and peaked at 5.5 GiB:
 
 The start and the import use every core, so they take longer on a server with fewer: on 1 thread the import took
 about 3.6 minutes on the desktop and peaked at 2.0 GiB (before this change, which checked every signature on one
-core anyway, 3.3 minutes and 5.5 GiB); on 32 threads it took 43 seconds. With the next release the import holds
+core anyway, 3.3 minutes and 5.5 GiB); on 32 threads it took 43 seconds. With fullnode-rc1107 the import holds
 the chain the way a start holds it, verified signatures in the journal only: on the desktop, on 4 threads, the
 import and a start both peaked at 1.8 GiB. So the import no longer sets the memory a server needs; a start, which
 every restart runs, and the running node do. The import rows were measured with the harness's
@@ -109,9 +109,12 @@ files into the state directory and hashes them) or the checkpoint pin; the stagi
 height were not measured. The last three rows are derived, not measured at a second height: from the sizes of the
 values that the newest 80 000 restored blocks keep in memory, times the measured ratio of peak to heap (about 2).
 A running node also holds the signatures of the blocks it appended since its last start: about 0.5 GiB of heap
-per 100 000 blocks. At 10 seconds per block, 100 000 blocks take 11.6 days.
+per 100 000 blocks. At 10 seconds per block, 100 000 blocks take 11.6 days. The release after fullnode-rc1107
+keeps them only in the journal too, once the next block is written there: in a test that appends 2 000 signed
+blocks, each block kept about 0.6 KB of heap instead of about 5.4 KB.
 
-To run today's release in less memory, you can set Go's soft memory limit for the service: run
+To run fullnode-rc1019 in less memory, upgrade it to fullnode-rc1107 (see [Keeping up to date](#keeping-up-to-date)),
+or set Go's soft memory limit for the service: run
 `sudo systemctl edit qsdm-follower`, add `Environment=GOMEMLIMIT=...` under `[Service]`, then
 `sudo systemctl restart qsdm-follower`. Choose a value below the server's memory and well above the heap the node
 holds: 4.1 GiB at height 880 376 plus about 0.8 GiB per 100 000 blocks (about 5.2 GiB at 1 020 000). For example,
@@ -206,8 +209,8 @@ echo "exit $?"
 
 The import verifies everything again against your pinned checkpoint: the hash chain from genesis, the producer's
 signature on the checkpoint block, the producer transition and the state root. It takes several minutes and about
-as much memory as a start: 8.3 GiB for the snapshot at height 880 376 with today's release, and about 1.8 GiB from
-the next one (see [Memory](#memory)).
+as much memory as a start: about 1.8 GiB for the snapshot at height 880 376 with fullnode-rc1107 (8.3 GiB with
+fullnode-rc1019; see [Memory](#memory)).
 [Verified snapshot bootstrap](SNAPSHOT_BOOTSTRAP.md#3-trust-model) lists every check.
 
 - **Exit 0** prints a report with `"authorized_by": "producer_transition"` and three installed files. Then delete
@@ -278,4 +281,14 @@ the one that is right.
 
 New node releases and fresh snapshots are announced on qsdm.tech/fullnode.html. The snapshot is only needed for the
 first start; afterwards the node keeps its own copy of the chain. To upgrade the binary, verify the new release as in
-step 2, stop the node, replace `/opt/qsdm-follower/qsdm` and start it again.
+step 2, stop the node, replace `/opt/qsdm-follower/qsdm` and start it again:
+
+```bash
+sudo systemctl stop qsdm-follower
+sudo install -m 0755 ~/qsdm-release/qsdm-follower-<release>/qsdm /opt/qsdm-follower/qsdm
+sudo systemctl start qsdm-follower
+```
+
+A node installed from fullnode-rc1019 upgrades to fullnode-rc1107 this way: its configuration and state directory
+stay as they are, and its next start loads the chain in about a quarter of the memory. Check step 7 again
+afterwards; `GET /api/v1/status` then names the new release.

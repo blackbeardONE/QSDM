@@ -31,10 +31,14 @@ import (
 // ML-DSA-87 signature), and then drops the signature of every block but the
 // last. What stays is the block's public key (one copy per producer, shared),
 // the position of its journal line and the first 16 bytes of the signature's
-// SHA-256 (strippedSignature, a 32-byte allocation). Blocks appended later
-// keep their signatures until the next restart. A block is never changed
+// SHA-256 (strippedSignature, a 32-byte allocation). A block is never changed
 // once LoadVerifiedJournal returns it: blocks are encoded outside the
 // producer lock.
+//
+// The blocks a node appends while it runs lose their signatures the same
+// way, one block behind the tip, once the journal holds them durably
+// (KeepSignaturesInJournal, at the end of this file). They are not changed
+// either: the chain gets a stripped copy in their place.
 //
 // A stripped block:
 //   - is Signed (it is: the signature was verified and is in the journal);
@@ -70,10 +74,10 @@ func signatureDigest(sig []byte) (d [16]byte) {
 }
 
 // Stripped reports whether a is the producer_auth of a block whose verified
-// signature is no longer in memory (LoadVerifiedJournal). Such an
-// authenticator is Signed, fails every verification with
-// ErrBlockSignatureStripped and does not encode; RelayBlocks reads its
-// signature back from the journal.
+// signature is no longer in memory (LoadVerifiedJournal, or
+// KeepSignaturesInJournal for an appended block). Such an authenticator is
+// Signed, fails every verification with ErrBlockSignatureStripped and does
+// not encode; RelayBlocks reads its signature back from the journal.
 func (a BFTWireAuth) Stripped() bool { return a.stripped != nil }
 
 // bftWireAuthFields is BFTWireAuth without its methods: its plain encoding.
@@ -316,12 +320,13 @@ func decodeJournalLine(epochs []producerpolicy.Epoch, keys *producerKeys, path s
 
 // stripSignature drops b's signature from memory, recording where it is:
 // at.offset and at.length locate b's journal line, and at.digest is the
-// digest of the signature (decodeJournalLine, CheckJournal). Only
-// LoadVerifiedJournal and CheckJournal call it, on a block they have read
-// and not yet returned: LoadVerifiedJournal on a block it has verified,
-// CheckJournal on every block but the last, verified or not (only its
-// Verified vouches for a block). A block without a signature is left as it
-// is.
+// digest of the signature (decodeJournalLine, CheckJournal, journaled). It is
+// only ever called on a block nothing else holds yet: by LoadVerifiedJournal
+// and CheckJournal on a block they have read and not yet returned
+// (LoadVerifiedJournal on a block it has verified, CheckJournal on every
+// block but the last, verified or not: only its Verified vouches for a
+// block), and by dropSignatureLocked on the copy it is about to put in the
+// chain. A block without a signature is left as it is.
 func (b *Block) stripSignature(at strippedSignature) {
 	a := b.ProducerAuth
 	if len(a.PublicKey) == 0 || len(a.Signature) == 0 || a.stripped != nil {
@@ -333,8 +338,9 @@ func (b *Block) stripSignature(at strippedSignature) {
 // RelayBlocks returns the blocks whose heights lie in [from, to], in height
 // order (the first limit of them when limit is positive), each with its
 // producer signature: what GET /api/v1/chain/blocks and the P2P
-// block_request relay. A block whose signature LoadVerifiedJournal dropped
-// is replaced by a copy that carries the signature its journal line holds,
+// block_request relay. A block whose signature was dropped from memory (by
+// LoadVerifiedJournal, or after its append by KeepSignaturesInJournal) is
+// replaced by a copy that carries the signature its journal line holds,
 // once the line has been checked against it (readStrippedSignature). The
 // journal is opened only when such a block is in the range, once per call,
 // and closed before RelayBlocks returns: nothing holds it open between calls
@@ -417,4 +423,146 @@ func readStrippedSignature(f *os.File, b *Block, s *strippedSignature) (*Block, 
 	full := *b
 	full.ProducerAuth = BFTWireAuth{PublicKey: b.ProducerAuth.PublicKey, Signature: got.ProducerAuth.Signature}
 	return &full, nil
+}
+
+// Signatures of appended blocks.
+//
+// A block the node appends while it runs is in its chain (bp.chain) before
+// its journal line is written. ProduceBlock, and TryAppendExternalBlock for a
+// block from the producer, a peer (gossip, catch-up response, BFT commit) or
+// the HTTPS sync, append it under bp.mu, then run OnSealedBlock, the
+// persistence hook, with the seal lifecycle lock still held. The hook writes
+// and fsyncs the line (ChainJournal.Append, step H2), makes the block's
+// state durable (H3-H7), lets the served surfaces reach it (H9: the API and
+// the P2P provider serve nothing above the durable tip) and announces it
+// (H10: POL and the block gossip, which encodes the block it was handed).
+// The lifecycle lock makes the next append wait for all of that.
+//
+// KeepSignaturesInJournal attaches the journal to the producer: Append then
+// tells the producer where each block's line is once it is durable
+// (journaled), and the producer drops the signature of the block before it.
+// So block N-1 loses its signature during block N's step H2:
+//   - its own line has been durable since its own H2, and it was announced
+//     with its signature at its own H10, before block N existed;
+//   - block N's line starts right where block N-1's line ends, which shows
+//     that nothing wrote to the journal between the two appends;
+//   - the tip keeps its signature, as after LoadVerifiedJournal, and so does
+//     a block whose successor never becomes durable (a failed write or fsync
+//     tells the producer nothing, and the hook then stops the node).
+//
+// A block is never changed once it is in the chain: API handlers and P2P
+// providers take blocks from the chain under bp.mu and encode them outside
+// it. dropSignatureLocked builds a stripped copy and puts it in the block's
+// slot of the chain under bp.mu instead. The chain slice is the producer's
+// only index of its blocks (a height is an index computation into it,
+// block_range.go), so that slot is all that points at the block. A reader
+// that took the block before the swap holds a complete block that stays
+// complete, and the original is collected once the last such reader lets go
+// of it; a reader that takes it after the swap gets the copy, which only
+// RelayBlocks relays (it reads the signature back and checks it). Only
+// blocks appended while the node runs are swapped: the tip a start restored
+// keeps its signature until the next start, and the slots of the restored
+// blocks, which the restore's caller may still read, are never written.
+//
+// RelayBlocks reads every dropped signature from one file, journalPath:
+// attaching a journal at another path is refused, and a line in another
+// file, or one Append could not locate exactly, drops nothing. A node
+// without a journal, or that never attaches one, keeps every appended
+// block's signature in memory, as before.
+
+// journaledBlock is a block an attached journal wrote, with where its line
+// is and the digest of its signature (none for an unsigned block).
+type journaledBlock struct {
+	blk *Block
+	at  strippedSignature
+}
+
+// KeepSignaturesInJournal makes bp keep the producer signature of each block
+// it appends from now on only in j, once the next block is durable in j
+// right after it (see above). j must be the journal the persistence hook
+// appends bp's blocks to.
+//
+// It refuses, and nothing changes, when:
+//   - bp has no producer transition. Such a node loads its journal with every
+//     signature (LoadChainNDJSON: LoadVerifiedJournal needs a transition) and
+//     keeps them in memory while it runs, as before: no block of it is ever
+//     stripped, whatever reads it;
+//   - the signatures bp dropped at its start are in another file than j:
+//     RelayBlocks reads them all from one journal (journalPath).
+//
+// A producer that holds no dropped signature yet (a fresh chain, or one
+// restored by RestoreChain) takes j's path as its journalPath.
+func (bp *BlockProducer) KeepSignaturesInJournal(j *ChainJournal) error {
+	if bp == nil || j == nil {
+		return errors.New("chain.KeepSignaturesInJournal: nil producer or journal")
+	}
+	bp.mu.Lock()
+	switch {
+	case bp.producerTransition == nil:
+		bp.mu.Unlock()
+		return errors.New("chain.KeepSignaturesInJournal: no producer transition is configured (appended blocks keep their signatures in memory)")
+	case bp.journalPath != "" && bp.journalPath != j.path:
+		held := bp.journalPath
+		bp.mu.Unlock()
+		return fmt.Errorf("chain.KeepSignaturesInJournal: the signatures dropped at the start are in %s, not in %s (appended blocks keep their signatures in memory)", held, j.path)
+	}
+	bp.journalPath = j.path
+	bp.mu.Unlock()
+	// Not under bp.mu: Append holds j.mu when it calls journaled, which
+	// takes bp.mu.
+	j.mu.Lock()
+	j.keep = bp
+	j.mu.Unlock()
+	return nil
+}
+
+// journaled is ChainJournal.Append telling bp, with j.mu held, that the line
+// of blk in the journal at path is durable, at at if located. If the line of
+// the block before blk was located too and ends right where blk's line
+// starts, that block's signature is dropped (dropSignatureLocked). blk is then
+// remembered for the next line. Anything else drops nothing: a line Append
+// could not locate, a journal other than journalPath, a block that is not in
+// bp's chain, or a block or a line that does not follow the remembered one.
+func (bp *BlockProducer) journaled(path string, blk *Block, at strippedSignature, located bool) {
+	if blk == nil {
+		return
+	}
+	// blk is in the chain and never changed: reading it needs no lock.
+	if a := blk.ProducerAuth; located && len(a.PublicKey) > 0 && len(a.Signature) > 0 {
+		at.digest = signatureDigest(a.Signature)
+	}
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	prev := bp.appendTail
+	bp.appendTail = journaledBlock{}
+	if !located || bp.producerTransition == nil || path != bp.journalPath {
+		return
+	}
+	if b, ok := bp.blockAtLocked(blk.Height); !ok || b != blk {
+		return
+	}
+	if p := prev.blk; p != nil && p.Height+1 == blk.Height && prev.at.offset+int64(prev.at.length)+1 == at.offset {
+		bp.dropSignatureLocked(p, prev.at)
+	}
+	bp.appendTail = journaledBlock{blk: blk, at: at}
+}
+
+// dropSignatureLocked puts in b's slot of the chain a copy of b without its
+// signature, at saying where the signature is (its journal line, and the
+// signature's digest). b itself is not changed (see above). An unsigned
+// block, or one no longer in its slot, is left alone. bp.mu must be held.
+func (bp *BlockProducer) dropSignatureLocked(b *Block, at strippedSignature) {
+	if a := b.ProducerAuth; len(a.PublicKey) == 0 || len(a.Signature) == 0 || a.stripped != nil {
+		return
+	}
+	if len(bp.chain) == 0 || b.Height < bp.chain[0].Height {
+		return
+	}
+	i := b.Height - bp.chain[0].Height
+	if i >= uint64(len(bp.chain)) || bp.chain[i] != b {
+		return
+	}
+	c := *b
+	c.stripSignature(at)
+	bp.chain[i] = &c
 }
