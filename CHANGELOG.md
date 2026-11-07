@@ -131,6 +131,17 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-07: faster starts under a producer transition.** The producer
+  and every full node check each block's ML-DSA-87 signature at every start.
+  Each producer's public key is now prepared once per start instead of once
+  per signature (397,811 times at height 880,376, about a quarter of the
+  start's CPU), and the receipts file is decoded on every core. Measured at
+  height 880,376 on a 16-thread laptop: the journal load went from 42-43 s
+  to 26-29 s on 4 threads and from 28-30 s to 17-20 s on 16; loading 2.3
+  million receipts from 23-25 s to 5-10 s; the load allocates 11.6 GiB
+  instead of 32.9 GiB. Accepted and refused blocks are unchanged. The live
+  producer gets it with its next release.
+
 - **2026-11-06: the docs describe the pilot as it runs now.** 22 documents
   said the network had "a single block producer during recovery"; they now
   say what is true today: transfers follow the Proof-of-Entanglement rules,

@@ -60,7 +60,7 @@ The import and every start load the whole chain into memory, and the node keeps 
 memory a node needs grows with the chain. Go's garbage collector lets the heap grow to about twice what is in use
 before it collects, so the peak is about twice the heap, and a running node can use about as much as a start.
 
-The code on main is lighter in three ways that come with the next full-node release. Today's release, the one on
+The code on main is lighter in four ways that come with the next full-node release. Today's release, the one on
 qsdm.tech/fullnode.html that the installer installs, has none of them:
 
 - it shares the values that repeat across blocks in memory (the producer's public key, which every block it signs
@@ -69,7 +69,12 @@ qsdm.tech/fullnode.html that the installer installs, has none of them:
 - once a block's signature is verified at the start, the node keeps it only in the journal
   (`qsdm_chain.ndjson`), with its position and a 16-byte digest in memory. It reads it back, and checks it against
   that digest, only to send the block to another node (`GET /api/v1/chain/blocks` and the peer-to-peer catch-up).
-  Blocks the node appends while it runs keep their signatures in memory until it restarts.
+  Blocks the node appends while it runs keep their signatures in memory until it restarts;
+- since 7 November a start prepares each producer's public key once instead of once per signature (the pure-Go
+  ML-DSA-87 code derives a 57 KB matrix from the key every time it is unpacked), and it decodes the receipts file on
+  every core. At height 880 376 that took the journal load from 42 to 43 seconds to 26 to 29 on 4 threads and from
+  28 to 30 seconds to 17 to 20 on 16, and the memory the load allocates in all from 32.9 GiB to 11.6 GiB. The table
+  below was measured before this change.
 
 Measured with `cmd/qsdm/restore_bench_test.go` on a copy of the public chain at height 880 376 (880 377 blocks, a
 5.0 GB journal), with Go's default settings, on Windows x86-64 with a 16-thread laptop CPU:
