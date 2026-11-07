@@ -141,6 +141,30 @@ from 2026-04-22 on.
   11 GiB still for fullnode-rc1019. A fullnode-rc1019 node upgrades by
   replacing its `qsdm` binary ([Run a full node](QSDM/docs/docs/RUN_A_FULL_NODE.md#keeping-up-to-date)).
 
+- **2026-11-08: a running node keeps the signatures of the blocks it appends
+  in its journal.** A start keeps every verified ML-DSA-87 signature but the
+  tip's only in the journal (`qsdm_chain.ndjson`), but the blocks a node
+  appended while it ran kept their signatures in memory until it restarted,
+  so its heap grew with every block. Under a producer transition, a block's
+  signature now leaves memory once the next block is written and fsynced to
+  the journal right after it, whether the node sealed the block or received
+  it (gossip, catch-up, BFT commit or the HTTPS sync): the producer and every
+  full node keep only the tip's signature, and the one of the block that was
+  the tip when they started. The block in memory is never changed: a copy
+  without the signature takes its place, so a request that is already
+  reading the block still sends it whole. `GET /api/v1/chain/blocks` and the
+  peer-to-peer catch-up read the signature back and check it against the
+  line and a 16-byte digest, as for the blocks of a start, and send every
+  block byte for byte as before, or refuse a block whose line changed. The
+  journal's bytes are unchanged. A node without a producer transition, or
+  whose journal is not the file its start read, keeps the signatures in
+  memory as before. In a test that appends 2,000 signed blocks, each block
+  kept about 0.6 KB of heap instead of about 5.4 KB, for blocks the node
+  sealed and for blocks it received: at 10 seconds a block, about 0.45 GiB
+  less for every 100,000 blocks (11.6 days) a node runs without a restart.
+  No consensus change. Releases rc1107 and fullnode-rc1107 do not have it
+  yet: the producer and the full node get it with their next releases.
+
 - **2026-11-07: the snapshot import checks the chain the way a start does.**
   `qsdm --snapshot-import` loaded every block of the snapshot with its
   ML-DSA-87 signature, computed every block hash twice and then verified

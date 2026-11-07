@@ -109,7 +109,9 @@ files into the state directory and hashes them) or the checkpoint pin; the stagi
 height were not measured. The last three rows are derived, not measured at a second height: from the sizes of the
 values that the newest 80 000 restored blocks keep in memory, times the measured ratio of peak to heap (about 2).
 A running node also holds the signatures of the blocks it appended since its last start: about 0.5 GiB of heap
-per 100 000 blocks. At 10 seconds per block, 100 000 blocks take 11.6 days.
+per 100 000 blocks. At 10 seconds per block, 100 000 blocks take 11.6 days. The release after fullnode-rc1107
+keeps them only in the journal too, once the next block is written there: in a test that appends 2 000 signed
+blocks, each block kept about 0.6 KB of heap instead of about 5.4 KB.
 
 To run fullnode-rc1019 in less memory, upgrade it to fullnode-rc1107 (see [Keeping up to date](#keeping-up-to-date)),
 or set Go's soft memory limit for the service: run
