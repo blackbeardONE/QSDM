@@ -1067,14 +1067,56 @@ expect "imports" imports_run 1
 expect "starts the node" logged "systemctl enable --now qsdm-follower"
 finish
 
+# MemTotal for the resource check (the installer reads QSDM_FULLNODE_MEMINFO instead of /proc/meminfo).
+meminfo() {
+  printf 'MemTotal:       %s kB\nMemFree:        1000 kB\n' "$1" >"$T/fixtures/meminfo-$1"
+  export QSDM_FULLNODE_MEMINFO=$T/fixtures/meminfo-$1
+}
+
 begin small-disk "too little free disk space: it stops before downloading"
 sandbox disk
 touch "$SHIM_STATE/tiny-disk"
+meminfo 33554432
 run small-disk --root "$ROOT" --work-dir "$WORKD" --download-base "$BASE/download/good" \
   --api "$BASE/public/api/v1" "${ANCHORS[@]}"
 refused "There are about 1 GB free where the installer works"
 expect "says how to go on anyway" says "--skip-resource-check"
 expect "downloaded nothing" nothing_served
+unset QSDM_FULLNODE_MEMINFO
+finish
+
+begin small-memory "a release after fullnode-rc1019 on a server below 5.5 GiB: it stops before downloading"
+sandbox mem-small
+meminfo 5000000
+run small-memory --root "$ROOT" --work-dir "$WORKD" --download-base "$BASE/download/good" \
+  --api "$BASE/public/api/v1" "${ANCHORS[@]}"
+refused "This server has about 4 GB of memory. A full node needs more. Importing the snapshot and starting the node each need about 2 GB at 880 376 blocks"
+expect "says how to go on anyway" says "--skip-resource-check"
+expect "downloaded nothing" nothing_served
+unset QSDM_FULLNODE_MEMINFO
+finish
+
+begin six-gb "a release after fullnode-rc1019 on a 6 GB server (about 5.8 GiB): the memory check passes"
+sandbox mem-six
+touch "$SHIM_STATE/tiny-disk"
+meminfo 6094848
+run six-gb --root "$ROOT" --work-dir "$WORKD" --download-base "$BASE/download/good" \
+  --api "$BASE/public/api/v1" "${ANCHORS[@]}"
+expect "passes the memory check" not says "GB of memory"
+refused "There are about 1 GB free where the installer works"
+unset QSDM_FULLNODE_MEMINFO
+finish
+
+begin rc1019-memory "fullnode-rc1019 on a server below 11 GiB: it stops before downloading"
+sandbox mem-rc1019
+meminfo 8388608
+RC1019_ANCHORS=("${ANCHORS[@]}")
+RC1019_ANCHORS[1]=hardened-legacy-20261019-d7ffcd4-hl2-edge-go1269-ids-pqe-rc1019
+run rc1019-memory --root "$ROOT" --work-dir "$WORKD" --download-base "$BASE/download/good" \
+  --api "$BASE/public/api/v1" "${RC1019_ANCHORS[@]}"
+refused "This server has about 8 GB of memory. A full node needs more. This release loads the whole chain into memory"
+expect "downloaded nothing" nothing_served
+unset QSDM_FULLNODE_MEMINFO
 finish
 
 begin foreign-work-dir "a work folder that holds someone else's files"
