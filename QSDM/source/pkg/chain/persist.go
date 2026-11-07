@@ -34,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -50,6 +51,13 @@ type ChainJournal struct {
 	lastHeight uint64
 	lastHash   string
 	closed     bool
+	// keep is the producer that keeps the signatures of the blocks it
+	// appends in this journal (BlockProducer.KeepSignaturesInJournal): once
+	// a block's line is durable, Append tells it where the line is. nil:
+	// Append only writes, as it always did.
+	keep *BlockProducer
+	// sync is (*os.File).Sync; tests replace it to fail an fsync.
+	sync func(*os.File) error
 }
 
 // OpenChainJournal opens path for append and seeds its continuity guard from
@@ -75,6 +83,13 @@ func OpenChainJournal(path string, tip *Block) (*ChainJournal, error) {
 }
 
 // Append writes and fsyncs one block only when it extends the guarded tip.
+//
+// With a producer attached (KeepSignaturesInJournal), Append also locates the
+// line it wrote, and once the fsync has returned tells the producer where it
+// is (BlockProducer.journaled), so that the producer can drop the signature of
+// the block before it from memory. The line is located only when the append
+// itself is sure of it (lineAt); otherwise the producer is told so, and drops
+// nothing. A failed write or fsync tells the producer nothing.
 func (j *ChainJournal) Append(blk *Block) error {
 	if j == nil {
 		return errors.New("chain.ChainJournal.Append: nil journal")
@@ -104,6 +119,15 @@ func (j *ChainJournal) Append(blk *Block) error {
 		return fmt.Errorf("chain.ChainJournal.Append: marshal: %w", err)
 	}
 	data = append(data, '\n')
+	// An O_APPEND write lands at the end of the file: the line starts at the
+	// file's size before the write, if nothing else writes to it meanwhile
+	// (lineAt checks that).
+	before := int64(-1)
+	if j.keep != nil {
+		if fi, statErr := j.file.Stat(); statErr == nil {
+			before = fi.Size()
+		}
+	}
 	for written := 0; written < len(data); {
 		n, writeErr := j.file.Write(data[written:])
 		if writeErr != nil {
@@ -114,13 +138,51 @@ func (j *ChainJournal) Append(blk *Block) error {
 		}
 		written += n
 	}
-	if err := j.file.Sync(); err != nil {
+	if err := j.syncFile(); err != nil {
 		return fmt.Errorf("chain.ChainJournal.Append: sync %s: %w", j.path, err)
 	}
 	j.hasTip = true
 	j.lastHeight = blk.Height
 	j.lastHash = blk.Hash
+	// The line is durable: only now may the producer rely on it. j.mu is
+	// still held, so the producer hears of the lines in the order they were
+	// written (lock order: j.mu, then the producer's bp.mu; the producer
+	// never calls into the journal).
+	if j.keep != nil {
+		at, located := j.lineAt(before, len(data))
+		j.keep.journaled(j.path, blk, at, located)
+	}
 	return nil
+}
+
+func (j *ChainJournal) syncFile() error {
+	if j.sync != nil {
+		return j.sync(j.file)
+	}
+	return j.file.Sync()
+}
+
+// lineAt returns where the line Append has just written and fsynced is, n
+// being its length with its '\n': at offset before (the file's size before
+// the write), n-1 bytes long without the '\n'. It is sure of it, and ok is
+// true, only when the file grew by exactly the line, which shows that nothing
+// else wrote to the file or truncated it since before was taken, and when the
+// journal's path still names the file this handle writes to: RelayBlocks
+// opens the path, and on Linux a file can be renamed or replaced while it is
+// open. j.mu must be held.
+func (j *ChainJournal) lineAt(before int64, n int) (strippedSignature, bool) {
+	if before < 0 || n < 2 || int64(n-1) > math.MaxUint32 {
+		return strippedSignature{}, false
+	}
+	fi, err := j.file.Stat()
+	if err != nil || fi.Size() != before+int64(n) {
+		return strippedSignature{}, false
+	}
+	pi, err := os.Stat(j.path)
+	if err != nil || !os.SameFile(fi, pi) {
+		return strippedSignature{}, false
+	}
+	return strippedSignature{offset: before, length: uint32(n - 1)}, true
 }
 
 // Close flushes and closes the journal.
