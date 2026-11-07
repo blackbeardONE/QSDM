@@ -12,11 +12,11 @@ import (
 // Producer keys prepared once.
 //
 // Under a producer transition a node authenticates every block of its chain
-// before it restores it: LoadVerifiedJournal at every start, and
-// ValidateProducerTransitionChain for the snapshot import and the tail
-// replay. verifyAuth unpacked the producer's public key for every signature,
-// and in the circl backend unpacking derives the key's 8x7 matrix (56
-// SHAKE-128 samplings) into a new 57 KB allocation: about two thirds of a
+// before it restores it: LoadVerifiedJournal at every start, and CheckJournal
+// for the snapshot import and the tail replay. verifyAuth unpacked the
+// producer's public key for every signature, and in the circl backend
+// unpacking derives the key's 8x7 matrix (56 SHAKE-128 samplings) into a new
+// 57 KB allocation: about two thirds of a
 // verification. Every block of an epoch carries the same key, so at height
 // 880,376 of the public chain a start unpacked the two producer keys 397,811
 // times: 26% of the start's CPU, and 21 GiB of its 33 GiB of allocations.
@@ -24,8 +24,8 @@ import (
 // producerKeys verifies the blocks of one such run with each producer key
 // prepared once (crypto.MLDSAKey) and its consensus address computed once.
 // The checks, their order and their errors are verifyAuth's. A key is kept
-// only once it derives the producer that the block names, and both callers
-// have checked that producer against the transition's schedule first
+// only once it derives the producer that the block names, and every caller
+// has checked that producer against the transition's schedule first
 // (checkTransitionSchedule), so a run keeps at most one key per producer of
 // its schedule.
 type producerKeys struct {

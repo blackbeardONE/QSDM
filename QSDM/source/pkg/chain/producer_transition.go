@@ -134,15 +134,34 @@ var (
 // prepared once (producer_keys.go); the schedule is checked before the
 // signature, so it only ever holds the keys of the schedule's producers.
 func verifyTransitionChainBlock(epochs []producerpolicy.Epoch, keys *producerKeys, prev, b *Block, i uint64) error {
+	hashOK := b != nil && b.Height == i && b.Hash == computeBlockHash(b)
+	if err := transitionChainPlaceErr(prev, b, i, hashOK); err != nil {
+		return err
+	}
+	return checkTransitionBlockAuth(epochs, keys, b)
+}
+
+// transitionChainPlaceErr is the first half of verifyTransitionChainBlock:
+// b is the block at index i (its height), its hash is its contents' (hashOK
+// reports b.Hash == computeBlockHash(b)) and it links to prev (nil at index
+// 0). CheckJournal computes hashOK on another goroutine.
+func transitionChainPlaceErr(prev, b *Block, i uint64, hashOK bool) error {
 	if b == nil || b.Height != i {
 		return fmt.Errorf("chain: producer transition history is not contiguous at index %d", i)
 	}
-	if b.Hash != computeBlockHash(b) {
+	if !hashOK {
 		return fmt.Errorf("chain: producer transition invalid block hash at height %d", b.Height)
 	}
 	if prev != nil && b.PrevHash != prev.Hash {
 		return fmt.Errorf("chain: producer transition broken linkage at height %d", b.Height)
 	}
+	return nil
+}
+
+// checkTransitionBlockAuth is the second half of verifyTransitionChainBlock:
+// the producer schedule, then the signature, of a block whose hash the caller
+// has compared with computeBlockHash(b).
+func checkTransitionBlockAuth(epochs []producerpolicy.Epoch, keys *producerKeys, b *Block) error {
 	if err := checkTransitionSchedule(epochs, b); err != nil {
 		return err
 	}
