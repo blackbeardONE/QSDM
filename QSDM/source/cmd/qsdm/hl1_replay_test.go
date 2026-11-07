@@ -124,6 +124,11 @@ func hl1rStartCore(t *testing.T, dir string, policy *producerpolicy.Transition, 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = j.Close() })
+	if policy != nil { // as main() does
+		if err := st.producer.KeepSignaturesInJournal(j); err != nil {
+			t.Fatal(err)
+		}
+	}
 	c := &hl1rCore{t: t, dir: dir, st: st, journal: j, fsys: &hl1rFaultFS{}}
 	hook := &hl1PersistHook{
 		Mode:           hl1HookNormal,

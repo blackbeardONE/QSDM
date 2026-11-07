@@ -114,6 +114,13 @@ func TestHL1WiringStartupOrder(t *testing.T) {
 	}
 	s.before(t, "hl1StartupWatermark", "hl1OpenChainJournal")
 	s.before(t, "hl1OpenChainJournal", "hl1PersistenceReserve")
+	// The journal keeps the appended blocks' signatures (under a producer
+	// transition) from before the first block can be appended.
+	s.before(t, "hl1OpenChainJournal", "adminProducer.KeepSignaturesInJournal")
+	for _, appendPath := range []string{"chain.NewBlockPropagator", "startHTTPChainSync", "adminProducer.ProduceBlock",
+		"blockDriver.Start", "bftExec.SetOnCommitted"} {
+		s.before(t, "adminProducer.KeepSignaturesInJournal", appendPath)
+	}
 	// S7-S14 before S15 (SyncFunderNonce, Start) and S16 after Start.
 	s.before(t, "hl1ReconcileCanary", "blockDriver.SyncFunderNonce")
 	s.before(t, "blockDriver.Start", "hl1Mining.guard.Activate")

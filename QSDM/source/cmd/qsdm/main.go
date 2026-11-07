@@ -2600,6 +2600,19 @@ func main() {
 			logger.Warn("chain persistence: journal close failed", "path", chainStatePath, "error_str", err.Error())
 		}
 	}()
+	// Under a producer transition, every block appended from here on (the
+	// genesis seal, the block driver, gossip, catch-up, BFT commits, the
+	// HTTPS sync) keeps its signature only in the journal once the next block
+	// is durable there (H2), as the start keeps the restored blocks'
+	// signatures: the heap no longer grows by a signature per block. Before
+	// the hook, so before anything can append. Refused, appended blocks keep
+	// their signatures in memory, as before.
+	if cfg.ProducerTransition != nil {
+		if err := adminProducer.KeepSignaturesInJournal(chainJournal); err != nil {
+			logger.Warn("chain persistence: appended blocks keep their signatures in memory",
+				"path", chainStatePath, "error_str", err.Error())
+		}
+	}
 	persistenceReserve := hl1PersistenceReserve(os.Getenv(persistenceReserveEnv))
 	logger.Info("Chain persistence disk reserve enabled",
 		"state_path", stateDir,
