@@ -131,6 +131,16 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-08: full-node release fullnode-rc1107 needs 6 GB instead of 10 to
+  12.** The GitHub release `fullnode-rc1107` is the exact `qsdm` the block
+  producer runs (release rc1107), with the same snapshot and checkpoint as
+  fullnode-rc1019. Its import and its start each peak at about 2 GiB at
+  height 880,376, where fullnode-rc1019 needed 8.3 and 8.2 GiB, and a start
+  takes about 30 seconds instead of 2.5 minutes. `install-full-node.sh` now
+  checks the memory of the release it installs: 5.5 GiB for fullnode-rc1107,
+  11 GiB still for fullnode-rc1019. A fullnode-rc1019 node upgrades by
+  replacing its `qsdm` binary ([Run a full node](QSDM/docs/docs/RUN_A_FULL_NODE.md#keeping-up-to-date)).
+
 - **2026-11-07: the snapshot import checks the chain the way a start does.**
   `qsdm --snapshot-import` loaded every block of the snapshot with its
   ML-DSA-87 signature, computed every block hash twice and then verified
