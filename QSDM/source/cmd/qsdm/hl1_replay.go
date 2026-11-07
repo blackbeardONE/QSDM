@@ -13,7 +13,9 @@ package main
 //	S2   QSDM_LEGACY_MINING_* environment and canary config -> 78
 //	S3   stale D1 temps; FAILSTOP.armed only if FAILSTOP.json is absent
 //	S4a  transition prefix check under the lock; journal ends with "\n" and
-//	     loads; J = tip, J-1 = the block before it
+//	     loads, read once with every block authenticated as it is read
+//	     (chain.CheckJournal; the verdict is reported at step 1); J = tip,
+//	     J-1 = the block before it
 //	S5   W present, J-1 <= W.height <= J, hash match (checked here, before
 //	     any change; replay writes W only in hook step H7)
 //	0    receipts pre-trim: truncate from the first complete line with
@@ -162,6 +164,10 @@ type hl1ReplayResult struct {
 	PairEnroll    string // the J-1 enrollment snapshot used
 	PreTrim       hl1tail.PreTrimResult
 	Watermark     legacymining.Watermark // W after H7
+	// StrippedBlocks counts the journal blocks whose producer signature was
+	// held only in the journal: under a producer transition, every signed
+	// block but J.
+	StrippedBlocks int
 }
 
 // State-directory file names (main.go restore block).
@@ -236,10 +242,23 @@ func hl1RunReplay(o hl1ReplayOptions) (res hl1ReplayResult, err error) {
 	if err := hl1RequireFinalNewline(hl1OSFS{}, journal); err != nil {
 		return res, fmt.Errorf("journal: %w", err)
 	}
-	blocks, err := chain.LoadChainNDJSON(journal)
+	// The consensus settings come before the journal is read, because
+	// chain.CheckJournal computes every block hash and authenticates every
+	// block as it reads them (on every core, each once, every signature but
+	// J's held only in the journal), and hashes and signature checks depend
+	// on them. Its verdict is reported at step 1, where the producer
+	// transition check ran before.
+	if o.ConsensusSettings != nil {
+		o.ConsensusSettings()
+	}
+	check, err := chain.CheckJournal(journal, o.Transition)
+	if err == nil {
+		err = check.LoadErr
+	}
 	if err != nil {
 		return res, fmt.Errorf("journal: %w", err)
 	}
+	blocks := check.Blocks
 	if len(blocks) < 2 {
 		return res, fmt.Errorf("journal %s holds %d block(s): replay needs the tip J and the block J-1 before it", journal, len(blocks))
 	}
@@ -295,19 +314,20 @@ func hl1RunReplay(o hl1ReplayOptions) (res hl1ReplayResult, err error) {
 		return res, err
 	}
 	log.Info("hl1 replay: J-1 snapshot pair", "height", prev.Height, "accounts", res.PairAccounts, "enrollment", res.PairEnroll)
-	if o.ConsensusSettings != nil {
-		o.ConsensusSettings()
-	}
 	st, err := hl1NewReplayStack(dir, o.GovernanceAuthorities, o.AuthorizedBlockProducers, o.Transition, log)
 	if err != nil {
 		return res, err
 	}
-	verified, err := st.producer.VerifyProducerTransitionChain(blocks)
-	if err != nil {
-		return res, fmt.Errorf("producer transition persisted chain: %w", err)
+	if check.VerifyErr != nil {
+		return res, fmt.Errorf("producer transition persisted chain: %w", check.VerifyErr)
 	}
-	if err := st.restore(blocks[:len(blocks)-1], verified, res.PairAccounts, res.PairEnroll, receipts); err != nil {
+	if err := st.restore(blocks[:len(blocks)-1], check.Verified, res.PairAccounts, res.PairEnroll, receipts); err != nil {
 		return res, fmt.Errorf("restore of the J-1 prefix: %w", err)
+	}
+	for _, b := range blocks {
+		if b.ProducerAuth.Stripped() {
+			res.StrippedBlocks++
+		}
 	}
 
 	// Step 2: the hook in replay mode.

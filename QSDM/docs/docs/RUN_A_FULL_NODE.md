@@ -60,7 +60,7 @@ The import and every start load the whole chain into memory, and the node keeps 
 memory a node needs grows with the chain. Go's garbage collector lets the heap grow to about twice what is in use
 before it collects, so the peak is about twice the heap, and a running node can use about as much as a start.
 
-The code on main is lighter in four ways that come with the next full-node release. Today's release, the one on
+The code on main is lighter in five ways that come with the next full-node release. Today's release, the one on
 qsdm.tech/fullnode.html that the installer installs, has none of them:
 
 - it shares the values that repeat across blocks in memory (the producer's public key, which every block it signs
@@ -73,30 +73,43 @@ qsdm.tech/fullnode.html that the installer installs, has none of them:
 - since 7 November a start prepares each producer's public key once instead of once per signature (the pure-Go
   ML-DSA-87 code derives a 57 KB matrix from the key every time it is unpacked), and it decodes the receipts file on
   every core. At height 880 376 that took the journal load from 42 to 43 seconds to 26 to 29 on 4 threads and from
-  28 to 30 seconds to 17 to 20 on 16, and the memory the load allocates in all from 32.9 GiB to 11.6 GiB. The table
-  below was measured before this change.
+  28 to 30 seconds to 17 to 20 on 16, and the memory the load allocates in all from 32.9 GiB to 11.6 GiB. The start
+  rows of the table below were measured before this change;
+- since 7 November the import reads the snapshot's journal the way a start reads it: it verifies each block once,
+  on every core, and keeps every signature but the tip's only in the journal, where it used to load every block
+  with its signature and then verify the whole chain again on one core. It runs every check it ran before, and a
+  snapshot it refuses gets the same error and exit code as before. The export's check of what it wrote and the
+  offline `--hl1-tail-replay` read the journal the same way.
 
 Measured with `cmd/qsdm/restore_bench_test.go` on a copy of the public chain at height 880 376 (880 377 blocks, a
-5.0 GB journal), with Go's default settings, on Windows x86-64 with a 16-thread laptop CPU:
+5.0 GB journal), with Go's default settings, on Windows x86-64 with a 16-thread laptop CPU; the import from the next
+release on a slower desktop (two Xeon E5-2670 from 2012, 32 threads, 32 GB, Windows x86-64) with Go on 4 threads,
+where the import before this change took 204 seconds and peaked at 5.5 GiB:
 
 | | Today's release | From the next release |
 |---|---:|---:|
 | Start (the restore every start runs), peak | 8.2 GiB | 1.9 GiB |
 | Go heap after the start | 4.1 GiB | 1.0 GiB |
 | Time of a start | about 2.5 minutes | about 30 seconds |
-| Import, peak | 8.3 GiB | 5.8 GiB |
-| Time of an import | about 2.5 minutes | about 2.5 minutes |
+| Import, peak | 8.3 GiB | 1.8 GiB |
+| Go heap during the import, peak | not measured | 1.7 GiB |
+| Time of an import | about 2.5 minutes | about 80 seconds on the slower desktop |
 | Heap per further block | about 8.4 KB | about 0.6 KB |
 | Start peak per further 100 000 blocks | about 1.6 GiB | about 0.12 GiB |
 | Start peak at about 1 020 000 blocks | about 10.4 GiB | about 2.1 GiB |
 
-The start uses every core, so it takes longer on a server with fewer. The import still keeps every signature in
-memory while it checks the snapshot (about 1.1 GiB more per further 100 000 blocks, about 7.3 GiB at 1 020 000),
-so with the next release the import, not the start, sets the memory a server needs. The last three rows are
-derived, not measured at a second height: from the sizes of the values that the newest 80 000 restored blocks keep
-in memory, times the measured ratio of peak to heap (about 2). A running node also holds the signatures of the
-blocks it appended since its last start: about 0.5 GiB of heap per 100 000 blocks. At 10 seconds per block,
-100 000 blocks take 11.6 days.
+The start and the import use every core, so they take longer on a server with fewer: on 1 thread the import took
+about 3.6 minutes on the desktop and peaked at 2.0 GiB (before this change, which checked every signature on one
+core anyway, 3.3 minutes and 5.5 GiB); on 32 threads it took 43 seconds. With the next release the import holds
+the chain the way a start holds it, verified signatures in the journal only: on the desktop, on 4 threads, the
+import and a start both peaked at 1.8 GiB. So the import no longer sets the memory a server needs; a start, which
+every restart runs, and the running node do. The import rows were measured with the harness's
+import phase, which runs every check of the import but not its staging copy (the import first copies the snapshot's
+files into the state directory and hashes them) or the checkpoint pin; the staging copy and an import at a second
+height were not measured. The last three rows are derived, not measured at a second height: from the sizes of the
+values that the newest 80 000 restored blocks keep in memory, times the measured ratio of peak to heap (about 2).
+A running node also holds the signatures of the blocks it appended since its last start: about 0.5 GiB of heap
+per 100 000 blocks. At 10 seconds per block, 100 000 blocks take 11.6 days.
 
 To run today's release in less memory, you can set Go's soft memory limit for the service: run
 `sudo systemctl edit qsdm-follower`, add `Environment=GOMEMLIMIT=...` under `[Service]`, then
@@ -193,7 +206,8 @@ echo "exit $?"
 
 The import verifies everything again against your pinned checkpoint: the hash chain from genesis, the producer's
 signature on the checkpoint block, the producer transition and the state root. It takes several minutes and about
-as much memory as a start: 8.3 GiB for the snapshot at height 880 376 with today's release (see [Memory](#memory)).
+as much memory as a start: 8.3 GiB for the snapshot at height 880 376 with today's release, and about 1.8 GiB from
+the next one (see [Memory](#memory)).
 [Verified snapshot bootstrap](SNAPSHOT_BOOTSTRAP.md#3-trust-model) lists every check.
 
 - **Exit 0** prints a report with `"authorized_by": "producer_transition"` and three installed files. Then delete

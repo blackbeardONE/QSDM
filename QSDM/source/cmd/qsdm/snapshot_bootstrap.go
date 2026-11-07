@@ -32,6 +32,12 @@ package main
 //     holds no governance parameter transaction (the parameter store is not
 //     rebuilt from blocks) and the local staking ledger is empty.
 //
+// The journal is read once, on every core (chain.CheckJournal): each block
+// hash is computed and each signature verified once, and only the tip keeps
+// its signature in memory, as at a start. The checks still run, and refuse,
+// in the order and with the errors they had when each read the journal
+// itself (snapshotVerifyDir).
+//
 // Then it renames the enrollment, accounts and journal files into place
 // (journal last), fsyncs the directory and writes qsdm_snapshot_import.json.
 // The next normal start restores that state like any other and syncs from
@@ -210,8 +216,12 @@ type snapshotVerifyResult struct {
 	JournalBytes          int64
 	AuthorizedBy          string // import only: which configuration authorized the tip producer
 	EnrollmentRootChecked bool   // the enrollment registry is part of the verified root
-	LoadDuration          time.Duration
-	RestoreDuration       time.Duration
+	// StrippedBlocks counts the blocks whose producer signature the check
+	// held only in the journal: under a producer transition, every signed
+	// block but the tip.
+	StrippedBlocks  int
+	LoadDuration    time.Duration // the journal read, with the checks chain.CheckJournal runs as it reads
+	RestoreDuration time.Duration
 }
 
 // snapshotVerifyDir verifies the four validator files in dir as the boot
@@ -244,10 +254,20 @@ func snapshotVerifyDir(dir, scratch string, c snapshotConsensus, pinned *config.
 	}
 	res.JournalBytes = fi.Size()
 	loadStart := time.Now()
-	blocks, err := chain.LoadChainNDJSON(journal)
+	// One read of the journal, on every core (chain.CheckJournal): the
+	// blocks LoadChainNDJSON loads, each block hash computed once and, under
+	// a producer transition, each block authenticated once
+	// (ValidateProducerTransitionChain's checks), with every signature but
+	// the tip's held only in the journal, as at a start. What it found is
+	// reported below in the same order as each check reported it before.
+	check, err := chain.CheckJournal(journal, c.Transition)
+	if err == nil {
+		err = check.LoadErr
+	}
 	if err != nil {
 		return res, fmt.Errorf("journal: %w", err)
 	}
+	blocks := check.Blocks
 	res.LoadDuration = time.Since(loadStart)
 	if len(blocks) == 0 {
 		return res, errors.New("journal holds no block")
@@ -267,7 +287,7 @@ func snapshotVerifyDir(dir, scratch string, c snapshotConsensus, pinned *config.
 			return res, errors.New("journal does not start at genesis (block 0 has a prev hash)")
 		case i > 0 && b.PrevHash != blocks[i-1].Hash:
 			return res, fmt.Errorf("journal block %d does not link to block %d", b.Height, b.Height-1)
-		case chain.ComputeBlockHash(b) != b.Hash:
+		case i == check.BadHash: // the first block whose hash is not ComputeBlockHash of its contents
 			return res, fmt.Errorf("journal block %d hash does not match its contents", b.Height)
 		}
 	}
@@ -303,11 +323,13 @@ func snapshotVerifyDir(dir, scratch string, c snapshotConsensus, pinned *config.
 	if err != nil {
 		return res, err
 	}
-	verified, err := st.producer.VerifyProducerTransitionChain(blocks)
-	if err != nil {
-		return res, fmt.Errorf("producer transition persisted chain: %w", err)
+	// What ValidateProducerTransitionChain found as CheckJournal read the
+	// journal: the restore installs the verified blocks without verifying
+	// them again.
+	if check.VerifyErr != nil {
+		return res, fmt.Errorf("producer transition persisted chain: %w", check.VerifyErr)
 	}
-	if err := st.restore(blocks, verified, filepath.Join(dir, hl1AccountsName), filepath.Join(dir, hl1EnrollmentName),
+	if err := st.restore(blocks, check.Verified, filepath.Join(dir, hl1AccountsName), filepath.Join(dir, hl1EnrollmentName),
 		filepath.Join(scratch, "absent-receipts.ndjson")); err != nil {
 		return res, fmt.Errorf("state restore: %w", err)
 	}
@@ -329,6 +351,11 @@ func snapshotVerifyDir(dir, scratch string, c snapshotConsensus, pinned *config.
 		return res, errors.New("restored producer tip differs from the journal tip")
 	}
 	res.RestoreDuration = time.Since(restoreStart)
+	for _, b := range blocks {
+		if b.ProducerAuth.Stripped() {
+			res.StrippedBlocks++
+		}
+	}
 	return res, nil
 }
 

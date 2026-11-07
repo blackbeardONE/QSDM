@@ -131,7 +131,7 @@ func (bp *BlockProducer) LoadVerifiedJournal(path string) (*VerifiedChain, error
 	return bp.loadVerifiedJournal(path, runtime.GOMAXPROCS(0))
 }
 
-// journalItem is one journal line on its way through loadVerifiedJournal.
+// journalItem is one journal line on its way through a journalPipeline.
 type journalItem struct {
 	index  uint64            // its block's index: the number of blocks before it
 	lineno int               // its line number
@@ -139,7 +139,93 @@ type journalItem struct {
 	raw    []byte            // the line (a copy) until it is decoded
 	blk    *Block
 	err    error
-	done   chan struct{} // closed once blk and err are set
+	// CheckJournal only: whether blk's hash is its contents' hash, and what
+	// checkTransitionBlockAuth found (nil when blk passed or was not checked).
+	hashOK  bool
+	authErr error
+	done    chan struct{} // closed once the line's results are set
+}
+
+// journalPipeline reads a journal as LoadChainNDJSON does (one block per
+// line, blank lines skipped, lines up to 4 MiB) and runs work on every line
+// on its own goroutines. The reader hands each line to a free worker after
+// queueing it, in journal order, on order; the caller takes the lines from
+// order and waits for each one's done, so at most one line per worker is read
+// ahead of the line the caller waits for.
+type journalPipeline struct {
+	order   chan *journalItem
+	quit    chan struct{} // closed by stop: the reader and the workers return early
+	wg      sync.WaitGroup
+	scanErr error
+}
+
+// startJournalPipeline starts reading f with workers goroutines (at least
+// one) that run work on each line. work sets the line's results; the line is
+// then dropped and done closed.
+func startJournalPipeline(f *os.File, workers int, work func(*journalItem)) *journalPipeline {
+	if workers < 1 {
+		workers = 1
+	}
+	p := &journalPipeline{order: make(chan *journalItem, workers), quit: make(chan struct{})}
+	jobs := make(chan *journalItem)
+	p.wg.Add(1 + workers)
+	go func() {
+		defer p.wg.Done()
+		defer close(jobs)
+		defer close(p.order)
+		var lines journalLines
+		scanner := bufio.NewScanner(f)
+		scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024) // LoadChainNDJSON's limits
+		scanner.Split(lines.split)
+		var index uint64
+		lineno := 0
+		for scanner.Scan() {
+			lineno++
+			raw := scanner.Bytes()
+			if len(raw) == 0 {
+				continue
+			}
+			it := &journalItem{index: index, lineno: lineno, raw: append([]byte(nil), raw...), done: make(chan struct{}),
+				at: strippedSignature{offset: lines.start, length: uint32(len(raw))}}
+			index++
+			select {
+			case p.order <- it:
+			case <-p.quit:
+				return
+			}
+			select {
+			case jobs <- it:
+			case <-p.quit:
+				return
+			}
+		}
+		p.scanErr = scanner.Err()
+	}()
+	for w := 0; w < workers; w++ {
+		go func() {
+			defer p.wg.Done()
+			for it := range jobs {
+				work(it)
+				it.raw = nil
+				close(it.done)
+			}
+		}()
+	}
+	return p
+}
+
+// stop ends the pipeline before the end of the journal. Call it once, and
+// only instead of wait.
+func (p *journalPipeline) stop() {
+	close(p.quit)
+	p.wg.Wait()
+}
+
+// wait waits for the reader and the workers once order is drained, and
+// returns the reader's error.
+func (p *journalPipeline) wait() error {
+	p.wg.Wait()
+	return p.scanErr
 }
 
 func (bp *BlockProducer) loadVerifiedJournal(path string, workers int) (*VerifiedChain, error) {
@@ -164,74 +250,22 @@ func (bp *BlockProducer) loadVerifiedJournal(path string, workers int) (*Verifie
 		return nil, fmt.Errorf("chain.LoadVerifiedJournal: open %s: %w", path, err)
 	}
 	defer f.Close()
-	if workers < 1 {
-		workers = 1
-	}
 
-	// The reader hands each line to a free worker (jobs) after queueing it,
-	// in journal order, for the loop below (order, one line per worker
-	// ahead of it). quit stops the reader and the workers early.
-	order := make(chan *journalItem, workers)
-	jobs := make(chan *journalItem)
-	quit := make(chan struct{})
-	var scanErr error
-	var wg sync.WaitGroup
-	wg.Add(1 + workers)
-	go func() {
-		defer wg.Done()
-		defer close(jobs)
-		defer close(order)
-		var lines journalLines
-		scanner := bufio.NewScanner(f)
-		scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024) // LoadChainNDJSON's limits
-		scanner.Split(lines.split)
-		var index uint64
-		lineno := 0
-		for scanner.Scan() {
-			lineno++
-			raw := scanner.Bytes()
-			if len(raw) == 0 {
-				continue
-			}
-			it := &journalItem{index: index, lineno: lineno, raw: append([]byte(nil), raw...), done: make(chan struct{}),
-				at: strippedSignature{offset: lines.start, length: uint32(len(raw))}}
-			index++
-			select {
-			case order <- it:
-			case <-quit:
-				return
-			}
-			select {
-			case jobs <- it:
-			case <-quit:
-				return
-			}
-		}
-		scanErr = scanner.Err()
-	}()
 	// One table of prepared producer keys for the whole load: each key is
 	// unpacked once, not once per signature (producer_keys.go).
 	keys := newProducerKeys()
-	for w := 0; w < workers; w++ {
-		go func() {
-			defer wg.Done()
-			for it := range jobs {
-				it.blk, it.err = decodeJournalLine(epochs, keys, path, it)
-				it.raw = nil
-				close(it.done)
-			}
-		}()
-	}
+	p := startJournalPipeline(f, workers, func(it *journalItem) {
+		it.blk, it.err = decodeJournalLine(epochs, keys, path, it)
+	})
 	fail := func(err error) (*VerifiedChain, error) {
-		close(quit)
-		wg.Wait()
+		p.stop()
 		return nil, err
 	}
 
 	share := newBlockSharing()
 	var held *Block // the last block verified: its signature is dropped when the next one verifies
 	var heldAt strippedSignature
-	for it := range order {
+	for it := range p.order {
 		<-it.done
 		blk := it.blk
 		if it.index == 0 && blk != nil && (blk.Height != 0 || blk.PrevHash != "") {
@@ -250,8 +284,7 @@ func (bp *BlockProducer) loadVerifiedJournal(path string, workers int) (*Verifie
 		held, heldAt = blk, it.at
 		v.blocks = append(v.blocks, blk)
 	}
-	wg.Wait()
-	if scanErr != nil && !errors.Is(scanErr, io.EOF) {
+	if scanErr := p.wait(); scanErr != nil && !errors.Is(scanErr, io.EOF) {
 		return nil, fmt.Errorf("chain.LoadVerifiedJournal: scan %s: %w", path, scanErr)
 	}
 	if n := len(v.blocks); n > 0 && v.blocks[n-1].Height < finalCheckpointHeight(epochs) {
@@ -281,11 +314,14 @@ func decodeJournalLine(epochs []producerpolicy.Epoch, keys *producerKeys, path s
 	return blk, nil
 }
 
-// stripSignature drops b's verified signature from memory, recording where
-// it is: at.offset and at.length locate b's journal line, and at.digest is
-// the digest of the signature (decodeJournalLine). Only
-// LoadVerifiedJournal calls it, on a block it has verified and not yet
-// returned. A block without a verified signature is left as it is.
+// stripSignature drops b's signature from memory, recording where it is:
+// at.offset and at.length locate b's journal line, and at.digest is the
+// digest of the signature (decodeJournalLine, CheckJournal). Only
+// LoadVerifiedJournal and CheckJournal call it, on a block they have read
+// and not yet returned: LoadVerifiedJournal on a block it has verified,
+// CheckJournal on every block but the last, verified or not (only its
+// Verified vouches for a block). A block without a signature is left as it
+// is.
 func (b *Block) stripSignature(at strippedSignature) {
 	a := b.ProducerAuth
 	if len(a.PublicKey) == 0 || len(a.Signature) == 0 || a.stripped != nil {

@@ -35,7 +35,13 @@ package main
 //         qsdm_receipts.ndjson (receipts_seconds; a producer's holds a
 //         receipt for every transaction of the chain, a snapshot none).
 // import  the checks of qsdm --snapshot-import (snapshotVerifyDir), without
-//         the staging copy and the checkpoint pin.
+//         the staging copy and the checkpoint pin: the journal read once,
+//         every block checked as it is read (chain.CheckJournal: each hash
+//         computed and, with a producer transition, each signature verified
+//         once, every signature but the tip's stripped; load_seconds
+//         includes that verification), then the snapshot pair's state root
+//         check and the producer hydrate (restore_seconds). stripped_blocks
+//         counts the blocks it held without their signature.
 //
 // Build the test binary once, then run each phase in its own process so that
 // the peak resident memory belongs to that phase alone:
@@ -193,7 +199,7 @@ func TestRestoreBench(t *testing.T) {
 		rep.Seconds = time.Since(start).Seconds()
 		rep.PeakHeapInuseMB = sampler.finish()
 		rep.PeakRSSMB, rep.PeakCommitMB = benchPeakMemMB()
-		rep.Blocks = res.Blocks
+		rep.Blocks, rep.StrippedBlocks = res.Blocks, res.StrippedBlocks
 		rep.LoadSeconds, rep.RestoreSeconds = res.LoadDuration.Seconds(), res.RestoreDuration.Seconds()
 	default:
 		sampler.finish()
