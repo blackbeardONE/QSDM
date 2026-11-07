@@ -131,6 +131,27 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-07: the snapshot import checks the chain the way a start does.**
+  `qsdm --snapshot-import` loaded every block of the snapshot with its
+  ML-DSA-87 signature, computed every block hash twice and then verified
+  every signature again on one core. It now reads the journal once, on every
+  core, as a start reads it: each block hash is computed and each signature
+  verified once, and every signature but the tip's is kept only in the
+  journal. The export's check of what it wrote and the offline
+  `--hl1-tail-replay` read the journal the same way. Every check still runs,
+  and a refused snapshot gets the same error and exit code as before: tests
+  compare the new checks with the previous code on intact, tampered,
+  truncated and wrongly pinned snapshots and wrong configurations, one
+  defect or several at once, and an import leaves the same state directory,
+  byte for byte but for the three durations its record measures. The
+  record's `journal_load_seconds` now includes the verification, which
+  `restore_seconds` used to include. On the public chain at height 880,376
+  the import's checks peaked at [TBD-880376: peak working set and Go heap,
+  before and after] and took [TBD-880376: time before and after, 1 and 4
+  threads]. No consensus change. The full-node release gets it with its next
+  release; [Run a full node](QSDM/docs/docs/RUN_A_FULL_NODE.md#memory) has
+  the figures.
+
 - **2026-11-07: faster starts under a producer transition.** The producer
   and every full node check each block's ML-DSA-87 signature at every start.
   Each producer's public key is now prepared once per start instead of once

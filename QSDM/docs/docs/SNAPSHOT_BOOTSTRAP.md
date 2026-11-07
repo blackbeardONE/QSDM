@@ -139,7 +139,8 @@ installed) unless every check below passes:
    refused, so N must be a block that the producer signed.
 7. With a producer transition configured, the staged journal starts with the
    pinned history prefix (`ValidateJournalPrefix`) and the whole chain passes
-   the transition rules (`ValidateProducerTransitionChain`).
+   the transition rules (`ValidateProducerTransitionChain`'s checks, run on
+   every block once as the journal is read: `chain.CheckJournal`).
 8. The unmodified boot restore (`hl1ReplayStack.restore`, the code that a
    normal start and the replay mode use) must reproduce the tip's state root
    from the accounts and enrollment files and the task, stream and recovery
@@ -354,9 +355,11 @@ producer's 2,592-byte public key.
 the import's checks, on an existing state directory (its header shows how).
 On a copy of the public chain at height 880 376 (880 377 blocks, a 5.0 GB
 journal), on Windows x86-64 with a 16-thread laptop CPU, each took about 2.5
-minutes. Without the sharing, as in today's full-node release, a start peaked
-at 8.2 GiB and the import at 8.3 GiB. With it (the code on main, and the next
-full-node release), the start and the import both peaked at 5.8 GiB.
+minutes with today's full-node release, where a start peaked at 8.2 GiB and the
+import at 8.3 GiB. The code on main (the next full-node release) shares the
+values repeated across blocks, and both a start and the import read the journal
+once, verify each block once on every core and keep every verified signature
+but the tip's only in the journal.
 [Run a full node](RUN_A_FULL_NODE.md#memory) has the figures and how they grow
 with the chain. A snapshot saves the genesis replay, not memory: every restart
 costs the "boot" time and memory, whether or not the node came from a
