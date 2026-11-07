@@ -28,8 +28,7 @@ no longer updated. This repository took over on 22 April 2026.
 | 2026-10-19 | Mining open to every enrolled miner; [Genesis Policy](GENESIS_POLICY_v1.1.md) v1.0 (every CELL comes from mining); anyone can [run a full node](RUN_A_FULL_NODE.md). |
 | 2026-11-02 | The producer accepts peer-to-peer connections from the internet. |
 | 2026-11-06 | Release rc1106: the producer keeps checked block signatures on disk, and runs in about 4.5 GB instead of 6.6 GB. |
-| 2026-11-07 | Release rc1107: the producer starts faster. |
-| 2026-11-08 | A full node needs 6 GB of RAM instead of 10 to 12 (full-node release fullnode-rc1107). |
+| 2026-11-07 | Release rc1107: the producer starts faster, and a full node needs 6 GB of RAM instead of 10 to 12 (full-node release fullnode-rc1107). |
 
 ## What has not changed since 2025
 

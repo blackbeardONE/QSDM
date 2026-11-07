@@ -131,7 +131,7 @@ from 2026-04-22 on.
 
 ### Changed
 
-- **2026-11-08: full-node release fullnode-rc1107 needs 6 GB instead of 10 to
+- **2026-11-07: full-node release fullnode-rc1107 needs 6 GB instead of 10 to
   12.** The GitHub release `fullnode-rc1107` is the exact `qsdm` the block
   producer runs (release rc1107), with the same snapshot and checkpoint as
   fullnode-rc1019. Its import and its start each peak at about 2 GiB at
@@ -141,7 +141,7 @@ from 2026-04-22 on.
   11 GiB still for fullnode-rc1019. A fullnode-rc1019 node upgrades by
   replacing its `qsdm` binary ([Run a full node](QSDM/docs/docs/RUN_A_FULL_NODE.md#keeping-up-to-date)).
 
-- **2026-11-08: a running node keeps the signatures of the blocks it appends
+- **2026-11-07: a running node keeps the signatures of the blocks it appends
   in its journal.** A start keeps every verified ML-DSA-87 signature but the
   tip's only in the journal (`qsdm_chain.ndjson`), but the blocks a node
   appended while it ran kept their signatures in memory until it restarted,

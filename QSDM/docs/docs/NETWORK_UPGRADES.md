@@ -18,7 +18,7 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
-| 2026-11-08 | full node | Full-node release fullnode-rc1107, the same `qsdm` as release rc1107: a full node needs 6 GB of RAM instead of 10 to 12 ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade to use less memory) |
+| 2026-11-07 23:18 | full node | Full-node release fullnode-rc1107, the same `qsdm` as release rc1107: a full node needs 6 GB of RAM instead of 10 to 12 ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade to use less memory) |
 | 2026-11-07 22:56 | node release | Release rc1107: the producer starts faster, and the snapshot import needs about a third of the memory (no consensus change); mining paused 5 minutes | No |
 | 2026-11-06 08:42 | node release | Release rc1106: the producer keeps checked block signatures on disk and needs less memory, and the public read-only API answers any browser origin (no consensus change); mining paused 13 minutes | No |
 | 2026-11-05 17:51 | node release | Release rc1105: blocks share the values that repeat across them in memory, so the producer needs less (no consensus change); mining paused 21 minutes | No |

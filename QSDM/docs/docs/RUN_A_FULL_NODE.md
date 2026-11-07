@@ -60,7 +60,7 @@ The import and every start load the whole chain into memory, and the node keeps 
 memory a node needs grows with the chain. Go's garbage collector lets the heap grow to about twice what is in use
 before it collects, so the peak is about twice the heap, and a running node can use about as much as a start.
 
-fullnode-rc1107 (8 November 2026), the release qsdm.tech/fullnode.html names and the installer installs, is lighter
+fullnode-rc1107 (7 November 2026), the release qsdm.tech/fullnode.html names and the installer installs, is lighter
 than fullnode-rc1019 in five ways:
 
 - it shares the values that repeat across blocks in memory (the producer's public key, which every block it signs

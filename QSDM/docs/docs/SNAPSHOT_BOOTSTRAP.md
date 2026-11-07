@@ -356,7 +356,7 @@ the import's checks, on an existing state directory (its header shows how).
 On a copy of the public chain at height 880 376 (880 377 blocks, a 5.0 GB
 journal), on Windows x86-64 with a 16-thread laptop CPU, each took about 2.5
 minutes with fullnode-rc1019, where a start peaked at 8.2 GiB and the import at
-8.3 GiB. fullnode-rc1107 (8 November 2026) shares the values repeated across
+8.3 GiB. fullnode-rc1107 (7 November 2026) shares the values repeated across
 blocks, and both a start and the import read the journal
 once, verify each block once on every core and keep every verified signature
 but the tip's only in the journal.
