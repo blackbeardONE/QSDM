@@ -108,12 +108,13 @@ func (bp *BlockProducer) validateProducerTransitionChainLocked(blocks []*Block) 
 	if blocks[len(blocks)-1] == nil || blocks[len(blocks)-1].Height < finalCheckpointHeight(epochs) {
 		return errTransitionIncomplete
 	}
+	keys := newProducerKeys()
 	for i, b := range blocks {
 		var prev *Block
 		if i > 0 {
 			prev = blocks[i-1]
 		}
-		if err := verifyTransitionChainBlock(epochs, prev, b, uint64(i)); err != nil {
+		if err := verifyTransitionChainBlock(epochs, keys, prev, b, uint64(i)); err != nil {
 			return err
 		}
 	}
@@ -129,8 +130,10 @@ var (
 // chain that starts at genesis, after prev (nil at index 0): its height, its
 // hash, its link to prev, the producer schedule and its signature. The hash
 // is computed once; the signature check relies on that comparison instead of
-// computing it again.
-func verifyTransitionChainBlock(epochs []producerpolicy.Epoch, prev, b *Block, i uint64) error {
+// computing it again. keys holds the producer keys of the whole run, each
+// prepared once (producer_keys.go); the schedule is checked before the
+// signature, so it only ever holds the keys of the schedule's producers.
+func verifyTransitionChainBlock(epochs []producerpolicy.Epoch, keys *producerKeys, prev, b *Block, i uint64) error {
 	if b == nil || b.Height != i {
 		return fmt.Errorf("chain: producer transition history is not contiguous at index %d", i)
 	}
@@ -143,7 +146,7 @@ func verifyTransitionChainBlock(epochs []producerpolicy.Epoch, prev, b *Block, i
 	if err := checkTransitionSchedule(epochs, b); err != nil {
 		return err
 	}
-	return verifyBlockSignature(b, true)
+	return verifyBlockSignatureWith(b, true, keys)
 }
 
 // checkTransitionExtensionLocked prevents any suffix from being accepted unless

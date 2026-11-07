@@ -214,6 +214,25 @@ Submit:
 
 The full request and response shapes are in `openapi.yaml`.
 
+## Wallets and tools
+
+Three tools build, sign and submit token transactions today. They work against any node, and the
+node refuses the transactions until the activation height:
+
+- the Go SDK (`QSDM/source/sdk/go`): `SendQSDM20`, or `PrepareQSDM20`, `SignQSDM20` and
+  `SubmitQSDM20` one at a time, with any ML-DSA-87 signer (`TransferSigner`), plus
+  `GetQSDM20Tokens`, `GetQSDM20Token`, `GetQSDM20Holders` and `GetQSDM20Balances`;
+- the JavaScript SDK (`qsdm-sdk` 0.5.0): `sendQSDM20`, `prepareQSDM20`, `submitQSDM20` and the same
+  four reads;
+- `qsdmcli`: `wallet sign-token-tx` signs with a local keystore and prints the submit body,
+  `qsdm20 submit` posts it, and `qsdm20 tokens`, `token`, `holders`, `balances` and `token-id` read.
+
+All three are checked against one set of test vectors,
+`QSDM/source/sdk/go/testdata/qsdm20_vectors.json`: token ids, signing encodings, digests and
+transaction ids, and payloads a node refuses. A node test computes every value in that file with
+the node's own code and fails if the file differs, so a client that matches the vectors signs what
+nodes verify. QSDM Hive and the browser wallet do not sign token transactions yet.
+
 ## Not in version 1
 
 Allowances (`approve` and `transferFrom`), token logos or links, and contracts that hold tokens. Each

@@ -135,6 +135,52 @@ U+2029 escaped). The tests pin it to bytes printed by the node's own code.
 `sendTransfer` makes one attempt; every call reads a fresh nonce and fresh
 parents.
 
+## QSDM-20 tokens
+
+QSDM-20 tokens (specification: `QSDM/docs/docs/QSDM_20.md`) are created,
+sent, minted, burned and renounced with transactions signed by the same
+ML-DSA-87 key that holds your CELL. The signature covers a 32-byte digest of
+the sender, the nonce, the fee and the action's fields; `signQSDM20` gets
+that digest. Nodes refuse token transactions until the network sets an
+activation height
+(`(await client.getNodeStatus()).extra.consensus_auth.qsdm20_active`).
+
+```js
+const { QSDMClient } = require('qsdm-sdk');
+const client = new QSDMClient('https://api.qsdm.tech');
+
+const created = await client.sendQSDM20({
+    sender: myAddress,
+    payload: {
+        action: 'create', symbol: 'GROOT', name: 'Groot Coin', decimals: 8,
+        max_supply: '2100000000000000',    // base units: 21 million tokens of 8 decimals
+        initial_supply: '100000000000000', // 1 million of them to the creator
+        mint: 'issuer',
+    },
+    feeDust: 0,
+    // Sign the digest with ML-DSA-87 (empty context); return { signature, public_key }.
+    signQSDM20: async (digest) => mySigner.sign(digest),
+});
+// created.token is the new token's id; follow created.tx_id with getReceipt().
+
+await client.sendQSDM20({
+    sender: myAddress,
+    payload: { action: 'transfer', token: created.token, to: payee, amount: '150000000' }, // 1.5 tokens
+    signQSDM20: async (digest) => mySigner.sign(digest),
+});
+```
+
+Amounts are whole base units as decimal strings or bigints, up to
+2^256 - 1; numbers are refused because they cannot hold every amount. Nonces
+and fees may be numbers, bigints or decimal strings. `validateQSDM20Action`
+applies the node's field rules offline, `qsdm20TokenId(creator, nonce)` gives
+a token's id before its create is sent, and `qsdm20SigningDigest(tx)` is the
+exact 32 bytes a node verifies (pinned to vectors the node's own code
+computes). A refusal throws an `ApiError`: HTTP 422 for a broken rule, with
+nothing charged. With `qsdmcli`, `wallet sign-token-tx` signs offline and
+`qsdm20 submit` posts the result. The QSDM Wallet extension cannot sign token
+transactions yet.
+
 ## API
 
 | Method | Endpoint | Public |
@@ -146,6 +192,9 @@ parents.
 | `getReceipt(txID)` / `getReceipts({ from, to, limit })` | `GET /api/v1/receipts/{tx_id}` / `GET /api/v1/receipts` | ✓ |
 | `prepareTransfer(request)` | the nonce and parents reads above | ✓ |
 | `submitSignedTransfer(envelope)` / `sendTransfer(request)` | `POST /api/v1/wallet/submit-signed` | ✓ (the signature is the authorization) |
+| `getAccount(address)` | `GET /api/v1/mining/account` | ✓ |
+| `prepareQSDM20(request)` / `submitQSDM20(tx)` / `sendQSDM20(request)` | `POST /api/v1/qsdm20/submit` | ✓ (the signature is the authorization); refused until the activation height |
+| `getQSDM20Tokens({ cursor, limit })` / `getQSDM20Token(id)` / `getQSDM20Holders(id, { cursor, limit })` / `getQSDM20Balances(address)` | `GET /api/v1/qsdm20/tokens`, `/tokens/{id}`, `/tokens/{id}/holders`, `/balances/{address}` | ✓ |
 | `getStreamActionNonce(address)` | `GET /api/v1/streams/nonce` | ✓ |
 | `getStreams(filters)` / `getStream(streamID)` | `GET /api/v1/streams`, `GET /api/v1/streams/{stream_id}` | ✓ |
 | `submitStreamAction(envelope)` | `POST /api/v1/streams/actions/submit-signed` | ✓, but 503 while the pilot pauses stream actions |

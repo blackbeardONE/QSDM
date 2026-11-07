@@ -472,6 +472,17 @@ jobs:
           set -euo pipefail
           go test ./... -count=1 -timeout 10m
 
+      # The JavaScript SDK has no dependencies, so the runner's Node.js runs
+      # its node:test suite as is. Before this step it ran only when a
+      # release was published. It checks the QSDM-20 signing digests against
+      # the same vectors as the Go SDK (sdk/go/testdata).
+      - name: Test JavaScript SDK
+        working-directory: QSDM/source/sdk/javascript
+        run: |
+          set -euo pipefail
+          node --version
+          npm test
+
   # Data race detector on hot pure-Go packages (slower than default job). Run via Actions → workflow_dispatch.
   race-hot-packages:
     if: github.event_name == 'workflow_dispatch'

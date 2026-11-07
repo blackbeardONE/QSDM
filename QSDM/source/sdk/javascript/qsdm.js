@@ -16,6 +16,10 @@
  * client.sendTransfer({ ..., signTransfer }); an envelope signed elsewhere
  * (qsdmcli wallet sign-tx) goes to client.submitSignedTransfer().
  *
+ * QSDM-20 tokens: client.sendQSDM20({ sender, payload, signQSDM20 }) has a key
+ * the caller holds sign a token action's 32-byte digest; the reads are
+ * getQSDM20Tokens, getQSDM20Token, getQSDM20Holders and getQSDM20Balances.
+ *
  * The Prometheus-text call returns a raw string; all other calls return parsed JSON.
  *
  * Native coin: Cell (CELL), 8 decimals, smallest unit "dust".
@@ -318,6 +322,317 @@ function pickPoEParents(ids) {
         throw new Error('qsdm: node offered no usable Proof-of-Entanglement parents');
     }
     return picked;
+}
+
+// --- QSDM-20 tokens: shared rules ------------------------------------------
+
+// QSDM-20 native tokens (QSDM/docs/docs/QSDM_20.md). A token transaction is
+// signed over the SHA-256 of a length-prefixed encoding of the sender, the
+// nonce, the fee in dust and the action's fields, never over JSON, so every
+// implementation signs the same 32 bytes. qsdm20.test.js pins them to
+// vectors the node's own code produces (sdk/go/testdata/qsdm20_vectors.json).
+const QSDM20_CONTRACT_ID = 'qsdm/token/v1';
+const QSDM20_TX_ID_PREFIX = 'qsdm20-';
+// 2^256 - 1, the largest amount any field may carry.
+const QSDM20_MAX_UNITS = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
+const QSDM20_MAX_UNITS_BIG = BigInt(QSDM20_MAX_UNITS);
+const UINT64_MAX = BigInt('18446744073709551615');
+const QSDM20_SYMBOL_PATTERN = /^[A-Z0-9]{1,12}$/;
+// Unicode category Cc, which a token name may not contain.
+const QSDM20_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f]/;
+const QSDM20_MAX_NAME_CHARACTERS = 48;
+const QSDM20_MAX_DECIMALS = 18;
+// The fields of each action, in the order the signature covers them.
+const QSDM20_FIELDS = {
+    create: ['symbol', 'name', 'decimals', 'max_supply', 'initial_supply', 'mint', 'mint_limit'],
+    transfer: ['token', 'to', 'amount'],
+    mint: ['token', 'to', 'amount'],
+    burn: ['token', 'amount'],
+    renounce: ['token'],
+};
+const QSDM20_KEYS = ['action', 'symbol', 'name', 'decimals', 'max_supply', 'initial_supply',
+    'mint', 'mint_limit', 'token', 'to', 'amount'];
+
+function qsdm20FieldError(message) {
+    return new TypeError(`qsdm: invalid QSDM-20 action: ${message}`);
+}
+
+// The node treats an absent field, null and "" alike.
+function qsdm20Present(value) {
+    return value !== undefined && value !== null && value !== '';
+}
+
+// A base-unit amount as the protocol writes it: decimal digits with no sign
+// and no leading zeros, from 1 (or 0 when allowZero) to 2^256 - 1. A bigint
+// is accepted; a number is refused because it cannot hold every amount.
+function qsdm20Units(value, field, allowZero) {
+    let text = value;
+    if (typeof value === 'bigint') {
+        if (value < BigInt(0)) throw qsdm20FieldError(`${field} must not be negative`);
+        text = value.toString();
+    } else if (typeof value === 'number') {
+        throw qsdm20FieldError(`${field} must be a decimal string or a bigint of base units, not a number`);
+    }
+    if (typeof text !== 'string' || text === '') throw qsdm20FieldError(`${field} is required`);
+    if (!/^[0-9]+$/.test(text)) throw qsdm20FieldError(`${field} must be a decimal string of base units`);
+    if (text.length > 1 && text[0] === '0') throw qsdm20FieldError(`${field} has a leading zero`);
+    if (text.length > QSDM20_MAX_UNITS.length || BigInt(text) > QSDM20_MAX_UNITS_BIG) {
+        throw qsdm20FieldError(`${field} is over 2^256 - 1`);
+    }
+    if (text === '0' && !allowZero) throw qsdm20FieldError(`${field} must be at least 1`);
+    return text;
+}
+
+function qsdm20Hex64(value, field, what) {
+    if (typeof value !== 'string' || !WALLET_ADDRESS_PATTERN.test(value)) {
+        throw qsdm20FieldError(`${field} must be ${what} (64 lowercase hex characters)`);
+    }
+    return value;
+}
+
+function qsdm20Address(value, name) {
+    if (typeof value !== 'string' || !WALLET_ADDRESS_PATTERN.test(value)) {
+        throw new TypeError(`qsdm: ${name} must be a 64-character lowercase hex wallet address`);
+    }
+    return value;
+}
+
+// A nonce or fee as a decimal string: a non-negative safe integer, a bigint
+// or a decimal string, up to 2^64 - 1.
+function qsdm20Uint64(value, name) {
+    let text;
+    if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
+        text = String(value);
+    } else if (typeof value === 'bigint' && value >= BigInt(0)) {
+        text = value.toString();
+    } else if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)) {
+        text = value;
+    } else {
+        throw new TypeError(`qsdm: ${name} must be a non-negative safe integer, a bigint or a decimal string`);
+    }
+    if (BigInt(text) > UINT64_MAX) throw new TypeError(`qsdm: ${name} is over 2^64 - 1`);
+    return text;
+}
+
+/**
+ * Applies the QSDM-20 field rules (QSDM_20.md, "Field rules"), the rules a
+ * node applies before it looks at chain state, and returns the action with
+ * only its own fields and amounts as decimal strings. Throws a TypeError
+ * otherwise. A node can still refuse an action that passes, for a reason
+ * that needs the chain (unknown token, not the issuer, too few units, a
+ * mint past max_supply).
+ *
+ * @param {object} action
+ * @returns {object}
+ */
+function validateQSDM20Action(action) {
+    if (!action || typeof action !== 'object' || Array.isArray(action)) {
+        throw qsdm20FieldError('an action object is required');
+    }
+    for (const key of Object.keys(action)) {
+        if (!QSDM20_KEYS.includes(key)) throw qsdm20FieldError(`unknown field ${JSON.stringify(key)}`);
+    }
+    const kind = action.action;
+    if (typeof kind !== 'string' || !Object.prototype.hasOwnProperty.call(QSDM20_FIELDS, kind)) {
+        throw qsdm20FieldError('action must be create, transfer, mint, burn or renounce');
+    }
+    const fields = QSDM20_FIELDS[kind];
+    for (const key of QSDM20_KEYS) {
+        if (key !== 'action' && !fields.includes(key) && qsdm20Present(action[key])) {
+            throw qsdm20FieldError(`${kind} carries only ${fields.join(', ')}`);
+        }
+    }
+    if (kind !== 'create') {
+        const out = { action: kind, token: qsdm20Hex64(action.token, 'token', 'a token id') };
+        if (kind === 'transfer' || kind === 'mint') out.to = qsdm20Hex64(action.to, 'to', 'a QSDM address');
+        if (kind !== 'renounce') out.amount = qsdm20Units(action.amount, 'amount', false);
+        return out;
+    }
+    if (typeof action.symbol !== 'string' || !QSDM20_SYMBOL_PATTERN.test(action.symbol)) {
+        throw qsdm20FieldError('symbol must be 1 to 12 characters A to Z and 0 to 9');
+    }
+    const name = action.name;
+    if (typeof name !== 'string' || name === '' || LONE_SURROGATE_PATTERN.test(name) ||
+        QSDM20_CONTROL_PATTERN.test(name) || Array.from(name).length > QSDM20_MAX_NAME_CHARACTERS) {
+        throw qsdm20FieldError('name must be 1 to 48 characters of valid Unicode text with no control characters');
+    }
+    if (!Number.isInteger(action.decimals) || action.decimals < 0 || action.decimals > QSDM20_MAX_DECIMALS) {
+        throw qsdm20FieldError('decimals must be an integer from 0 to 18');
+    }
+    const out = {
+        action: kind,
+        symbol: action.symbol,
+        name,
+        decimals: action.decimals,
+        max_supply: qsdm20Units(action.max_supply, 'max_supply', false),
+        initial_supply: qsdm20Units(action.initial_supply, 'initial_supply', true),
+        mint: action.mint,
+    };
+    if (BigInt(out.initial_supply) > BigInt(out.max_supply)) {
+        throw qsdm20FieldError('initial_supply is over max_supply');
+    }
+    switch (action.mint) {
+    case 'none':
+        if (qsdm20Present(action.mint_limit)) throw qsdm20FieldError('mint_limit is present only in open mode');
+        if (out.initial_supply !== out.max_supply) {
+            throw qsdm20FieldError('in mint none, initial_supply must equal max_supply');
+        }
+        break;
+    case 'issuer':
+        if (qsdm20Present(action.mint_limit)) throw qsdm20FieldError('mint_limit is present only in open mode');
+        break;
+    case 'open':
+        out.mint_limit = qsdm20Units(action.mint_limit, 'mint_limit', false);
+        break;
+    default:
+        throw qsdm20FieldError('mint must be none, issuer or open');
+    }
+    return out;
+}
+
+// SHA-256 (FIPS 180-4), synchronous so it works the same in browsers,
+// workers and every supported Node.js. It hashes only public data.
+const SHA256_K = new Uint32Array([
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+]);
+
+function sha256(message) {
+    const length = message.length;
+    const padded = new Uint8Array(((length + 72) >>> 6) << 6);
+    padded.set(message);
+    padded[length] = 0x80;
+    const view = new DataView(padded.buffer);
+    view.setUint32(padded.length - 8, Math.floor(length / 0x20000000));
+    view.setUint32(padded.length - 4, (length * 8) >>> 0);
+    const h = new Uint32Array([
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ]);
+    const w = new Uint32Array(64);
+    for (let offset = 0; offset < padded.length; offset += 64) {
+        for (let i = 0; i < 16; i += 1) w[i] = view.getUint32(offset + i * 4);
+        for (let i = 16; i < 64; i += 1) {
+            const x = w[i - 15];
+            const y = w[i - 2];
+            const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
+            const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
+            w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+        }
+        let a = h[0]; let b = h[1]; let c = h[2]; let d = h[3];
+        let e = h[4]; let f = h[5]; let g = h[6]; let k = h[7];
+        for (let i = 0; i < 64; i += 1) {
+            const s1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+            const t1 = (k + s1 + ((e & f) ^ (~e & g)) + SHA256_K[i] + w[i]) | 0;
+            const s0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+            const t2 = (s0 + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+            k = g; g = f; f = e; e = (d + t1) | 0;
+            d = c; c = b; b = a; a = (t1 + t2) | 0;
+        }
+        h[0] += a; h[1] += b; h[2] += c; h[3] += d;
+        h[4] += e; h[5] += f; h[6] += g; h[7] += k;
+    }
+    const out = new Uint8Array(32);
+    const outView = new DataView(out.buffer);
+    for (let i = 0; i < 8; i += 1) outView.setUint32(i * 4, h[i]);
+    return out;
+}
+
+function bytesToHex(bytes) {
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function hexToBytes(hex) {
+    const out = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < out.length; i += 1) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    return out;
+}
+
+/**
+ * The QSDM wallet address of an ML-DSA-87 public key (hex or Uint8Array):
+ * the lowercase hex SHA-256 of the key.
+ */
+function walletAddress(publicKey) {
+    return bytesToHex(sha256(hexToBytes(toHex(publicKey, MLDSA87_PUBLIC_KEY_BYTES, 'public_key'))));
+}
+
+// One length-prefixed field: "|" + tag + ":" + byte length + ":" + value.
+function qsdm20Field(tag, value) {
+    return `|${tag}:${encodeUTF8(value).length}:${value}`;
+}
+
+/**
+ * The id of the token `creator` creates with its transaction at `nonce`
+ * (a safe integer, bigint or decimal string). Known before it is sent.
+ */
+function qsdm20TokenId(creator, nonce) {
+    const preimage = qsdm20Field('domain', 'qsdm/token/v1/id') +
+        qsdm20Field('creator', qsdm20Address(creator, 'creator')) +
+        qsdm20Field('nonce', qsdm20Uint64(nonce, 'nonce'));
+    return bytesToHex(sha256(encodeUTF8(preimage)));
+}
+
+/**
+ * The length-prefixed encoding a QSDM-20 signature covers (QSDM_20.md,
+ * "Signature") for { sender, nonce, fee_dust, payload }. Exported for
+ * debugging and other implementations; sign qsdm20SigningDigest().
+ */
+function qsdm20SigningPreimage(tx) {
+    if (!tx || typeof tx !== 'object') throw new TypeError('qsdm: a QSDM-20 transaction object is required');
+    const a = validateQSDM20Action(tx.payload);
+    const fee = tx.fee_dust !== undefined ? tx.fee_dust : (tx.feeDust !== undefined ? tx.feeDust : 0);
+    let out = qsdm20Field('domain', 'qsdm/token/v1/tx') +
+        qsdm20Field('sender', qsdm20Address(tx.sender, 'sender')) +
+        qsdm20Field('nonce', qsdm20Uint64(tx.nonce, 'nonce')) +
+        qsdm20Field('fee_dust', qsdm20Uint64(fee, 'fee_dust')) +
+        qsdm20Field('action', a.action);
+    for (const field of QSDM20_FIELDS[a.action]) {
+        const value = a[field];
+        out += qsdm20Field(field, value === undefined ? '' : String(value));
+    }
+    return out;
+}
+
+/**
+ * The 32 bytes a QSDM-20 transaction's ML-DSA-87 signature covers (FIPS 204,
+ * empty context): the SHA-256 of qsdm20SigningPreimage(tx).
+ * @returns {Uint8Array}
+ */
+function qsdm20SigningDigest(tx) {
+    return sha256(encodeUTF8(qsdm20SigningPreimage(tx)));
+}
+
+/** The transaction id for a signing digest (Uint8Array or hex). */
+function qsdm20TxId(digest) {
+    if (digest instanceof Uint8Array && digest.length === 32) return QSDM20_TX_ID_PREFIX + bytesToHex(digest);
+    if (typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest)) return QSDM20_TX_ID_PREFIX + digest;
+    throw new TypeError('qsdm: a QSDM-20 digest is 32 bytes (a Uint8Array or 64 lowercase hex characters)');
+}
+
+// The body of POST /api/v1/qsdm20/submit. nonce and fee_dust are JSON
+// numbers there; they are written from their decimal strings so 64-bit
+// values stay exact.
+function qsdm20SubmitBody(tx, publicKey, signature) {
+    const fee = tx.fee_dust !== undefined ? tx.fee_dust : (tx.feeDust !== undefined ? tx.feeDust : 0);
+    return `{"sender":${JSON.stringify(qsdm20Address(tx.sender, 'sender'))}` +
+        `,"nonce":${qsdm20Uint64(tx.nonce, 'nonce')}` +
+        `,"fee_dust":${qsdm20Uint64(fee, 'fee_dust')}` +
+        `,"payload":${JSON.stringify(validateQSDM20Action(tx.payload))}` +
+        `,"public_key":${JSON.stringify(publicKey)},"signature":${JSON.stringify(signature)}}`;
+}
+
+function qsdm20PageQuery(options) {
+    const pairs = [];
+    if (options && typeof options.cursor === 'string' && options.cursor !== '') {
+        pairs.push(`cursor=${encodeURIComponent(options.cursor)}`);
+    }
+    if (options && Number.isInteger(options.limit) && options.limit > 0) pairs.push(`limit=${options.limit}`);
+    return pairs.length > 0 ? `?${pairs.join('&')}` : '';
 }
 
 // --- QSDM Wallet extension (window.qsdm) -----------------------------------
@@ -702,6 +1017,129 @@ class QSDMClient {
         return this._request('POST', '/api/v1/streams/actions/submit-signed', envelope);
     }
 
+    // --- QSDM-20 tokens ---
+
+    /**
+     * Consensus CELL balance and account nonce of an address
+     * (GET /api/v1/mining/account, public): { address, balance, nonce,
+     * present }. A token transaction carries `nonce`.
+     */
+    async getAccount(address) {
+        return this._request('GET', `/api/v1/mining/account?address=${encodeURIComponent(address)}`);
+    }
+
+    /**
+     * Builds an unsigned QSDM-20 transaction { sender, nonce, fee_dust,
+     * payload }. Reads the sender's account nonce unless `nonce` is given;
+     * the sender needs a CELL account (the fee, even 0, is charged to it).
+     * nonce and fee_dust come back as decimal strings so 64-bit values stay
+     * exact. Nodes refuse token transactions until the network sets an
+     * activation height (getNodeStatus().extra.consensus_auth.qsdm20_active).
+     *
+     * @param {{ sender: string, payload: object, feeDust?: number|bigint|string,
+     *           nonce?: number|bigint|string }} request
+     */
+    async prepareQSDM20(request = {}) {
+        const sender = qsdm20Address(request.sender, 'sender');
+        const payload = validateQSDM20Action(request.payload);
+        const feeDust = qsdm20Uint64(request.feeDust === undefined ? 0 : request.feeDust, 'feeDust');
+        if (request.nonce !== undefined && request.nonce !== null) {
+            return { sender, nonce: qsdm20Uint64(request.nonce, 'nonce'), fee_dust: feeDust, payload };
+        }
+        const account = await this.getAccount(sender);
+        if (!account || account.address !== sender || !Number.isSafeInteger(account.nonce) || account.nonce < 0) {
+            throw new Error(`qsdm: node returned an inconsistent account: ${JSON.stringify(account)}`);
+        }
+        if (account.present !== true) {
+            throw new Error(`qsdm: ${sender} has no CELL account yet; a token transaction's sender needs one`);
+        }
+        return { sender, nonce: String(account.nonce), fee_dust: feeDust, payload };
+    }
+
+    /**
+     * Posts a signed QSDM-20 transaction to POST /api/v1/qsdm20/submit (public;
+     * the signature is the authorization). Resolves with { tx_id, action,
+     * sender, nonce, token, status, mempool_status }; `token` is the token
+     * acted on, or the id a create gives the new token. A refusal throws an
+     * ApiError: 422 for a broken rule (nothing is charged), including every
+     * token transaction before the activation height; 503 where submission
+     * is not available.
+     */
+    async submitQSDM20(tx) {
+        if (!tx || typeof tx !== 'object' || !tx.signature || !tx.public_key) {
+            throw new TypeError('qsdm: the QSDM-20 transaction is not signed (signature and public_key are required)');
+        }
+        const publicKey = toHex(tx.public_key, MLDSA87_PUBLIC_KEY_BYTES, 'public_key');
+        const signature = toHex(tx.signature, MLDSA87_SIGNATURE_BYTES, 'signature');
+        const txId = qsdm20TxId(qsdm20SigningDigest(tx));
+        const response = await this._request('POST', '/api/v1/qsdm20/submit',
+            qsdm20SubmitBody(tx, publicKey, signature));
+        if (!response || response.tx_id !== txId) {
+            throw new Error(`qsdm: node answered tx_id ${JSON.stringify(response && response.tx_id)} for transaction ${txId}`);
+        }
+        return response;
+    }
+
+    /**
+     * Prepares, signs and submits one QSDM-20 transaction.
+     * `signQSDM20(digest, unsigned)` signs the 32-byte digest with ML-DSA-87
+     * (empty context) using a key the caller holds and returns
+     * { signature, public_key } (hex strings or Uint8Arrays); the public key
+     * must be the sender's.
+     *
+     * @param {{ sender: string, payload: object, feeDust?: number|bigint|string,
+     *           nonce?: number|bigint|string,
+     *           signQSDM20: (digest: Uint8Array, unsigned: object) => any }} request
+     */
+    async sendQSDM20(request = {}) {
+        if (typeof request.signQSDM20 !== 'function') {
+            throw new TypeError('qsdm: sendQSDM20 needs a signQSDM20(digest, unsigned) function');
+        }
+        const unsigned = await this.prepareQSDM20(request);
+        const result = await request.signQSDM20(qsdm20SigningDigest(unsigned), { ...unsigned });
+        if (!result || typeof result !== 'object') {
+            throw new TypeError('qsdm: signQSDM20 must return { signature, public_key }');
+        }
+        const publicKey = toHex(result.public_key !== undefined ? result.public_key : result.publicKey,
+            MLDSA87_PUBLIC_KEY_BYTES, 'public_key');
+        if (walletAddress(publicKey) !== unsigned.sender) {
+            throw new Error(`qsdm: the signer's public key does not belong to ${unsigned.sender}`);
+        }
+        const signature = toHex(result.signature, MLDSA87_SIGNATURE_BYTES, 'signature');
+        return this.submitQSDM20({ ...unsigned, public_key: publicKey, signature });
+    }
+
+    /**
+     * Tokens, newest first (GET /api/v1/qsdm20/tokens, public). Without
+     * `limit` every remaining token comes back; with it, pass the page's
+     * `next_cursor` as `cursor` for the next page.
+     * @param {{ cursor?: string, limit?: number }} [options]
+     */
+    async getQSDM20Tokens(options = {}) {
+        return this._request('GET', `/api/v1/qsdm20/tokens${qsdm20PageQuery(options)}`);
+    }
+
+    /** One token, with its supply and number of holders (GET /api/v1/qsdm20/tokens/{id}, public). */
+    async getQSDM20Token(id) {
+        return this._request('GET', `/api/v1/qsdm20/tokens/${encodeURIComponent(id)}`);
+    }
+
+    /**
+     * A token's holders, largest balance first
+     * (GET /api/v1/qsdm20/tokens/{id}/holders, public), paged like getQSDM20Tokens.
+     * @param {string} id
+     * @param {{ cursor?: string, limit?: number }} [options]
+     */
+    async getQSDM20Holders(id, options = {}) {
+        return this._request('GET',
+            `/api/v1/qsdm20/tokens/${encodeURIComponent(id)}/holders${qsdm20PageQuery(options)}`);
+    }
+
+    /** Every token an address holds (GET /api/v1/qsdm20/balances/{address}, public). */
+    async getQSDM20Balances(address) {
+        return this._request('GET', `/api/v1/qsdm20/balances/${encodeURIComponent(address)}`);
+    }
+
     // --- health + node + network ---
 
     async getLiveness()   { return this._request('GET', '/api/v1/health/live'); }
@@ -824,7 +1262,9 @@ class QSDMClient {
         const init = { method, headers };
         if (body !== null && body !== undefined) {
             headers['Content-Type'] = 'application/json';
-            init.body = JSON.stringify(body);
+            // A string body is sent as it is: submitQSDM20 writes its own JSON
+            // so 64-bit nonces stay exact.
+            init.body = typeof body === 'string' ? body : JSON.stringify(body);
         }
 
         let timer = null;
@@ -856,5 +1296,13 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports.getWalletProvider = getWalletProvider;
     module.exports.waitForWalletProvider = waitForWalletProvider;
     module.exports.sendTransferWithProvider = sendTransferWithProvider;
+    module.exports.QSDM20_CONTRACT_ID = QSDM20_CONTRACT_ID;
+    module.exports.QSDM20_MAX_UNITS = QSDM20_MAX_UNITS;
+    module.exports.validateQSDM20Action = validateQSDM20Action;
+    module.exports.qsdm20TokenId = qsdm20TokenId;
+    module.exports.qsdm20SigningPreimage = qsdm20SigningPreimage;
+    module.exports.qsdm20SigningDigest = qsdm20SigningDigest;
+    module.exports.qsdm20TxId = qsdm20TxId;
+    module.exports.walletAddress = walletAddress;
     Object.assign(module.exports, require('./cell-stream-runtime.js'));
 }

@@ -24,12 +24,16 @@ package main
 //	                                        to compare builds)
 //
 // boot    main()'s restore block: the consensus settings, the transition
-//         prefix check, the journal load (with a producer transition,
-//         chain.LoadVerifiedJournal: every block's hash and signature
-//         verified once, and the verified signatures stripped from memory;
-//         load_seconds includes that verification), the snapshot pair's
-//         state root check and the producer hydrate (hl1ReplayStack.restore,
-//         which does not verify the blocks again).
+//         prefix check, twice as main() runs it (before the state lock and
+//         under it; prefix_seconds), the journal load (with a producer
+//         transition, chain.LoadVerifiedJournal: every block's hash and
+//         signature verified once, and the verified signatures stripped from
+//         memory; load_seconds includes that verification), the snapshot
+//         pair's state root check and the producer hydrate
+//         (hl1ReplayStack.restore, which does not verify the blocks again),
+//         then the receipts load when the directory has a
+//         qsdm_receipts.ndjson (receipts_seconds; a producer's holds a
+//         receipt for every transaction of the chain, a snapshot none).
 // import  the checks of qsdm --snapshot-import (snapshotVerifyDir), without
 //         the staging copy and the checkpoint pin.
 //
@@ -79,10 +83,13 @@ type restoreBenchReport struct {
 	Transactions       int     `json:"transactions,omitempty"`
 	ProducerKeys       int     `json:"producer_keys,omitempty"`
 	ProducerKeyArrays  int     `json:"producer_key_arrays,omitempty"`
+	Receipts           int     `json:"receipts,omitempty"`
 	JournalBytes       int64   `json:"journal_bytes"`
 	Transition         bool    `json:"producer_transition"`
+	PrefixSeconds      float64 `json:"prefix_seconds,omitempty"`
 	LoadSeconds        float64 `json:"load_seconds"`
 	RestoreSeconds     float64 `json:"restore_seconds"`
+	ReceiptsSeconds    float64 `json:"receipts_seconds,omitempty"`
 	Seconds            float64 `json:"seconds"`
 	HeapInuseMB        float64 `json:"heap_inuse_mb,omitempty"`
 	HeapAllocMB        float64 `json:"heap_alloc_mb,omitempty"`
@@ -205,9 +212,15 @@ func restoreBenchBoot(t *testing.T, dir, scratch string, c restoreBenchConsensus
 		c.settings()
 	}
 	journal := filepath.Join(dir, hl1JournalName)
-	if err := c.transition.ValidateJournalPrefix(journal); err != nil {
-		t.Fatalf("producer transition preflight: %v", err)
+	// main() checks the prefix before it takes the state lock, then again
+	// under it (hl1LockedTransitionPreflight).
+	tp := time.Now()
+	for _, step := range []string{"preflight", "locked preflight"} {
+		if err := c.transition.ValidateJournalPrefix(journal); err != nil {
+			t.Fatalf("producer transition %s: %v", step, err)
+		}
 	}
+	rep.PrefixSeconds = time.Since(tp).Seconds()
 	if err := hl1RequireFinalNewline(hl1OSFS{}, journal); err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +257,24 @@ func restoreBenchBoot(t *testing.T, dir, scratch string, c restoreBenchConsensus
 	if tip, ok := st.producer.LatestBlock(); !ok || tip != blocks[len(blocks)-1] {
 		t.Fatal("the restored tip is not the journal tip")
 	}
+	// The receipts, as main() loads them after the restore (read only).
+	if receipts := filepath.Join(dir, hl1ReceiptsName); restoreBenchFileExists(receipts) {
+		t2 := time.Now()
+		if err := hl1RequireFinalNewline(hl1OSFS{}, receipts); err != nil {
+			t.Fatal(err)
+		}
+		n, err := st.receipts.LoadNDJSON(receipts)
+		if err != nil {
+			t.Fatalf("receipts: %v", err)
+		}
+		rep.Receipts, rep.ReceiptsSeconds = n, time.Since(t2).Seconds()
+	}
 	return st, blocks
+}
+
+func restoreBenchFileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func restoreBenchHeapProfile(t *testing.T, path string) {

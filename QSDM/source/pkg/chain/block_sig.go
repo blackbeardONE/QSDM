@@ -148,6 +148,13 @@ func VerifyBlockSignature(b *Block) error {
 // caller has just compared b.Hash with computeBlockHash(b), which is then not
 // computed again.
 func verifyBlockSignature(b *Block, hashChecked bool) error {
+	return verifyBlockSignatureWith(b, hashChecked, nil)
+}
+
+// verifyBlockSignatureWith is verifyBlockSignature with the producer keys of
+// one verification run, each prepared once (producer_keys.go); nil keys
+// prepares the key for this signature alone.
+func verifyBlockSignatureWith(b *Block, hashChecked bool, keys *producerKeys) error {
 	if b == nil {
 		return errors.New("chain: nil block")
 	}
@@ -165,7 +172,7 @@ func verifyBlockSignature(b *Block, hashChecked bool) error {
 			return fmt.Errorf("%w: block hash does not match its contents", ErrBlockBadSignature)
 		}
 	}
-	if err := verifyAuth(b.ProducerAuth, blockSigDigest(b), b.ProducerID); err != nil {
+	if err := keys.verifyAuth(b.ProducerAuth, blockSigDigest(b), b.ProducerID); err != nil {
 		return fmt.Errorf("%w: %v", ErrBlockBadSignature, err)
 	}
 	return nil

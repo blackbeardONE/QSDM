@@ -55,6 +55,8 @@ func main() {
 		err = cli.bridgeLock(args)
 	case "tokens":
 		err = cli.listTokens()
+	case "qsdm20":
+		err = cli.qsdm20Command(args)
 	case "mempool":
 		err = cli.mempoolStats()
 	case "audit":
@@ -355,6 +357,11 @@ Commands:
   execute <id> <func> [key=val ...]   Execute a contract function
   contracts                           List deployed contracts
   tokens                              List registered tokens
+  qsdm20 <sub> [args]                 QSDM-20 tokens (QSDM_20.md):
+                                        submit [--file F]   post a transaction from
+                                                            wallet sign-token-tx
+                                        tokens | token <id> | holders <id> | balances <address>
+                                        token-id <creator> <nonce>   id a create will give
   bridge                              Show bridge locks
   lock <src> <dst> <asset> <amt>      Lock asset for cross-chain transfer
   audit                               Show audit checklist summary
@@ -384,6 +391,9 @@ self-custody wallet (no server keys; ML-DSA-87 keypair generated locally):
                                       Decrypt and verify integrity (the
                                       decrypted private key must reproduce
                                       the stored public key).
+  wallet sign-token-tx [--tx-file F] (--nonce N | --auto-nonce) [--fee-dust N]
+                                      Sign a QSDM-20 token transaction; prints
+                                      the body for 'qsdm20 submit'.
   wallet sign [--in PATH] [--passphrase-file FILE] (--message HEX | --message-file PATH)
                                       ML-DSA-87 signature over the supplied
                                       bytes. Output: hex on stdout, status

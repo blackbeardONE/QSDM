@@ -486,6 +486,161 @@ export function sendTransferWithProvider(
     options?: { connect?: boolean }
 ): Promise<ProviderTransferResult>;
 
+/** A 64-bit unsigned value: a non-negative safe integer, a bigint or a decimal string. */
+export type Uint64Like = number | bigint | string;
+
+/**
+ * A QSDM-20 action (QSDM/docs/docs/QSDM_20.md). Each action carries exactly
+ * the fields of its row in the specification. Amounts are whole base units
+ * as decimal strings or bigints (a token with 8 decimals counts 1.5 tokens
+ * as "150000000"); numbers are refused.
+ */
+export interface QSDM20Action {
+    action: 'create' | 'transfer' | 'mint' | 'burn' | 'renounce';
+    /** create: 1 to 12 characters A to Z and 0 to 9. */
+    symbol?: string;
+    /** create: 1 to 48 characters, no control characters. */
+    name?: string;
+    /** create: 0 to 18. */
+    decimals?: number;
+    max_supply?: string | bigint;
+    initial_supply?: string | bigint;
+    mint?: 'none' | 'issuer' | 'open';
+    /** create in `open` mode only: the most one mint may create. */
+    mint_limit?: string | bigint;
+    /** transfer, mint, burn, renounce: the token id. */
+    token?: string;
+    /** transfer, mint: the receiving address. */
+    to?: string;
+    /** transfer, mint, burn. */
+    amount?: string | bigint;
+}
+
+/** An unsigned QSDM-20 transaction as prepareQSDM20 returns it. */
+export interface QSDM20UnsignedTransaction {
+    sender: string;
+    /** Decimal string. */
+    nonce: string;
+    /** The fee in dust (1 CELL = 100,000,000 dust), burned. Decimal string. */
+    fee_dust: string;
+    payload: QSDM20Action;
+}
+
+export interface QSDM20SignedTransaction extends QSDM20UnsignedTransaction {
+    public_key: string;
+    signature: string;
+}
+
+export interface QSDM20SubmitResponse {
+    tx_id: string;
+    action: string;
+    sender: string;
+    nonce: number;
+    /** The token acted on; for a create, the id the new token gets. */
+    token: string;
+    status: string;
+    /** "submitted", or "duplicate" when the node already had it. */
+    mempool_status: string;
+}
+
+export interface AccountInfo {
+    address: string;
+    balance: number;
+    /** The account nonce a token transaction carries. */
+    nonce: number;
+    /** False for an address that never received CELL. */
+    present: boolean;
+}
+
+export interface QSDM20Token {
+    id: string;
+    symbol: string;
+    name: string;
+    decimals: number;
+    issuer: string;
+    mint: 'none' | 'issuer' | 'open';
+    mint_limit?: string;
+    max_supply: string;
+    minted: string;
+    burned: string;
+    supply: string;
+    holders: number;
+    created_height: number;
+}
+
+export interface QSDM20TokensPage {
+    state_root: string;
+    tokens: QSDM20Token[];
+    next_cursor?: string;
+    has_more: boolean;
+}
+
+export interface QSDM20TokenInfo {
+    state_root: string;
+    token: QSDM20Token;
+}
+
+export interface QSDM20HoldersPage {
+    state_root: string;
+    token: string;
+    holders: Array<{ address: string; balance: string }>;
+    next_cursor?: string;
+    has_more: boolean;
+}
+
+export interface QSDM20Balances {
+    state_root: string;
+    address: string;
+    balances: Array<{ token: string; symbol: string; name: string; decimals: number; balance: string }>;
+}
+
+export interface SendQSDM20Request {
+    sender: string;
+    payload: QSDM20Action;
+    feeDust?: Uint64Like;
+    /** Read from GET /api/v1/mining/account when omitted. */
+    nonce?: Uint64Like;
+    /** Signs the 32-byte digest with ML-DSA-87 (empty context) using the sender's key. */
+    signQSDM20(
+        digest: Uint8Array,
+        unsigned: QSDM20UnsignedTransaction
+    ):
+        | { signature: string | Uint8Array; public_key?: string | Uint8Array; publicKey?: string | Uint8Array }
+        | Promise<{ signature: string | Uint8Array; public_key?: string | Uint8Array; publicKey?: string | Uint8Array }>;
+}
+
+export const QSDM20_CONTRACT_ID: 'qsdm/token/v1';
+/** 2^256 - 1 as a decimal string, the largest amount any field may carry. */
+export const QSDM20_MAX_UNITS: string;
+
+/**
+ * Applies the QSDM-20 field rules and returns the action with only its own
+ * fields and amounts as decimal strings. Throws a TypeError otherwise.
+ */
+export function validateQSDM20Action(action: QSDM20Action): QSDM20Action;
+/** The id of the token `creator` creates with its transaction at `nonce`. */
+export function qsdm20TokenId(creator: string, nonce: Uint64Like): string;
+/** The length-prefixed encoding a QSDM-20 signature covers. */
+export function qsdm20SigningPreimage(tx: {
+    sender: string;
+    nonce: Uint64Like;
+    fee_dust?: Uint64Like;
+    feeDust?: Uint64Like;
+    payload: QSDM20Action;
+}): string;
+/** The 32 bytes a QSDM-20 transaction's ML-DSA-87 signature covers. */
+export function qsdm20SigningDigest(tx: {
+    sender: string;
+    nonce: Uint64Like;
+    fee_dust?: Uint64Like;
+    feeDust?: Uint64Like;
+    payload: QSDM20Action;
+}): Uint8Array;
+/** "qsdm20-" plus the hex digest: the id the node gives the transaction. */
+export function qsdm20TxId(digest: Uint8Array | string): string;
+/** The QSDM wallet address of an ML-DSA-87 public key: the hex SHA-256 of the key. */
+export function walletAddress(publicKey: Uint8Array | string): string;
+
 export class QSDMClient {
     readonly baseURL: string;
     constructor(baseURL: string, opts?: ClientOptions);
@@ -559,6 +714,31 @@ export class QSDMClient {
      * 503 (the public pilot pauses stream actions during its recovery).
      */
     submitStreamAction(envelope: StreamActionEnvelope): Promise<StreamActionSubmitResponse>;
+
+    /** GET /api/v1/mining/account (public): consensus CELL balance and account nonce. */
+    getAccount(address: string): Promise<AccountInfo>;
+    /**
+     * Builds an unsigned QSDM-20 transaction, reading the sender's account
+     * nonce unless `nonce` is given. The sender needs a CELL account.
+     */
+    prepareQSDM20(request: {
+        sender: string;
+        payload: QSDM20Action;
+        feeDust?: Uint64Like;
+        nonce?: Uint64Like;
+    }): Promise<QSDM20UnsignedTransaction>;
+    /** POST /api/v1/qsdm20/submit (public). Throws {@link ApiError} on refusal (422 for a broken rule). */
+    submitQSDM20(tx: QSDM20SignedTransaction): Promise<QSDM20SubmitResponse>;
+    /** prepareQSDM20 + request.signQSDM20 + submitQSDM20, one attempt. */
+    sendQSDM20(request: SendQSDM20Request): Promise<QSDM20SubmitResponse>;
+    /** GET /api/v1/qsdm20/tokens (public), newest first. */
+    getQSDM20Tokens(options?: { cursor?: string; limit?: number }): Promise<QSDM20TokensPage>;
+    /** GET /api/v1/qsdm20/tokens/{id} (public). */
+    getQSDM20Token(id: string): Promise<QSDM20TokenInfo>;
+    /** GET /api/v1/qsdm20/tokens/{id}/holders (public), largest balance first. */
+    getQSDM20Holders(id: string, options?: { cursor?: string; limit?: number }): Promise<QSDM20HoldersPage>;
+    /** GET /api/v1/qsdm20/balances/{address} (public). */
+    getQSDM20Balances(address: string): Promise<QSDM20Balances>;
 
     getLiveness(): Promise<HealthStatus>;
     getReadiness(): Promise<HealthStatus>;

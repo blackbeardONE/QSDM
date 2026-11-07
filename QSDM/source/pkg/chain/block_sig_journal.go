@@ -209,11 +209,14 @@ func (bp *BlockProducer) loadVerifiedJournal(path string, workers int) (*Verifie
 		}
 		scanErr = scanner.Err()
 	}()
+	// One table of prepared producer keys for the whole load: each key is
+	// unpacked once, not once per signature (producer_keys.go).
+	keys := newProducerKeys()
 	for w := 0; w < workers; w++ {
 		go func() {
 			defer wg.Done()
 			for it := range jobs {
-				it.blk, it.err = decodeJournalLine(epochs, path, it)
+				it.blk, it.err = decodeJournalLine(epochs, keys, path, it)
 				it.raw = nil
 				close(it.done)
 			}
@@ -260,16 +263,16 @@ func (bp *BlockProducer) loadVerifiedJournal(path string, workers int) (*Verifie
 // decodeJournalLine decodes the line of it and verifies the block in it as
 // the block at it.index of a chain that starts at genesis: everything
 // verifyTransitionChainBlock checks but the link to the block before it,
-// which the caller checks in journal order. It records the digest of the
-// verified signature in it.at. On a verification failure it returns the
-// block with the error.
-func decodeJournalLine(epochs []producerpolicy.Epoch, path string, it *journalItem) (*Block, error) {
+// which the caller checks in journal order. keys are the load's prepared
+// producer keys. It records the digest of the verified signature in it.at.
+// On a verification failure it returns the block with the error.
+func decodeJournalLine(epochs []producerpolicy.Epoch, keys *producerKeys, path string, it *journalItem) (*Block, error) {
 	blk := &Block{}
 	if err := json.Unmarshal(it.raw, blk); err != nil {
 		return nil, fmt.Errorf("chain.LoadVerifiedJournal: parse line %d of %s: %w (verified %d blocks before it; trim the bad line to recover)",
 			it.lineno, path, err, it.index)
 	}
-	if err := verifyTransitionChainBlock(epochs, nil, blk, it.index); err != nil {
+	if err := verifyTransitionChainBlock(epochs, keys, nil, blk, it.index); err != nil {
 		return blk, fmt.Errorf("%w (%s line %d)", err, path, it.lineno)
 	}
 	if a := blk.ProducerAuth; len(a.PublicKey) > 0 && len(a.Signature) > 0 {

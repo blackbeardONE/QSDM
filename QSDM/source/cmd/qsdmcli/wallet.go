@@ -28,6 +28,9 @@
 //	                                [--envelope-file PATH | '-'] [--nonce N]
 //	qsdmcli wallet sign-stream-action [--in PATH] [--passphrase-file FILE]
 //	                                  [--action-file PATH | '-'] [--nonce N]
+//	qsdmcli wallet sign-token-tx [--in PATH] [--passphrase-file FILE]
+//	                             [--tx-file PATH | '-'] [--nonce N | --auto-nonce]
+//	                             [--fee-dust N] (QSDM-20 tokens; see qsdm20.go)
 //
 // `new` produces an encrypted keystore and prints only the address to
 // stdout — friendly for piping straight into a miner:
@@ -103,6 +106,8 @@ func (c *CLI) walletCommand(args []string) error {
 		return c.walletSignTaskAction(rest)
 	case "sign-stream-action":
 		return c.walletSignStreamAction(rest)
+	case "sign-token-tx":
+		return c.walletSignTokenTx(rest)
 	case "help", "-h", "--help":
 		fmt.Fprint(os.Stdout, walletHelp)
 		return nil
@@ -112,7 +117,7 @@ func (c *CLI) walletCommand(args []string) error {
 }
 
 func walletUsageError() error {
-	return fmt.Errorf("usage: qsdmcli wallet <new|restore|enable-recovery|restore-legacy|export-recovery|show|inspect|sign|verify|sign-tx|sign-task-action|sign-stream-action> [flags]\n\n%s", walletHelp)
+	return fmt.Errorf("usage: qsdmcli wallet <new|restore|enable-recovery|restore-legacy|export-recovery|show|inspect|sign|verify|sign-tx|sign-task-action|sign-stream-action|sign-token-tx> [flags]\n\n%s", walletHelp)
 }
 
 const walletHelp = `qsdmcli wallet — self-custody keystore (ML-DSA-87)
@@ -158,6 +163,15 @@ Subcommands:
            POST /api/v1/streams/actions/submit-signed. Reads an action
            or {"action": ...} JSON object, optionally stamps --nonce,
            and writes the signed envelope to stdout.
+  sign-token-tx
+           Sign a QSDM-20 token transaction (create, transfer, mint,
+           burn or renounce; see QSDM_20.md) and write the body of
+           POST /api/v1/qsdm20/submit to stdout. Reads the action, or
+           {"payload": action, "nonce": N, "fee_dust": N}, from
+           --tx-file (stdin by default). The account nonce comes from
+           the file, --nonce N or --auto-nonce (GET /api/v1/mining/account
+           on --api-url); --fee-dust sets the fee in dust (default 0).
+           Submit the output with: qsdmcli qsdm20 submit
 
 Common flags:
   --in   PATH           Keystore file to read (default: ~/.qsdm/wallet.json)

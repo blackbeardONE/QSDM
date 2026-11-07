@@ -166,6 +166,56 @@ node refuses the transfer. It wraps `*ErrAPI`, so `IsNotFound` and
 `SendTransfer` makes one attempt; retry it yourself after a PoE or nonce
 refusal (every call reads a fresh nonce and fresh parents).
 
+## QSDM-20 tokens
+
+QSDM-20 tokens (specification: `QSDM/docs/docs/QSDM_20.md`) are created,
+sent, minted, burned and renounced with transactions signed by the same
+ML-DSA-87 key that holds your CELL, so the same `TransferSigner` signs them.
+The signature covers a 32-byte digest of the sender, the nonce, the fee and
+the action's fields. Nodes refuse token transactions until the network sets
+an activation height; `consensus_auth.qsdm20_active` in `GET /api/v1/status`
+says when they are on.
+
+```go
+create := qsdm.QSDM20Action{
+	Action:        qsdm.QSDM20ActionCreate,
+	Symbol:        "GROOT",
+	Name:          "Groot Coin",
+	Decimals:      qsdm.QSDM20Decimals(8),
+	MaxSupply:     "2100000000000000", // base units: 21 million tokens of 8 decimals
+	InitialSupply: "100000000000000",  // 1 million of them to the creator
+	Mint:          qsdm.QSDM20MintIssuer,
+}
+out, err := client.SendQSDM20(ctx, create, 0 /* fee in dust */, signer)
+if err != nil {
+	return err
+}
+// out.Token is the new token's id; follow out.TxID with GetReceipt.
+
+send := qsdm.QSDM20Action{
+	Action: qsdm.QSDM20ActionTransfer,
+	Token:  out.Token,
+	To:     "1111111111111111111111111111111111111111111111111111111111111111",
+	Amount: "150000000", // 1.5 tokens
+}
+_, err = client.SendQSDM20(ctx, send, 0, signer)
+```
+
+| Step | Function | Route |
+|---|---|---|
+| The sender's account nonce | `GetAccount` (`PrepareQSDM20` calls it) | `GET /api/v1/mining/account?address=` |
+| Check the fields offline | `ValidateQSDM20Action` (the node's field rules) | |
+| Sign | `SignQSDM20` signs `QSDM20Transaction.SigningDigest()` | |
+| Submit | `SubmitQSDM20` | `POST /api/v1/qsdm20/submit` |
+| All of the above | `SendQSDM20` | |
+| Read | `GetQSDM20Tokens`, `GetQSDM20Token`, `GetQSDM20Holders`, `GetQSDM20Balances` | `GET /api/v1/qsdm20/...` |
+
+Amounts are whole base units as decimal strings, up to 2^256 - 1.
+`QSDM20TokenID(creator, nonce)` gives a token's id before its create is
+sent. A refusal is an `*ErrAPI`: HTTP 422 for a broken rule, with nothing
+charged. With `qsdmcli`, `wallet sign-token-tx` signs offline and
+`qsdm20 submit` posts the result.
+
 ## Methods and routes
 
 | Method | Route | Public |
@@ -178,6 +228,9 @@ refusal (every call reads a fresh nonce and fresh parents).
 | `SubmitSignedTransfer`, `SendTransfer` | `POST /api/v1/wallet/submit-signed` | yes (the signature is the authorization) |
 | `GetStreamActionNonce`, `GetStreams`, `GetStream` | `GET /api/v1/streams/...` | yes |
 | `SubmitStreamAction` | `POST /api/v1/streams/actions/submit-signed` | yes, but the public pilot answers 503 while stream actions are paused |
+| `GetAccount` | `GET /api/v1/mining/account?address=` | yes |
+| `PrepareQSDM20`, `SubmitQSDM20`, `SendQSDM20` | `POST /api/v1/qsdm20/submit` | yes (the signature is the authorization); refused until the activation height |
+| `GetQSDM20Tokens`, `GetQSDM20Token`, `GetQSDM20Holders`, `GetQSDM20Balances` | `GET /api/v1/qsdm20/tokens`, `/tokens/{id}`, `/tokens/{id}/holders`, `/balances/{address}` | yes |
 | `GetLiveness`, `GetReadiness` | `GET /api/v1/health/live`, `/ready` | yes |
 | `GetNodeStatus` | `GET /api/v1/status` | yes |
 | `SendTransaction` (deprecated) | none: returns `ErrUnsignedSendRemoved` without a request | |
@@ -201,3 +254,6 @@ go vet ./... && go test ./...
 
 The tests run against local fake nodes. `TestTransferEnvelope_SigningBytesMatchNode`
 pins `SigningBytes` to bytes printed by the node's own `pkg/wallet` code.
+The `TestQSDM20_*` tests check token ids, signing digests and the field rules
+against `testdata/qsdm20_vectors.json`, which the node's own test
+(`pkg/chain` `TestQSDM20SDKVectors`) recomputes with the node's code.

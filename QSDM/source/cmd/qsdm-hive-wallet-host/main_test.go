@@ -66,12 +66,18 @@ func TestForwardToHiveReloadsBrokerStateDuringRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The stale broker: the port broker.json names when the request arrives.
+	// It stays open so the test controls the moment Hive "restarts": when the
+	// first request connects, the new broker.json is written and the
+	// connection is dropped. The reload then always sees the new state, on a
+	// busy machine too (the earlier version wrote it from a timer and lost
+	// the race with the 250 ms retry on loaded CI runners).
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer listener.Close()
 	stalePort := listener.Addr().(*net.TCPAddr).Port
-	_ = listener.Close()
 
 	directory := t.TempDir()
 	statePath := filepath.Join(directory, "broker.json")
@@ -96,8 +102,13 @@ func TestForwardToHiveReloadsBrokerStateDuringRestart(t *testing.T) {
 	}
 	stateWrite := make(chan error, 1)
 	go func() {
-		time.Sleep(100 * time.Millisecond)
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			stateWrite <- acceptErr
+			return
+		}
 		stateWrite <- writeState(serverPort, token)
+		_ = conn.Close()
 	}()
 
 	result, err := forwardToHive([]byte(`{"id":"restart-race"}`))

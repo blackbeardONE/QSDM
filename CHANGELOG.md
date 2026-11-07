@@ -36,6 +36,17 @@ from 2026-04-22 on.
   `/api/v1/status` reports `consensus_auth.qsdm20_activation_height` and
   `qsdm20_active`. Two fuzz targets join the nightly run.
 
+- **QSDM-20 in the SDKs and qsdmcli (2026-11-07).** The Go SDK
+  (`SendQSDM20`, `PrepareQSDM20`, `SignQSDM20`, `SubmitQSDM20`, `GetAccount`
+  and four reads), the JavaScript SDK `qsdm-sdk` 0.5.0 (`sendQSDM20` and the
+  same calls) and `qsdmcli` (`wallet sign-token-tx`, `qsdm20 submit`,
+  `tokens`, `token`, `holders`, `balances`, `token-id`) build, sign and
+  submit token transactions. They share one set of test vectors,
+  `QSDM/source/sdk/go/testdata/qsdm20_vectors.json`, which a node test
+  recomputes with the node's own code. The JavaScript SDK's tests now run in
+  CI on every change. Nodes still refuse token transactions until the
+  activation height.
+
 - **QSDM Hive 1.4.21 (2026-10-03/04).** Automatic miner operator signing:
   when the Hive wallet is unlocked, Hive starts the bundled miner with the
   wallet as its ML-DSA-87 operator key, so mining proofs carry an
@@ -119,6 +130,17 @@ from 2026-04-22 on.
 - **QSDM Hive 1.3.94 Virtual Compute Runtime (2026-07-09).** Mother Hive now discovers live pooled CPU, NVIDIA GPU, and RAM capacity; provides bounded workload controls; shows queue, Agent assignment, duration, cancellation, and verified receipt state; and keeps the private loopback gateway token outside renderer code. The gateway adds authenticated `/v1/resources` and `/v1/workloads` discovery routes while preserving the fixed-workload, no-remote-shell security boundary. A separate design specifies opt-in, wallet-authenticated, one-hop Mother Hive federation across locations without exposing Agent or private Mother credentials.
 
 ### Changed
+
+- **2026-11-07: faster starts under a producer transition.** The producer
+  and every full node check each block's ML-DSA-87 signature at every start.
+  Each producer's public key is now prepared once per start instead of once
+  per signature (397,811 times at height 880,376, about a quarter of the
+  start's CPU), and the receipts file is decoded on every core. Measured at
+  height 880,376 on a 16-thread laptop: the journal load went from 42-43 s
+  to 26-29 s on 4 threads and from 28-30 s to 17-20 s on 16; loading 2.3
+  million receipts from 23-25 s to 5-10 s; the load allocates 11.6 GiB
+  instead of 32.9 GiB. Accepted and refused blocks are unchanged. The live
+  producer gets it with its next release.
 
 - **2026-11-06: the docs describe the pilot as it runs now.** 22 documents
   said the network had "a single block producer during recovery"; they now
