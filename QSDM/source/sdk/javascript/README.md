@@ -14,6 +14,15 @@ npm install qsdm-sdk
 
 (Or vendor `qsdm.js` + `qsdm.d.ts` directly — the SDK has no runtime dependencies.)
 
+### Checking the download
+
+From 0.5.0 on, each version is published by GitHub Actions with a signed record
+of the workflow run that built it (npm provenance). To check the packages of a
+project, run `npm audit signatures` there with a current npm: npm 12.0.2
+verifies both the registry signature and the attestation of `qsdm-sdk` 0.5.0,
+while older clients such as npm 10.2.5 can wrongly report a valid attestation
+as invalid.
+
 ## Quick start
 
 ```js
@@ -312,19 +321,20 @@ The suite needs Node 19+ (built-in `fetch`, `node:test` and
 
 ## Releasing
 
-The package is published from CI by `.github/workflows/sdk-javascript-publish.yml`.
-Tag the repo with the matching version:
+The package is published from CI by `.github/workflows/sdk-javascript-publish.yml`,
+through npm trusted publishing: npm accepts the workflow run itself, so no npm
+token is needed. Tag the repo with the matching version:
 
 ```bash
 # bump version field in package.json + CHANGELOG.md, commit, then:
-git tag sdk-js-v0.4.0
-git push origin sdk-js-v0.4.0
+git tag sdk-js-vX.Y.Z    # X.Y.Z = the version in package.json
+git push origin sdk-js-vX.Y.Z
 ```
 
 The workflow verifies the tag suffix matches `package.json`, runs the test
 suite, and publishes with `--provenance` (Sigstore attestation linking the
-tarball to the GitHub Actions run). Only the `NPM_TOKEN` repository secret
-is external.
+tarball to the GitHub Actions run). An `NPM_TOKEN` repository secret is only a
+fallback, used if npm refuses the run's identity.
 
 ## License
 
