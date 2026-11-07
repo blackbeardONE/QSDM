@@ -145,10 +145,12 @@ from 2026-04-22 on.
   defect or several at once, and an import leaves the same state directory,
   byte for byte but for the three durations its record measures. The
   record's `journal_load_seconds` now includes the verification, which
-  `restore_seconds` used to include. On the public chain at height 880,376
-  the import's checks peaked at [TBD-880376: peak working set and Go heap,
-  before and after] and took [TBD-880376: time before and after, 1 and 4
-  threads]. No consensus change. The full-node release gets it with its next
+  `restore_seconds` used to include. On the public chain at height 880,376,
+  measured on one 32-thread desktop, the import's checks peaked at 1.8 GiB
+  instead of 5.5 GiB (Go heap 1.7 GiB instead of 5.4 GiB) and took 80 s
+  instead of 204 s on 4 threads and 43 s instead of 197 s on 32; on 1
+  thread they took 217 s instead of 201 s, at a 2.0 GiB peak. Starts are
+  unchanged. No consensus change. The full-node release gets it with its next
   release; [Run a full node](QSDM/docs/docs/RUN_A_FULL_NODE.md#memory) has
   the figures.
 

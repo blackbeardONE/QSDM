@@ -83,24 +83,27 @@ qsdm.tech/fullnode.html that the installer installs, has none of them:
 
 Measured with `cmd/qsdm/restore_bench_test.go` on a copy of the public chain at height 880 376 (880 377 blocks, a
 5.0 GB journal), with Go's default settings, on Windows x86-64 with a 16-thread laptop CPU; the import from the next
-release on [TBD-880376: machine, OS, threads and memory of the import measurements]:
+release on a slower desktop (two Xeon E5-2670 from 2012, 32 threads, 32 GB, Windows x86-64) with Go on 4 threads,
+where the import before this change took 204 seconds and peaked at 5.5 GiB:
 
 | | Today's release | From the next release |
 |---|---:|---:|
 | Start (the restore every start runs), peak | 8.2 GiB | 1.9 GiB |
 | Go heap after the start | 4.1 GiB | 1.0 GiB |
 | Time of a start | about 2.5 minutes | about 30 seconds |
-| Import, peak | 8.3 GiB | [TBD-880376: import peak working set, 4 threads] |
-| Go heap during the import, peak | not measured | [TBD-880376: import peak Go heap in use, 4 threads] |
-| Time of an import | about 2.5 minutes | [TBD-880376: import time, 4 threads] |
+| Import, peak | 8.3 GiB | 1.8 GiB |
+| Go heap during the import, peak | not measured | 1.7 GiB |
+| Time of an import | about 2.5 minutes | about 80 seconds on the slower desktop |
 | Heap per further block | about 8.4 KB | about 0.6 KB |
 | Start peak per further 100 000 blocks | about 1.6 GiB | about 0.12 GiB |
 | Start peak at about 1 020 000 blocks | about 10.4 GiB | about 2.1 GiB |
 
 The start and the import use every core, so they take longer on a server with fewer: on 1 thread the import took
-[TBD-880376: import time and peak working set, 1 thread]. With the next release the import holds the chain the way
-a start holds it, verified signatures in the journal only: [TBD-880376: import peak and start peak on the same
-machine, and which of the two sets the memory a server needs]. The import rows were measured with the harness's
+about 3.6 minutes on the desktop and peaked at 2.0 GiB (before this change, which checked every signature on one
+core anyway, 3.3 minutes and 5.5 GiB); on 32 threads it took 43 seconds. With the next release the import holds
+the chain the way a start holds it, verified signatures in the journal only: on the desktop, on 4 threads, the
+import and a start both peaked at 1.8 GiB. So the import no longer sets the memory a server needs; a start, which
+every restart runs, and the running node do. The import rows were measured with the harness's
 import phase, which runs every check of the import but not its staging copy (the import first copies the snapshot's
 files into the state directory and hashes them) or the checkpoint pin; the staging copy and an import at a second
 height were not measured. The last three rows are derived, not measured at a second height: from the sizes of the
@@ -203,7 +206,8 @@ echo "exit $?"
 
 The import verifies everything again against your pinned checkpoint: the hash chain from genesis, the producer's
 signature on the checkpoint block, the producer transition and the state root. It takes several minutes and about
-as much memory as a start: 8.3 GiB for the snapshot at height 880 376 with today's release (see [Memory](#memory)).
+as much memory as a start: 8.3 GiB for the snapshot at height 880 376 with today's release, and about 1.8 GiB from
+the next one (see [Memory](#memory)).
 [Verified snapshot bootstrap](SNAPSHOT_BOOTSTRAP.md#3-trust-model) lists every check.
 
 - **Exit 0** prints a report with `"authorized_by": "producer_transition"` and three installed files. Then delete
