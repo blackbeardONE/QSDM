@@ -4,6 +4,24 @@ All notable changes to the published `qsdm-sdk` npm package are recorded here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-11-07
+
+### Added
+
+- QSDM-20 tokens (`QSDM/docs/docs/QSDM_20.md`): `sendQSDM20` (prepare, have
+  a key the caller holds sign the 32-byte digest, submit), `prepareQSDM20`,
+  `submitQSDM20`, `getAccount` (`GET /api/v1/mining/account`, the account
+  nonce a token transaction carries) and the reads `getQSDM20Tokens`,
+  `getQSDM20Token`, `getQSDM20Holders` and `getQSDM20Balances`.
+- `validateQSDM20Action`, `qsdm20TokenId`, `qsdm20SigningPreimage`,
+  `qsdm20SigningDigest`, `qsdm20TxId` and `walletAddress`. Digests and ids
+  are pinned to vectors the node's own code computes
+  (`sdk/go/testdata/qsdm20_vectors.json`); nonces and fees above 2^53 stay
+  exact as bigints or decimal strings.
+
+Nodes refuse token transactions until the network sets an activation height.
+The QSDM Wallet extension cannot sign them yet.
+
 ## [0.4.0] - 2026-11-03
 
 Public QSDM nodes accept a CELL transfer from a client only as an envelope
