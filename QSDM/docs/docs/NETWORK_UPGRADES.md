@@ -18,6 +18,8 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| 2026-11-08 | full node | Full-node release fullnode-rc1107, the same `qsdm` as release rc1107: a full node needs 6 GB of RAM instead of 10 to 12 ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade to use less memory) |
+| 2026-11-07 22:56 | node release | Release rc1107: the producer starts faster, and the snapshot import needs about a third of the memory (no consensus change); mining paused 5 minutes | No |
 | 2026-11-06 08:42 | node release | Release rc1106: the producer keeps checked block signatures on disk and needs less memory, and the public read-only API answers any browser origin (no consensus change); mining paused 13 minutes | No |
 | 2026-11-05 17:51 | node release | Release rc1105: blocks share the values that repeat across them in memory, so the producer needs less (no consensus change); mining paused 21 minutes | No |
 | 2026-11-04 04:19 | operations | Public peer-to-peer reopened, on release rc1103 | No |
@@ -36,6 +38,21 @@ upgrades harden that pilot network; they do not change its stage. See
 | 2026-10-11 13:18 | 816,600 | Proof-of-Entanglement enforced | **Yes**, if you send CELL with old software |
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
+
+## 2026-11-07: release rc1107
+
+- **When:** node release `hardened-legacy-20261107-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1107`,
+  switched in 2026-11-07 22:56 UTC; mining reopened by itself at 23:01 UTC.
+  A node release, not an activation height.
+- **What changed:** the start-up changes that `QSDM/source` has since
+  2026-11-07: each producer's ML-DSA-87 public key is prepared once per
+  start instead of once per signature, and the receipts file is decoded
+  on every core. The snapshot import and the offline tail replay read the
+  chain the way a start does: once, on every core, keeping verified
+  signatures in the journal. The restart took 5 minutes instead of 13. The full-node release
+  `fullnode-rc1107` is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)).
+  Nothing a block hashes, signs or encodes changed.
+- **What you must do:** nothing.
 
 ## 2026-11-06: release rc1106
 

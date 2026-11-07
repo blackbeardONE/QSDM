@@ -165,6 +165,16 @@ from 2026-04-22 on.
   No consensus change. Releases rc1107 and fullnode-rc1107 do not have it
   yet: the producer and the full node get it with their next releases.
 
+- **2026-11-07: release rc1107.** The producer runs
+  `hardened-legacy-20261107-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1107` since
+  23:01 UTC (mining paused 22:56-23:01 UTC): rc1106 plus the faster start
+  of 2026-11-07 (each producer's public key prepared once per start, the
+  receipts file decoded on every core) and the snapshot import of
+  2026-11-07 (the chain read once, on every core, with verified signatures
+  kept in the journal). The restart took 5 minutes instead of 13. The full-node release
+  `fullnode-rc1107` is the same `qsdm`. No consensus change, and no block
+  hash changes.
+
 - **2026-11-07: the snapshot import checks the chain the way a start does.**
   `qsdm --snapshot-import` loaded every block of the snapshot with its
   ML-DSA-87 signature, computed every block hash twice and then verified
