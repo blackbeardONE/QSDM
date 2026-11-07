@@ -36,6 +36,17 @@ from 2026-04-22 on.
   `/api/v1/status` reports `consensus_auth.qsdm20_activation_height` and
   `qsdm20_active`. Two fuzz targets join the nightly run.
 
+- **QSDM-20 in the SDKs and qsdmcli (2026-11-07).** The Go SDK
+  (`SendQSDM20`, `PrepareQSDM20`, `SignQSDM20`, `SubmitQSDM20`, `GetAccount`
+  and four reads), the JavaScript SDK `qsdm-sdk` 0.5.0 (`sendQSDM20` and the
+  same calls) and `qsdmcli` (`wallet sign-token-tx`, `qsdm20 submit`,
+  `tokens`, `token`, `holders`, `balances`, `token-id`) build, sign and
+  submit token transactions. They share one set of test vectors,
+  `QSDM/source/sdk/go/testdata/qsdm20_vectors.json`, which a node test
+  recomputes with the node's own code. The JavaScript SDK's tests now run in
+  CI on every change. Nodes still refuse token transactions until the
+  activation height.
+
 - **QSDM Hive 1.4.21 (2026-10-03/04).** Automatic miner operator signing:
   when the Hive wallet is unlocked, Hive starts the bundled miner with the
   wallet as its ML-DSA-87 operator key, so mining proofs carry an
