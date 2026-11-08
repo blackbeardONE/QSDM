@@ -442,6 +442,25 @@ def flag(name):
     return os.path.exists(os.path.join(control, name))
 
 
+LOCK = threading.Lock()
+
+
+def take(name):
+    """True while the number in control/NAME is above 0; each call takes one."""
+    path = os.path.join(control, name)
+    with LOCK:
+        try:
+            with open(path, encoding="utf-8") as f:
+                left = int(f.read().strip() or 0)
+        except (OSError, ValueError):
+            return False
+        if left <= 0:
+            return False
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(str(left - 1))
+        return True
+
+
 def block(height, side):
     block_hash = sha(f"block-{height}")
     override = os.path.join(control, "public-hash-override")
@@ -479,6 +498,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 rest = url.path[len(prefix):]
                 if side == "local" and flag("local-down"):
                     return self.send_json(503, {"error": "starting"})
+                if side == "public" and rest == "/status" and take("public-status-503"):
+                    return self.send_json(503, {"status": "temporarily_unavailable",
+                                                "message": "QSDM services are being migrated. Please try again later."})
                 if rest == "/status":
                     return self.send_json(200, {"chain_tip": TIP, "node_role": "validator"})
                 if rest == "/chain/blocks":
@@ -894,6 +916,44 @@ expect "finds the unit in place" says "ok: /etc/systemd/system/qsdm-follower.ser
 expect "finds the node running" says "ok: the node is already running"
 expect "checks the network again" says "ok: your node is at block $TIP"
 expect "contacted nothing but 127.0.0.1" offline
+finish
+
+begin network-restart "the public API answers 503 for a while (a producer restart): the check waits, then passes"
+echo 2 >"$T/control/public-status-503"
+export QSDM_FULLNODE_RETRY_EVERY=1 QSDM_FULLNODE_RETRY_FOR=60
+run network-restart "${LOCAL[@]}" "${ANCHORS[@]}"
+unset QSDM_FULLNODE_RETRY_EVERY QSDM_FULLNODE_RETRY_FOR
+rm -f "$T/control/public-status-503"
+expect "exits 0" rc_is 0
+expect "says it waits for the network's API" says "the network's API did not answer when asked for its tip; a producer restart pauses it for a few minutes."
+expect "says how long it tries again" says "trying again every 1 seconds for up to 1 minutes"
+expect "says when it answers again" says "the network's API answers again"
+expect "asked for the network's status three times" served_times "/public/api/v1/status" 3
+expect "checks the network" says "ok: your node is at block $TIP"
+expect "leaves the node running" not logged "systemctl stop qsdm-follower"
+finish
+
+begin network-down "the public API stays down past the retry time: it stops, and the node keeps running"
+echo 1000 >"$T/control/public-status-503"
+export QSDM_FULLNODE_RETRY_EVERY=1 QSDM_FULLNODE_RETRY_FOR=3
+run network-down "${LOCAL[@]}" "${ANCHORS[@]}"
+unset QSDM_FULLNODE_RETRY_EVERY QSDM_FULLNODE_RETRY_FOR
+rm -f "$T/control/public-status-503"
+expect "exits 1" rc_is 1
+expect "says why" says "STOP: Could not read the network's tip from $BASE/public/api/v1."
+expect "says how long it tried" says "trying again every 1 seconds for up to 3 seconds"
+expect "asked more than once" not served_times "/public/api/v1/status" 1
+expect "says a new run carries on safely" says "is fixed, run the same command again: it carries on safely."
+expect "leaves the node running" not logged "systemctl stop qsdm-follower"
+finish
+
+begin bad-retry "a retry interval of 0 seconds is refused before anything runs"
+export QSDM_FULLNODE_RETRY_EVERY=0
+run bad-retry "${LOCAL[@]}" "${ANCHORS[@]}"
+unset QSDM_FULLNODE_RETRY_EVERY
+expect "exits 2" rc_is 2
+expect "says why" says "QSDM_FULLNODE_RETRY_FOR and QSDM_FULLNODE_RETRY_EVERY must be whole numbers of seconds"
+expect "contacted nothing" nothing_served
 finish
 
 begin network-mismatch "the node's blocks differ from the network's: it stops the node"

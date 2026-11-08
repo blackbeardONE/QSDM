@@ -552,6 +552,15 @@ from 2026-04-22 on.
 
 ### Fixed
 
+- **2026-11-08: the full-node installer waits for the network's API.** At the
+  end of an install, `install-full-node.sh` compares the node's blocks with the
+  network's. It stopped at the first read the public API did not answer, and
+  the API answers 503 for a few minutes while the block producer restarts: the
+  project's first install on a real server stopped that way, with its node
+  installed and running. Each read of that check is now tried again every 30
+  seconds for up to 15 minutes before the installer stops. The node keeps
+  running either way.
+
 - **Unix persistence-capacity arithmetic (2026-07-20).** Validator disk-space
   checks now reject invalid filesystem block sizes and detect multiplication
   overflow instead of converting or wrapping unsafe kernel values.

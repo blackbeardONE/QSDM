@@ -39,8 +39,9 @@ page in your browser. To give the values yourself instead, pass each one as a fl
   the `qsdm` binary is still checked against the SHA-256 on qsdm.tech. `--require-signature` makes the signature
   check compulsory.
 - It stops early if the server has too little memory or disk (see "What you need" below).
-- At the end it compares your node's blocks with the network (step 7). Run the same command again later to repeat
-  that check.
+- At the end it compares your node's blocks with the network (step 7). If the network's API does not answer (it
+  answers 503 for a few minutes while the block producer restarts), it tries again every 30 seconds for up to 15
+  minutes. Run the same command again later to repeat that check.
 
 The manual steps below are what the script does. Use them if you prefer to do it by hand.
 
