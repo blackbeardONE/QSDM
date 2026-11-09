@@ -18,6 +18,9 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| 2026-11-08 22:15 | full node | Full-node release fullnode-rc1108, the same `qsdm` as release rc1108: a running full node's memory no longer grows between restarts ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade) |
+| 2026-11-08 17:33 | node release | Release rc1108: the blocks the producer appends keep their signatures only in the journal, so its memory stays flat between restarts (no consensus change); mining paused 5 minutes | No |
+| 2026-11-08 16:34 | operations | A second node: the project's full node in Japan verifies every block itself, set up with the one-command installer ([Run a full node](RUN_A_FULL_NODE.md)) | No |
 | 2026-11-07 23:18 | full node | Full-node release fullnode-rc1107, the same `qsdm` as release rc1107: a full node needs 6 GB of RAM instead of 10 to 12 ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade to use less memory) |
 | 2026-11-07 22:56 | node release | Release rc1107: the producer starts faster, and the snapshot import needs about a third of the memory (no consensus change); mining paused 5 minutes | No |
 | 2026-11-06 08:42 | node release | Release rc1106: the producer keeps checked block signatures on disk and needs less memory, and the public read-only API answers any browser origin (no consensus change); mining paused 13 minutes | No |
@@ -38,6 +41,21 @@ upgrades harden that pilot network; they do not change its stage. See
 | 2026-10-11 13:18 | 816,600 | Proof-of-Entanglement enforced | **Yes**, if you send CELL with old software |
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
+
+## 2026-11-08: release rc1108
+
+- **When:** node release `hardened-legacy-20261108-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1108`,
+  switched in 2026-11-08 17:33 UTC; mining reopened by itself at 17:38 UTC.
+  A node release, not an activation height.
+- **What changed:** the change that `QSDM/source` has since 2026-11-07: a
+  block's ML-DSA-87 signature leaves memory once the next block is written
+  and fsynced to the journal right after it, for blocks the node seals and
+  blocks it receives, as a start already did for the blocks it loads. The
+  API and the peer-to-peer catch-up read it back from the journal and check
+  it, as for the blocks of a start. The restart paused mining 5 minutes, as for rc1107; the node loaded the chain in about 3 of them. The full-node release
+  `fullnode-rc1108` is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)).
+  Nothing a block hashes, signs or encodes changed.
+- **What you must do:** nothing.
 
 ## 2026-11-07: release rc1107
 

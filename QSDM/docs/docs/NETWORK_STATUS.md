@@ -17,7 +17,7 @@ examples from October 2026, and the live values are always in the status API.
 | Topic | Today |
 |---|---|
 | Stage | Pilot network (pre-mainnet) |
-| Block production | A **single block producer**. Anyone can run a full node that verifies every block itself ([Run a full node](RUN_A_FULL_NODE.md)). Since 2 November 2026 the producer also accepts peer-to-peer (libp2p) connections on port 4001, with connection, stream and block-request limits (see [What is running](#what-is-running)); the status API's `peers` counts the peers connected to it. |
+| Block production | A **single block producer**. Anyone can run a full node that verifies every block itself ([Run a full node](RUN_A_FULL_NODE.md)); since 8 November 2026 the project runs one on a second server, in Japan. Since 2 November 2026 the producer also accepts peer-to-peer (libp2p) connections on port 4001, with connection, stream and block-request limits (see [What is running](#what-is-running)); the status API's `peers` counts the peers connected to it. |
 | Block time | 10 second target |
 | Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL) by Hive, the web wallet and `qsdmcli` |
 | Other signatures | **Ed25519 transactions are refused since 16 October 2026** (status API `ed25519_tx_accepted: false`): only ML-DSA-87 signed transactions reach the chain. CELL stream session keys still accept Ed25519 until a stream retirement height is set (`stream_ed25519_session_keys_retired: false`). |
@@ -25,7 +25,7 @@ examples from October 2026, and the live values are always in the status API.
 | Transfer parents (Proof-of-Entanglement) | **Enforced from block 816,600** (11 October 2026): every CELL transfer names committed parents. Send with Hive 1.4.22 or newer, the web wallet, or `qsdmcli --auto-parents`. See [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md). |
 | Mining | NVIDIA GPUs through QSDM Hive 1.4.21 or newer, **open to every enrolled miner** since 19 October 2026 (protocol v2; every proof carries the enrollment owner's operator signature), in 7-day windows that renew automatically. Mining was paused from 22 October to 1 November 2026 (see [What is running](#what-is-running)). See [Mining today](MINING_TODAY.md). |
 | Supply | Max supply **90,000,000 CELL**, all from mining. No genesis treasury and no premine ([Genesis Policy v1.1](GENESIS_POLICY_v1.1.md)). Transaction fees are burned (credited to no account). |
-| Release | `hardened-legacy-20261107-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1107`, live since 7 November 2026, 23:01 UTC (see [What is running](#what-is-running)) |
+| Release | `hardened-legacy-20261108-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1108`, live since 8 November 2026, 17:38 UTC (see [What is running](#what-is-running)) |
 | Independent audit | None completed. Security review is an open [community review](COMMUNITY_REVIEW.md) with a [bug bounty](BUG_BOUNTY.md) (rewards confirmed by the owner on 17 October 2026; 50,000 CELL pool); a professional audit remains welcome. The [internal security review](SECURITY_AUDIT.md) is a self-maintained checklist. |
 
 ## Check it yourself
@@ -102,8 +102,13 @@ The [explorer](https://qsdm.tech/explorer.html) and the
 
 ## What is running
 
-- **Core release** `hardened-legacy-20261107-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1107`
-  (live since 2026-11-07 23:01 UTC). It is rc1106 (live from 2026-11-06 08:55
+- **Core release** `hardened-legacy-20261108-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1108`
+  (live since 2026-11-08 17:38 UTC). It is rc1107 (live from 2026-11-07 23:01
+  UTC) with the change that `QSDM/source` has since 2026-11-07: the blocks the
+  producer appends keep their signatures only in the journal, as the blocks
+  loaded at a start already did, so its memory stays flat between restarts.
+  The restart paused mining 5 minutes, as for rc1107; the node loaded the chain in about 3 of them. The full-node release `fullnode-rc1108` is the same `qsdm`.
+  rc1107 was rc1106 (live from 2026-11-06 08:55
   UTC) with the faster start that `QSDM/source` has since 2026-11-07 (each
   producer key prepared once per start, the receipts file decoded on every
   core) and the lighter snapshot import. The full-node release

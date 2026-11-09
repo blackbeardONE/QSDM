@@ -49,6 +49,12 @@ RC1019_NEED_MEM_KB=$((11 * 1024 * 1024))
 NEED_MEM_KB=$((11 * 1024 * 1024 / 2))
 # Where MemTotal is read. The installer's test points QSDM_FULLNODE_MEMINFO at a made-up file.
 MEMINFO=${QSDM_FULLNODE_MEMINFO:-/proc/meminfo}
+# A producer restart takes the public API away for a few minutes (it answers 503 meanwhile), and a node's own
+# API does not answer while it loads the chain. During the check against the network (step 8) a read that fails
+# is tried again every RETRY_EVERY seconds for up to RETRY_FOR seconds before the installer stops. The
+# installer's test shortens both.
+RETRY_FOR=${QSDM_FULLNODE_RETRY_FOR:-900}
+RETRY_EVERY=${QSDM_FULLNODE_RETRY_EVERY:-30}
 NEED_DISK_KB=$((15 * 1000 * 1000))
 
 # Options.
@@ -267,6 +273,9 @@ validate_args() {
   fi
   if [[ ! $WAIT_MINUTES =~ ^[0-9]{1,4}$ ]]; then
     usage_error "--wait-minutes must be a whole number of minutes: $WAIT_MINUTES"
+  fi
+  if [[ ! $RETRY_FOR =~ ^[0-9]{1,5}$ || ! $RETRY_EVERY =~ ^[1-9][0-9]{0,3}$ ]]; then
+    usage_error "QSDM_FULLNODE_RETRY_FOR and QSDM_FULLNODE_RETRY_EVERY must be whole numbers of seconds (RETRY_EVERY at least 1): $RETRY_FOR $RETRY_EVERY"
   fi
   if [[ -z $WORK_DIR ]]; then
     if [[ -z ${HOME:-} ]]; then
@@ -1582,6 +1591,50 @@ block_line() {
   py block "$answer" "$2" 0
 }
 
+# retry_read WHO WHAT CMD...: run CMD until it succeeds and set GOT to what it printed. WHO is "network" (the
+# public API) or "node" (this node's API); WHAT names the read in the message. After the first failure it says
+# once that it waits, then tries again every RETRY_EVERY seconds for up to RETRY_FOR seconds. Waiting for the
+# node ends early when systemd reports the service as failed. Returns 1 when it gives up.
+GOT=''
+retry_read() {
+  local who=$1 what=$2 api="your node's API" give_up=0 said=0
+  shift 2
+  if [[ $who == network ]]; then
+    api="the network's API"
+  fi
+  while :; do
+    if GOT=$("$@"); then
+      if ((said == 1)); then
+        say "  $api answers again"
+      fi
+      return 0
+    fi
+    if [[ $who == node ]] && systemctl is-failed --quiet "$SERVICE"; then
+      return 1
+    fi
+    if ((give_up == 0)); then
+      give_up=$(($(date +%s) + RETRY_FOR))
+    fi
+    if (($(date +%s) >= give_up)); then
+      return 1
+    fi
+    if ((said == 0)); then
+      if [[ $who == network ]]; then
+        say "  $api did not answer when asked for $what; a producer restart pauses it for a few minutes."
+      else
+        say "  $api did not answer when asked for $what."
+      fi
+      if ((RETRY_FOR % 60 == 0)); then
+        say "  trying again every $RETRY_EVERY seconds for up to $((RETRY_FOR / 60)) minutes"
+      else
+        say "  trying again every $RETRY_EVERY seconds for up to $RETRY_FOR seconds"
+      fi
+      said=1
+    fi
+    sleep "$RETRY_EVERY"
+  done
+}
+
 not_ready() {
   printf '\nThe node is installed and started, but it did not answer on %s within %s minutes.\n' "$LOCAL_API" "$WAIT_MINUTES"
   printf 'The first start loads the whole chain into memory, which can take a while. Watch it with:\n'
@@ -1615,26 +1668,30 @@ step_check_network() {
     sleep 10
   done
   while :; do
-    public_tip=$(tip_of "$API_BASE") ||
+    retry_read network "its tip" tip_of "$API_BASE" ||
       stop "Could not read the network's tip from $API_BASE." "Run the same command again later to repeat the check."
+    public_tip=$GOT
     behind=$((public_tip - local_tip))
     if ((behind <= 2)) || (($(date +%s) >= deadline)); then
       break
     fi
     say "  catching up: block $local_tip of $public_tip ($behind behind)"
     sleep 30
-    local_tip=$(tip_of "$LOCAL_API") ||
+    retry_read node "its tip" tip_of "$LOCAL_API" ||
       stop "The node stopped answering on $LOCAL_API." "Read its log with: journalctl -u $SERVICE -n 200."
+    local_tip=$GOT
   done
   say "  blocks T-100 and T-1 (T = your tip, $local_tip): height, hash, state root"
   for height in $((local_tip - 100)) $((local_tip - 1)); do
     if ((height < 0)); then
       continue
     fi
-    mine=$(block_line "$LOCAL_API" "$height") ||
+    retry_read node "block $height" block_line "$LOCAL_API" "$height" ||
       stop "Your node did not return block $height." "Read its log with: journalctl -u $SERVICE -n 200."
-    theirs=$(block_line "$API_BASE" "$height") ||
+    mine=$GOT
+    retry_read network "block $height" block_line "$API_BASE" "$height" ||
       stop "The public API did not return block $height." "Run the same command again later to repeat the check."
+    theirs=$GOT
     say "    yours    $mine"
     say "    network  $theirs"
     if [[ $mine != "$theirs" ]]; then

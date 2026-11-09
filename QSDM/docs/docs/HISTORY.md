@@ -29,6 +29,8 @@ no longer updated. This repository took over on 22 April 2026.
 | 2026-11-02 | The producer accepts peer-to-peer connections from the internet. |
 | 2026-11-06 | Release rc1106: the producer keeps checked block signatures on disk, and runs in about 4.5 GB instead of 6.6 GB. |
 | 2026-11-07 | Release rc1107: the producer starts faster, and a full node needs 6 GB of RAM instead of 10 to 12 (full-node release fullnode-rc1107). |
+| 2026-11-08 | Release rc1108: the producer's memory stays flat between restarts; full nodes get the same with fullnode-rc1108. |
+| 2026-11-08 | A second node: the project's full node in Japan verifies every block, set up with the one-command installer. |
 
 ## What has not changed since 2025
 
