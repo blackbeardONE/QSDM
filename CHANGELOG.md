@@ -131,6 +131,40 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-08: a second node checks every block.** The project runs a full node
+  on a second server, in Japan (Ubuntu 24.04, 12 GB of memory), set up with the
+  one-command installer as the guide describes it
+  (`install-full-node.sh --from-website --require-signature`): the installer's
+  first run on a real server. It verifies every block itself and follows the
+  chain over HTTPS; it does not mine or produce blocks. The installer had the
+  node running about 6 minutes after it started, 131 seconds of them for the
+  snapshot import. The node then caught up the 174,000 blocks after the snapshot
+  over HTTPS at about 730 a minute. The installer's last check stopped early:
+  the network's API answered 503 while the block producer restarted for release
+  rc1108. The node kept running, and the installer now waits for the API. On 9
+  November 2026 the node moved to fullnode-rc1108 by replacing its `qsdm`
+  binary, as the guide describes: it answered again 4.5 minutes after the stop,
+  at the network's tip and with the same blocks. Its memory (RssAnon) was 2.9
+  GiB before, after 177,817 blocks appended on fullnode-rc1107, and 2.0 GiB
+  after the restart.
+
+- **2026-11-08: full-node release fullnode-rc1108.** The GitHub release
+  `fullnode-rc1108` is the exact `qsdm` the block producer runs (release
+  rc1108), with the same snapshot and checkpoint as fullnode-rc1107. A
+  running node now keeps the signatures of the blocks it appends only in its
+  journal too (the 2026-11-07 change below), so its memory no longer grows
+  by about 0.5 GiB per 100,000 blocks until a restart. A node on
+  fullnode-rc1019 or fullnode-rc1107 upgrades by replacing its `qsdm` binary
+  ([Run a full node](QSDM/docs/docs/RUN_A_FULL_NODE.md#keeping-up-to-date)).
+
+- **2026-11-08: release rc1108.** The producer runs
+  `hardened-legacy-20261108-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1108` since
+  17:38 UTC (mining paused 17:33-17:38 UTC): rc1107 plus the 2026-11-07
+  change below (the blocks a node appends keep their signatures only in the
+  journal, once the next block is written). The restart paused mining 5 minutes, as for rc1107; the node loaded the chain in about 3 of them. The full-node
+  release `fullnode-rc1108` is the same `qsdm`. No consensus change, and no
+  block hash changes.
+
 - **2026-11-07: full-node release fullnode-rc1107 needs 6 GB instead of 10 to
   12.** The GitHub release `fullnode-rc1107` is the exact `qsdm` the block
   producer runs (release rc1107), with the same snapshot and checkpoint as
@@ -162,8 +196,8 @@ from 2026-04-22 on.
   kept about 0.6 KB of heap instead of about 5.4 KB, for blocks the node
   sealed and for blocks it received: at 10 seconds a block, about 0.45 GiB
   less for every 100,000 blocks (11.6 days) a node runs without a restart.
-  No consensus change. Releases rc1107 and fullnode-rc1107 do not have it
-  yet: the producer and the full node get it with their next releases.
+  No consensus change. The producer has it since release rc1108 (2026-11-08),
+  full nodes since fullnode-rc1108 (2026-11-08).
 
 - **2026-11-07: release rc1107.** The producer runs
   `hardened-legacy-20261107-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1107` since
