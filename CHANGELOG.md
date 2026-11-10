@@ -17,6 +17,20 @@ from 2026-04-22 on.
 
 ### Added
 
+- **Handing production back, and carrying the mining records (2026-11-10).**
+  [`PRODUCER_TRANSITION.md`](QSDM/docs/docs/PRODUCER_TRANSITION.md) has two new
+  parts. "Carrying the mining records in a planned hand-over" moves the
+  producer's mining records with the chain: copied byte for byte after the old
+  producer stops, reconciled at the new producer's first start with mining
+  closed (`KILL`), then opened. "Handing production back" covers the next
+  hand-over, to a new key pinned to the stand-in's last block, since a key is
+  never used twice. The new test `TestStandInHandsBack` runs a hand-over and a
+  hand-back on real state directories: a schedule that names an earlier key
+  again is refused, the stand-in cannot seal after the hand-back, and a
+  follower that kept the old schedule refuses the hand-back block. The guide's
+  "What can go wrong" adds a state directory without the enrollment snapshot,
+  which cannot become a producer.
+
 - **The web wallet installs as an app on a phone (2026-11-10).** qsdm.tech's
   web wallet is now a progressive web app: "Install the app" on Android and
   in Chrome or Edge, "Add to Home Screen" in Safari on iPhone and iPad. A

@@ -252,14 +252,66 @@ production with the steps above. Four things differ:
    same file and set `QSDM_CHAIN_SYNC_URLS` to the new producer's API, which
    must be reachable from them.
 
-What does not move with the chain: the producer's mining state lives in its
-own directory (`QSDM_LEGACY_MINING_*`), not in the journal, so a stand-in
-starts with mining off and seals blocks with transfers only. Moving mining is a
-separate step, and clients that use `api.qsdm.tech` reach the new producer only
-once that name points at it.
+What does not move with the chain: the producer's mining records live in
+their own directory (`QSDM_LEGACY_MINING_*`), not in the journal, and clients
+that use `api.qsdm.tech` reach the new producer only once that name points at
+it. Without the records a stand-in starts with mining off (no
+`QSDM_LEGACY_MINING_*` settings) or with new records, which the node creates
+at its first start from block `N + 1`; either way the old producer's accepted
+but unpaid proofs are not paid by the new one. The next section moves the
+records too.
 
 `TestStandInPromotesAFollower` (section 7) runs these steps on real state
 directories.
+
+### Carrying the mining records in a planned hand-over
+
+When the old producer stops on purpose, its mining records can move with the
+chain, so that mining continues on the new producer with nothing lost:
+
+1. **Stop the old producer** (step 2). Its served watermark must equal its
+   journal's last block `N`: the records then hold exactly the payments in the
+   chain up to `N`.
+2. **Copy the records byte for byte**: `legacy-mining.db` and, if it exists,
+   `legacy-mining.db-wal` from its legacy-mining directory. Never copy
+   `legacy-mining.db-shm`. Compare the SHA-256 of each copy with the original.
+3. **Install them** in the new producer's legacy-mining directory (mode 0700,
+   owned by the node's service user), with the old producer's mining
+   configuration file (the same SHA-256) and the same four
+   `QSDM_LEGACY_MINING_*` settings, pointing at the new paths.
+4. **Close mining for the first start**: create an empty `KILL` file in that
+   directory. The node then reconciles the records with the chain
+   (`hl1: legacy-mining reconciliation clean`, with `"created":false` and
+   `"tip"` equal to `N`) and seals blocks, but admits no proofs and pays
+   nothing (`legacymining: KILL present: KILLED`).
+5. **Open mining**: when the new producer has sealed its first blocks, remove
+   `KILL` and restart it. Pending proofs from the old producer are paid in
+   order from then on.
+
+The old producer's records must never be used by two producers: after the
+copy, its host stays stopped (step 8), and its records stay where they are as
+evidence.
+
+### Handing production back
+
+Handing production back, for example from a stand-in to the host that
+produced before, is one more hand-over with the same steps:
+
+- **A new key.** A key is never used twice: the hand-back is a new epoch with a
+  new key, pinned to the last block of the producer it takes over from. A
+  schedule that names an earlier producer again is refused at startup.
+- **A state directory that holds that producer's chain and no watermark**: a
+  full node that followed it with its schedule, or a copy of its stopped chain
+  files without its watermark. Seed the watermark at its last block (step 3 of
+  the stand-in steps) and install the new schedule on every node.
+- **The mining records come back the same way**: copied after it stops, with
+  `KILL` for the first start.
+
+A follower that keeps the previous schedule refuses the first block of the
+new epoch and stops following, so every node needs the new file.
+
+`TestStandInHandsBack` (section 7) runs a hand-over and a hand-back on real
+state directories.
 
 ## 6. What can go wrong
 
@@ -275,6 +327,8 @@ directories.
 | The old producer is restarted with the old table after the hand-over | It would produce a competing chain from `N + 1`. Followers with the new table reject it; preventing this is the point of step 2. |
 | The new producer has the wrong signer key | Startup refused ("configured local signer is not the approved replacement producer"). |
 | The prefix pin is wrong | Startup refused at the journal prefix check. |
+| A state directory without `qsdm_enrollment.json`, for example one that holds only the journal, receipts and accounts | Startup refused under a transition table ("required enrollment snapshot"). A full node's state directory holds it. |
+| A hand-back names an earlier producer's key again | Startup refused (a repeated producer). Use a new key. |
 | `authorized_block_producers` still lists an old producer | Ignored while the table is configured, as in version 1, but the node logs the stale-allowlist warning. Update it anyway, so that removing the table later fails safe. |
 
 ## 7. Code and tests
@@ -323,6 +377,13 @@ Tests:
   with the schedule, cannot seal; a second full node with the schedule refuses
   a block the old producer sealed under the old table and follows the new
   producer, and with the old table it does the opposite.
+  `TestStandInHandsBack` goes on from there: after the stand-in has sealed,
+  production moves to a node that followed it, with a new key pinned to the
+  stand-in's last block. A schedule that names the first producer's key again
+  is refused; the stand-in, restarted with the final schedule, cannot seal; a
+  follower that kept the stand-in's schedule refuses the hand-back block; and
+  a follower with the final schedule holds every block from the producer of
+  its epoch, across a restart.
 - `cmd/qsdm-handover/main_test.go`: the public full node's version 1 table
   becomes a three-epoch schedule in the same place with every other line
   unchanged, a version 2 table gets a fourth epoch, Windows line ends stay,
