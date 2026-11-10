@@ -1,10 +1,13 @@
 # QSDM Web Wallet — Self-Custody Reference
 
-Public URL: <https://qsdm.tech/wallet/>
+Public URL: <https://qsdm.tech/wallet.html> (`/wallet/` redirects there)
 Source:    `QSDM/source/wasm_modules/wallet/cmd/qsdm-wallet/main.go`
-            `QSDM/deploy/landing/wallet.html`
-            `QSDM/deploy/landing/wallet.js`
-            `QSDM/deploy/landing/wallet-provider.js`
+            `QSDM/deploy/landing/wallet.js`, `wallet.wasm`, `wasm_exec.js` and
+            `wallet-provider.js`: the files qsdm.tech serves, byte for byte
+            `QSDM/deploy/landing/wallet.html`: an older copy of the page; the page
+            qsdm.tech serves and its interface scripts (`/assets/wallet-ui/`,
+            `/wallet-sw.js`, `/wallet-manifest.json`) are plain JavaScript that
+            any browser shows with View Source
 Sibling:   `qsdmcli wallet new|show|inspect|sign` (CLI · same keystore format)
 
 The web wallet has two self-custody paths. Its standalone tools generate and
@@ -20,6 +23,32 @@ transaction submission, and the authenticated local Hive bridge when the user
 chooses that path.
 
 This document is the reference for what the page does, how, and why.
+
+## On your phone: install it as an app
+
+The web wallet installs as an app on a phone, a tablet or a computer (a
+progressive web app: nothing comes from an app store):
+
+- **Android, and Chrome or Edge anywhere:** open <https://qsdm.tech/wallet.html>
+  and tap **Install the app** on the page (or *Install app* in the browser
+  menu).
+- **iPhone and iPad:** open the page in Safari, tap **Share**, then **Add to
+  Home Screen**.
+
+The installed app opens straight on the wallet. It is the same page with the
+same keystore, kept encrypted in this device's browser storage as before.
+
+| | |
+|---|---|
+| Offline start | `wallet-sw.js`, a service worker with scope `/wallet` (it controls the wallet page and nothing else on qsdm.tech), keeps copies of the wallet's own files, so the app opens and unlocks without a connection. It holds no keys and no cryptography and keeps nothing from the API: balances, history and sending need a connection. It is network first: online, every file comes from qsdm.tech as before, and the page's Subresource Integrity checks apply to the copies too. It keeps a copy only when the file's type fits (qsdm.tech answers a missing path with its home page), so a missing file stops the worker instead of leaving a page in its place. |
+| Scan QR | **Send, Scan QR** reads the recipient from a photo of a QR code: the phone's camera app takes the photo, and the page reads it, with the browser's `BarcodeDetector` where there is one and otherwise with jsQR 1.4.0 (`/assets/wallet-ui/jsqr.js`, Apache-2.0, unchanged from npm, loaded on the first scan). The photo is not uploaded, and the page needs no camera permission (qsdm.tech's `Permissions-Policy` denies the camera). Only a single 64-character hex address is taken from the code; a code with two different addresses is refused. Compare the address with the one you expect before you send. |
+| Storage | Once a wallet exists, the page asks the browser to keep this site's storage (`navigator.storage.persist()`). Still export `wallet.json` (gear icon, Export & backup): removing the app or clearing the site's data deletes the vault. |
+| iPhone and iPad | The home-screen app has its own storage, separate from Safari: create the wallet in the app, or import your `wallet.json` there. |
+
+The tests (35 browser checks: the manifest and Chrome's installability
+verdict, the worker's scope and copies, an open without the server, the WASM
+signer offline, nine Scan QR cases) run against a copy of the site served with
+qsdm.tech's headers.
 
 ---
 

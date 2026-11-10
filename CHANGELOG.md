@@ -17,6 +17,15 @@ from 2026-04-22 on.
 
 ### Added
 
+- **The web wallet installs as an app on a phone (2026-11-11).** qsdm.tech's
+  web wallet is now a progressive web app: "Install the app" on Android and
+  in Chrome or Edge, "Add to Home Screen" in Safari on iPhone and iPad. A
+  service worker with scope `/wallet` keeps copies of the wallet's own files,
+  so the app opens and unlocks without a connection; it holds no keys and
+  keeps nothing from the API. "Scan QR" in Send reads the recipient's
+  address from a photo of a QR code, in the page. See "On your phone" in
+  [`WEB_WALLET.md`](QSDM/docs/docs/WEB_WALLET.md).
+
 - **A full node can take over block production (2026-11-10).** A new part of
   [`PRODUCER_TRANSITION.md`](QSDM/docs/docs/PRODUCER_TRANSITION.md), "A full
   node as the new producer (a stand-in)", gives the steps for a full node to
@@ -161,6 +170,22 @@ from 2026-04-22 on.
 - **QSDM Hive 1.3.94 Virtual Compute Runtime (2026-07-09).** Mother Hive now discovers live pooled CPU, NVIDIA GPU, and RAM capacity; provides bounded workload controls; shows queue, Agent assignment, duration, cancellation, and verified receipt state; and keeps the private loopback gateway token outside renderer code. The gateway adds authenticated `/v1/resources` and `/v1/workloads` discovery routes while preserving the fixed-workload, no-remote-shell security boundary. A separate design specifies opt-in, wallet-authenticated, one-hop Mother Hive federation across locations without exposing Agent or private Mother credentials.
 
 ### Changed
+
+- **A start reads the journal further ahead (2026-11-11).** The startup load
+  (`LoadVerifiedJournal`) and the offline journal check (`CheckJournal`)
+  let the reader hold eight lines per worker ahead of the line being checked,
+  instead of one, so a slow line no longer leaves the other workers idle: on
+  a copy of the chain at 880 377 blocks, on 6 threads, the load took 25.0
+  seconds instead of 28.0. [`RUN_A_FULL_NODE.md`](QSDM/docs/docs/RUN_A_FULL_NODE.md)
+  now also gives the restart time measured on the project's full node in
+  Japan (4 minutes 23 seconds at block 1 058 195).
+
+- **The reference bootstrap peer is the producer's current address
+  (2026-11-11).** `config/public-endpoints.json` and
+  `scripts/lib/qsdm-endpoints.ps1` still named the peer ID of an earlier
+  server; they now name
+  `/dns4/api.qsdm.tech/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`,
+  the node ID that `GET /api/v1/status` reports.
 
 - **2026-11-08: a second node checks every block.** The project runs a full node
   on a second server, in Japan (Ubuntu 24.04, 12 GB of memory), set up with the

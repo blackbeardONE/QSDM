@@ -115,7 +115,13 @@ about 3.6 minutes on the desktop and peaked at 2.0 GiB (before this change, whic
 core anyway, 3.3 minutes and 5.5 GiB); on 32 threads it took 43 seconds. With fullnode-rc1107 the import holds
 the chain the way a start holds it, verified signatures in the journal only: on the desktop, on 4 threads, the
 import and a start both peaked at 1.8 GiB. So the import no longer sets the memory a server needs; a start, which
-every restart runs, and the running node do. The import rows were measured with the harness's
+every restart runs, and the running node do. On a server a start takes longer than on the laptop: the project's
+full node in Japan (6 vCPUs, 12 GB) restarted on fullnode-rc1108 on 9 November at block 1 058 195 and answered
+after 4 minutes 23 seconds, 37 seconds of them for the journal prefix check and 3 minutes 36 seconds to load and
+check the chain; on 10 November, right after another 6.7 GB had been read from its disk (the disk cache was cold),
+the load took 7 minutes. A start checks the signature of every block, so it grows with the chain. The next release
+reads the journal further ahead of its workers (eight lines each instead of one): on the laptop, on 6 threads, the
+load at 880 377 blocks took 25.0 seconds instead of 28.0. The import rows were measured with the harness's
 import phase, which runs every check of the import but not its staging copy (the import first copies the snapshot's
 files into the state directory and hashes them) or the checkpoint pin; the staging copy and an import at a second
 height were not measured. The last three rows are derived, not measured at a second height: from the sizes of the
