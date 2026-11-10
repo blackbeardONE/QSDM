@@ -17,7 +17,7 @@ from 2026-04-22 on.
 
 ### Added
 
-- **The web wallet installs as an app on a phone (2026-11-11).** qsdm.tech's
+- **The web wallet installs as an app on a phone (2026-11-10).** qsdm.tech's
   web wallet is now a progressive web app: "Install the app" on Android and
   in Chrome or Edge, "Add to Home Screen" in Safari on iPhone and iPad. A
   service worker with scope `/wallet` keeps copies of the wallet's own files,
@@ -171,7 +171,7 @@ from 2026-04-22 on.
 
 ### Changed
 
-- **A start reads the journal further ahead (2026-11-11).** The startup load
+- **A start reads the journal further ahead (2026-11-10).** The startup load
   (`LoadVerifiedJournal`) and the offline journal check (`CheckJournal`)
   let the reader hold eight lines per worker ahead of the line being checked,
   instead of one, so a slow line no longer leaves the other workers idle: on
@@ -181,7 +181,7 @@ from 2026-04-22 on.
   Japan (4 minutes 23 seconds at block 1 058 195).
 
 - **The reference bootstrap peer is the producer's current address
-  (2026-11-11).** `config/public-endpoints.json` and
+  (2026-11-10).** `config/public-endpoints.json` and
   `scripts/lib/qsdm-endpoints.ps1` still named the peer ID of an earlier
   server; they now name
   `/dns4/api.qsdm.tech/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`,
