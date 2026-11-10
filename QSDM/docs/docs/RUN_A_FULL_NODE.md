@@ -272,7 +272,7 @@ for h in $((T - 100)) $((T - 1)); do blk http://127.0.0.1:8080/api/v1 "$h"; blk 
 ```
 
 Each pair of lines must be identical, and your tip should follow the public tip within a block or two. Repeat this
-from time to time; a monitor that alerts on a mismatch is a good idea.
+from time to time, or let the watch below repeat it every 5 minutes.
 
 ## If something does not match
 
@@ -280,6 +280,39 @@ Stop the node and keep its state directory as it is. Collect `qsdm --version`, `
 the height with both hashes and state roots, and the last few hundred log lines, and report them through the security
 contact in [SECURITY.md](../../../SECURITY.md). Your node checks every block itself: if it refuses a block, it may be
 the one that is right.
+
+## Watching your node
+
+`watch-full-node.py` repeats step 7 every 5 minutes and tells you when something is wrong. It needs only Python 3 and
+systemd, runs as a throwaway unprivileged user, and only reads: the node's API, the public API and the memory of the
+node's process. It never stops, restarts or changes the node. Take it from the commit that qsdm.tech/fullnode.html
+names for it, and compare its SHA-256 with the one the page gives:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/blackbeardONE/QSDM/<commit>/QSDM/scripts/fullnode/watch-full-node.py
+sha256sum watch-full-node.py
+sudo python3 watch-full-node.py install --name "my node"
+```
+
+With `--webhook-file FILE` (a file whose first line is a Discord webhook URL) it also posts to Discord; the URL is
+kept in a root-only file and never printed. Without it, the results go only to the journal
+(`journalctl -u qsdm-fullnode-watch`). `sudo python3 /opt/qsdm-fullnode-watch/watch-full-node.py status` shows the
+last check, the open problems and the node's memory over the last week.
+
+It reports a problem when:
+
+- the node's API has not answered for 15 minutes, or at once when systemd marks `qsdm-follower` failed;
+- the node's tip has not moved for 15 minutes while the network is ahead of it;
+- the node and the network have different blocks 2 or 100 blocks below the tip they share, also when read again 20
+  seconds later (then do what "If something does not match" says);
+- the public API has not answered for 15 minutes, or the network's tip has not moved for 15 minutes.
+
+A node that stays more than 30 blocks behind for 15 minutes (while it catches up after the snapshot, for example) and
+blocks that cannot be compared for 15 minutes are warnings. A problem is posted when it starts, every 6 hours while
+it lasts, and when it ends. A daily summary at 05:00 UTC gives both tips and the node's memory (RssAnon), with the
+figures from a day and a week before. A producer restart, when the public API answers 503 for a few minutes, stays
+under the 15 minutes. The settings are in `/etc/qsdm-fullnode-watch/watch.env` (the `QSDM_WATCH_*` names at the top
+of the script); `sudo python3 /opt/qsdm-fullnode-watch/watch-full-node.py uninstall` removes it.
 
 ## Security notes
 

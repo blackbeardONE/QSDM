@@ -6,7 +6,8 @@ name: Full-node installer
 # runuser and systemctl, with every file under --root. It never touches the internet: a curl
 # stand-in refuses every address other than 127.0.0.1. It also compares the installer with the
 # guide (the systemd unit, core.env and the install commands), so a change to the guide's steps
-# runs it too.
+# runs it too. The tests of QSDM/scripts/fullnode/watch-full-node.py (the guide's "Watching your
+# node") run first; they use local HTTP servers only.
 
 permissions:
   contents: read
@@ -47,6 +48,9 @@ jobs:
           shellcheck --severity=warning \
             QSDM/scripts/fullnode/install-full-node.sh \
             QSDM/scripts/fullnode/test-install-full-node.sh
+
+      - name: Full-node watch tests
+        run: python3 -m unittest discover -s QSDM/scripts/fullnode -p 'test_watch_full_node.py' -v
 
       - name: Run the installer end to end in a sandbox
         run: bash QSDM/scripts/fullnode/test-install-full-node.sh

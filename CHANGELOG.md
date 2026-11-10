@@ -17,6 +17,21 @@ from 2026-04-22 on.
 
 ### Added
 
+- **A watch for full nodes (2026-11-09).**
+  `QSDM/scripts/fullnode/watch-full-node.py` repeats step 7 of
+  [`RUN_A_FULL_NODE.md`](QSDM/docs/docs/RUN_A_FULL_NODE.md) every 5 minutes
+  under a systemd timer: the same blocks (hash and state root) on the node
+  and on the network 2 and 100 blocks below the tip they share, both tips
+  moving, and both APIs answering. A difference counts only when it is still
+  there 20 seconds later. Problems go to the journal and, with a Discord
+  webhook, are posted when they start, every 6 hours while they last and
+  when they end; a daily summary adds the memory of the node's process
+  (RssAnon), so a node shows over days whether its memory stays flat. It
+  runs as a throwaway unprivileged user, only reads, and never stops or
+  changes the node. `install`, `status` and `uninstall` commands; the guide
+  has a new section, "Watching your node". 18 tests run in the full-node
+  installer workflow.
+
 - **QSDM-20 native tokens, switched off (2026-11-06).** Anyone will be able
   to create a token and send it to any QSDM address with ordinary signed
   transactions (contract `qsdm/token/v1`): create, transfer, mint, burn and
