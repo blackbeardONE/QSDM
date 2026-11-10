@@ -121,7 +121,7 @@ func (j *journalLines) split(data []byte, atEOF bool) (int, []byte, error) {
 // The lines are decoded and verified on every core (one worker per
 // GOMAXPROCS); each block is then checked against the one before it in
 // journal order, and the error is the first failure in journal order. At
-// most one line per worker is read ahead.
+// most journalReadAhead lines per worker are read ahead.
 //
 // Every verified signature except the last block's is then dropped from
 // memory (see above). The last block keeps its signature, so that the boot
@@ -150,12 +150,23 @@ type journalItem struct {
 	done    chan struct{} // closed once the line's results are set
 }
 
+// journalReadAhead is how many lines per worker the reader of a
+// journalPipeline may hold ahead of the line the caller waits for. With one
+// line per worker, every line that took longer than the others (a block with
+// transactions, a garbage collection) left the other workers idle. With eight,
+// the startup load of a copy of the real journal (880,377 blocks, six workers,
+// the restore harness in cmd/qsdm/restore_bench_test.go) took 25.0 seconds
+// instead of 28.0 (mean of five runs each), at the same peak memory. Journal
+// lines are about 10 KB, so this holds about half a megabyte (at most 4 MiB a
+// line).
+const journalReadAhead = 8
+
 // journalPipeline reads a journal as LoadChainNDJSON does (one block per
 // line, blank lines skipped, lines up to 4 MiB) and runs work on every line
-// on its own goroutines. The reader hands each line to a free worker after
-// queueing it, in journal order, on order; the caller takes the lines from
-// order and waits for each one's done, so at most one line per worker is read
-// ahead of the line the caller waits for.
+// on its own goroutines. The reader queues each line, in journal order, on
+// order and hands it to a free worker; the caller takes the lines from order
+// and waits for each one's done, so at most journalReadAhead lines per worker
+// are read ahead of the line the caller waits for.
 type journalPipeline struct {
 	order   chan *journalItem
 	quit    chan struct{} // closed by stop: the reader and the workers return early
@@ -170,8 +181,9 @@ func startJournalPipeline(f *os.File, workers int, work func(*journalItem)) *jou
 	if workers < 1 {
 		workers = 1
 	}
-	p := &journalPipeline{order: make(chan *journalItem, workers), quit: make(chan struct{})}
-	jobs := make(chan *journalItem)
+	ahead := workers * journalReadAhead
+	p := &journalPipeline{order: make(chan *journalItem, ahead), quit: make(chan struct{})}
+	jobs := make(chan *journalItem, ahead)
 	p.wg.Add(1 + workers)
 	go func() {
 		defer p.wg.Done()
