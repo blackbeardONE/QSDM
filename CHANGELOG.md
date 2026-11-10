@@ -17,6 +17,22 @@ from 2026-04-22 on.
 
 ### Added
 
+- **A full node can take over block production (2026-11-10).** A new part of
+  [`PRODUCER_TRANSITION.md`](QSDM/docs/docs/PRODUCER_TRANSITION.md), "A full
+  node as the new producer (a stand-in)", gives the steps for a full node to
+  become the producer when the producer is gone for good: its own consensus
+  key becomes the new epoch's producer, a version 2 table names it from the
+  block after the old producer's last one, its served watermark is seeded with
+  `hl1-tail` (the producer role refuses a full node's directory without one),
+  and it starts in the producer role with mining off. A new tool,
+  `cmd/qsdm-handover`, writes that table: it reads the node's current table
+  with the node's own loader, adds the epoch, checks it with the node's own
+  rules, writes a new file and then loads it again, keeping it only if the
+  schedule is exactly the new one and nothing else changed. A new test,
+  `TestStandInPromotesAFollower`, runs the whole procedure on real state
+  directories, including the old producer coming back. `pkg/config` gains
+  `LoadConfigFile`, which loads one file without the environment overrides.
+
 - **A watch for full nodes (2026-11-09).**
   `QSDM/scripts/fullnode/watch-full-node.py` repeats step 7 of
   [`RUN_A_FULL_NODE.md`](QSDM/docs/docs/RUN_A_FULL_NODE.md) every 5 minutes
