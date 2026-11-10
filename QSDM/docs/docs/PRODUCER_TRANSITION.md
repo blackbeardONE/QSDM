@@ -161,7 +161,8 @@ checkpoint_hash = "<checkpoint_hash>"
 ```
 
 The node behaves identically with either table. There is no need to convert a
-table until a second hand-over.
+table until a second hand-over. `qsdm-handover` (section 5) writes this
+conversion and the new epoch in one step.
 
 ## 5. A second hand-over
 
@@ -178,7 +179,8 @@ At most one producer may produce at any time. The steps:
 3. **Write the new table.** Copy the current epochs exactly, then add
    `{from_height = N + 1, producer_id = <new producer>, checkpoint_hash = H_N}`.
    Use the same file on every node. A follower with a different schedule
-   rejects the new producer's blocks and stops following.
+   rejects the new producer's blocks and stops following. `qsdm-handover`
+   writes the file (see "A full node as the new producer" below).
 4. **Optionally re-pin the prefix:** the byte length and SHA-256 of the journal
    up to and including the line of block `N`, which must end on a newline.
    Compute them on a stopped copy of the journal. Keeping the old pin is also
@@ -202,6 +204,62 @@ At most one producer may produce at any time. The steps:
 **Never remove or edit an earlier epoch.** Dropping epoch 0 makes every node
 reject the blocks its producer signed, and changing epoch 1 moves the legacy
 state-root boundary and changes the restored state.
+
+### A full node as the new producer (a stand-in)
+
+A full node ([Run a full node](RUN_A_FULL_NODE.md)) already holds what a
+producer needs: the whole journal from genesis, the state, and a consensus key
+of its own, which it creates on its first start (`qsdm_consensus_signer.json`
+in its state directory, unless `[consensus] signer_key_path` names another
+file). The startup line `Validator consensus signer ready` prints the key's
+address. When the producer is gone for good, such a node can take over block
+production with the steps above. Four things differ:
+
+1. **Its own key is the new epoch's producer.** The key holds no funds and
+   gains no power until the nodes install a table that names it.
+   `qsdm-valkey show --in <key file>` prints its address again.
+2. **`qsdm-handover` writes the table.** It reads the node's current table
+   (version 1 or version 2) with the node's own loader, adds the new epoch,
+   checks the schedule with the node's own rules and writes a new file; it
+   never overwrites one. Then it loads that file as the node will, and removes
+   it again unless the schedule is exactly the new one and every other setting
+   is unchanged. From `QSDM/source`:
+
+   ```bash
+   go build -tags dilithium_circl ./cmd/qsdm-handover
+   ./qsdm-handover --config /etc/qsdm-follower/core.toml --out core-handover.toml \
+     --from-height <N+1> --producer <the node's address> --checkpoint-hash <H_N>
+   ```
+
+3. **Seed its served watermark.** The producer role requires the served
+   watermark `hl1-served-watermark.json`, and a full node never writes one, so
+   the producer role refuses a full node's directory ("watermark missing: run
+   R-H (or R-B)"). With the node stopped and the new file installed, seed it
+   with the `hl1-tail` of the node's release, as the node's service user:
+
+   ```bash
+   sudo runuser -u qsdm-follower -- env CONFIG_FILE=/etc/qsdm-follower/core.toml \
+     <release folder>/hl1-tail watermark seed --served-tip <N> --follower-height <N> --follower-hash <H_N>
+   ```
+
+   `--served-tip` is the old producer's last block `N`. The follower height and
+   hash come from a second node that holds block `N`, so the seed refuses a
+   journal that ends below `N` (the old producer served a block this node never
+   received), one whose block `N` differs, and one with a torn last line.
+4. **Start it in the producer role.** Set `QSDM_NETWORK_BLOCK_PRODUCER=1` and
+   remove `QSDM_CHAIN_SYNC_URLS` (the producer role does not sync), then start
+   it. Its first block is `N + 1`, on top of `H_N`. The other nodes install the
+   same file and set `QSDM_CHAIN_SYNC_URLS` to the new producer's API, which
+   must be reachable from them.
+
+What does not move with the chain: the producer's mining state lives in its
+own directory (`QSDM_LEGACY_MINING_*`), not in the journal, so a stand-in
+starts with mining off and seals blocks with transfers only. Moving mining is a
+separate step, and clients that use `api.qsdm.tech` reach the new producer only
+once that name points at it.
+
+`TestStandInPromotesAFollower` (section 7) runs these steps on real state
+directories.
 
 ## 6. What can go wrong
 
@@ -255,6 +313,21 @@ Tests:
   node.
 - `cmd/qsdm/private_p2p_test.go`: the stale-allowlist warning names the final
   epoch's producer.
+- `cmd/qsdm/standin_promotion_test.go`: `TestStandInPromotesAFollower` builds a
+  full node as one is built (a snapshot of the producer's journal, accounts
+  and enrollment, then blocks appended as HTTP chain sync appends them) and
+  makes it the producer: the producer role refuses it without a watermark, the
+  seed refuses a served tip above its journal and a hash it does not hold, and
+  after the seed and a version 2 schedule that names its own key it seals
+  blocks on top of the old producer's last block. The old producer, restarted
+  with the schedule, cannot seal; a second full node with the schedule refuses
+  a block the old producer sealed under the old table and follows the new
+  producer, and with the old table it does the opposite.
+- `cmd/qsdm-handover/main_test.go`: the public full node's version 1 table
+  becomes a three-epoch schedule in the same place with every other line
+  unchanged, a version 2 table gets a fourth epoch, Windows line ends stay,
+  and every invalid schedule, an inline table, a YAML file and an existing
+  output file are refused without writing anything.
 - Fuzz targets, whose seeds run with the other tests and which the nightly
   fuzz workflow fuzzes for five minutes each:
   - `FuzzTransitionValidate` (`pkg/producerpolicy`) builds tables with any
@@ -273,6 +346,9 @@ Tests:
 
 - How long a follower with a large journal takes to validate its history from
   genesis at startup. Every restart with a transition table already does this,
-  so check that the service manager's start timeout allows for it.
+  so check that the service manager's start timeout allows for it. One figure:
+  the project's full node on a 12 GB server answered again 4 minutes 26
+  seconds after a restart at block 1,058,193 (release fullnode-rc1108, 9
+  November 2026).
 - A reviewed tool for computing a new prefix pin on a live journal does not
   exist yet; until it does, keep the existing pin (step 4 is optional).

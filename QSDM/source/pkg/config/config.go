@@ -405,6 +405,28 @@ func LoadConfig() (*Config, error) {
 	return cfg, nil
 }
 
+// LoadConfigFile loads one TOML or YAML configuration file as LoadConfig maps
+// it, with the defaults, and validates it, but without the environment
+// overrides and without a .env file: the result is what the file itself
+// configures. Tools that check or rewrite a node's file use it
+// (cmd/qsdm-handover).
+func LoadConfigFile(path string) (*Config, error) {
+	cfg := &Config{}
+	if err := loadConfigFile(path, cfg); err != nil {
+		return nil, fmt.Errorf("failed to load config file %s: %w", path, err)
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		cfg.ConfigFileUsed = abs
+	} else {
+		cfg.ConfigFileUsed = filepath.Clean(path)
+	}
+	applyDefaults(cfg)
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+	return cfg, nil
+}
+
 // loadConfigFile loads configuration from TOML or YAML file
 func loadConfigFile(path string, cfg *Config) error {
 	ext := strings.ToLower(filepath.Ext(path))
