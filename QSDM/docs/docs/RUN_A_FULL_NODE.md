@@ -30,7 +30,9 @@ bash install-full-node.sh --from-website
 ```
 
 `--from-website` reads the values to pin from https://qsdm.tech/fullnode.html and prints them: compare them with the
-page in your browser. To give the values yourself instead, pass each one as a flag (`--help` lists them).
+page in your browser. To give the values yourself instead, pass each one as a flag (`--help` lists them). If the
+block maker has changed since the release, the page also shows the block-maker schedule, and the script puts it
+into the node's `core.toml` (see "When the block maker changes" below).
 
 - If a check fails, the script says what did not match and what to do. Once that is fixed, run the same command
   again: it carries on where it stopped, and it never deletes chain data.
@@ -147,7 +149,8 @@ The download page **https://qsdm.tech/fullnode.html** publishes, separately from
 
 - the release key `key_id` that signs the full-node release (release key v2, the same key as the QSDM Hive releases);
 - the `sha256` of the `qsdm` binary of the current full-node release;
-- the snapshot checkpoint: height, block hash, state root and producer.
+- the snapshot checkpoint: height, block hash, state root and producer;
+- after a change of block maker, the block-maker schedule (see "When the block maker changes").
 
 Everything below is checked against those values and against the public API. Do not take them from the files you
 download: they travel with the bytes.
@@ -320,6 +323,40 @@ figures from a day and a week before. A producer restart, when the public API an
 under the 15 minutes. The settings are in `/etc/qsdm-fullnode-watch/watch.env` (the `QSDM_WATCH_*` names at the top
 of the script); `sudo python3 /opt/qsdm-fullnode-watch/watch-full-node.py uninstall` removes it.
 
+## When the block maker changes
+
+The block maker (the producer) signs every block with its own key, and a full node accepts a block only from the key
+that its block-maker schedule names for that height: the `[consensus.producer_transition]` table in `core.toml`
+([Producer transition](PRODUCER_TRANSITION.md)). When block production moves to another server, for example to the
+standby block maker and back, the new block maker signs from the next block on with a new key, and every node needs
+the new schedule.
+
+Until your node has it, it stays at the old block maker's last block: its tip stops moving, its log says
+`external block producer is not authorized` for the next block, and the watch reports `node-stalled`. Nothing is lost:
+with the new schedule the node carries on from where it stopped.
+
+qsdm.tech/fullnode.html then shows the new schedule under "Block makers", as the exact text of the table, with its
+digest. For a node set up with `install-full-node.sh`:
+
+```bash
+bash install-full-node.sh --update-schedule --from-website
+```
+
+It reads the schedule from the page and checks that it continues your node's: the same journal prefix pin and the
+same earlier block makers from the same blocks, with new ones only added at the end. It refuses anything else and
+then changes nothing. It keeps your `core.toml` as `core.toml.before-<UTC time>`, puts the new schedule into the table,
+names the last block maker in `authorized_block_producers` (see [Private P2P mode](PRIVATE_P2P.md), section 4) and
+restarts the node. Nothing else in the file changes. If systemd then reports the node as failed, the old file goes back
+and the node is restarted with it. Last, it checks your node against the network as in step 7 and says when your node
+has passed the new block maker's first block. `--dry-run` shows the plan first. To use a schedule you saved from the
+page, pass `--producer-schedule FILE` instead of `--from-website`. A new install with `--from-website` takes the
+schedule from the page by itself.
+
+By hand: replace the `[consensus.producer_transition]` table of `/etc/qsdm-follower/core.toml` (its header line and
+every line of it, up to the next table) with the schedule from the page, set `authorized_block_producers` to the last
+`producer_id` in it, and restart the node (`sudo systemctl restart qsdm-follower`). The node checks the schedule when it
+starts and refuses one that breaks its rules.
+
 ## Security notes
 
 - Keep the API on loopback (`[api] bind_address = "127.0.0.1"`, as in `fullnode-core.toml`) or behind an
@@ -327,6 +364,9 @@ of the script); `sudo python3 /opt/qsdm-fullnode-watch/watch-full-node.py uninst
 - Run as the unprivileged service user and keep `/var/lib/qsdm-follower` at mode 0700.
 - The checkpoint you pin is the trust anchor for all history below it. Take it from qsdm.tech and confirm it with the
   public API.
+- The block-maker schedule decides whose blocks your node accepts. Take it from qsdm.tech only. The installer refuses a
+  schedule that changes an earlier block maker, so the history your node holds stays as it is; but a new block maker
+  is exactly what a schedule adds, and a wrong one would make your node follow the wrong chain from that block on.
 
 ## Keeping up to date
 

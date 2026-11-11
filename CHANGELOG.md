@@ -17,6 +17,24 @@ from 2026-04-22 on.
 
 ### Added
 
+- **Full nodes follow a change of block maker (2026-11-11).** After a
+  hand-over, qsdm.tech/fullnode.html shows the new block-maker schedule (the
+  exact `[consensus.producer_transition]` table) and its digest.
+  `install-full-node.sh --update-schedule --from-website` puts it into a running
+  full node: it checks that the schedule continues the node's (the same prefix
+  pin, the same earlier block makers from the same blocks, new ones only at the
+  end), keeps the old `core.toml` next to it, names the last block maker in
+  `authorized_block_producers`, restarts the node, puts the old file back if the
+  node does not start, and checks the node against the network. A new install
+  with `--from-website` takes the schedule from the page. Before this, a node
+  set up from a release stopped at the old block maker's last block until its
+  operator edited the table by hand. See "When the block maker changes" in
+  [`RUN_A_FULL_NODE.md`](QSDM/docs/docs/RUN_A_FULL_NODE.md) and "Telling the full
+  nodes" in [`PRODUCER_TRANSITION.md`](QSDM/docs/docs/PRODUCER_TRANSITION.md),
+  which also defines the schedule digest. Pages without the new section, and
+  installers from before this change, keep working as before. The installer's
+  sandbox test covers it with 12 new cases.
+
 - **Handing production back, and carrying the mining records (2026-11-10).**
   [`PRODUCER_TRANSITION.md`](QSDM/docs/docs/PRODUCER_TRANSITION.md) has two new
   parts. "Carrying the mining records in a planned hand-over" moves the
