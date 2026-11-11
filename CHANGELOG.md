@@ -211,7 +211,10 @@ from 2026-04-22 on.
   goroutine reads the body, so a slow upload that passes the limit just as
   the 30-second timeout fires could meet the race. govulncheck reported it the
   day the advisory came out. The producer and the full-node release get it
-  with their next build.
+  with their next build. The same day `golang.org/x/net` moved to v0.62.0
+  (CVE-2026-78661, a denial of service in `x/net/html`): the node does not use
+  that package (`x/net` comes in through `x/crypto/acme/autocert`), but the
+  container scan flags the module version.
 
 - **A start reads the journal further ahead (2026-11-10).** The startup load
   (`LoadVerifiedJournal`) and the offline journal check (`CheckJournal`)
