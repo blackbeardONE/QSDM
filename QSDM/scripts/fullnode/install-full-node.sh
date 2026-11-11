@@ -9,6 +9,11 @@
 # It stops at the first check that fails, before it installs anything, and says what did not match.
 # Running it again carries on where it stopped. It never deletes chain data or files it did not make.
 #
+# When the block maker changes (PRODUCER_TRANSITION.md), the page also shows the new block-maker schedule:
+# the exact [consensus.producer_transition] table every node must carry. A new install takes it from the
+# page; a node that is already running gets it with --update-schedule (RUN_A_FULL_NODE.md, "When the block
+# maker changes"), which keeps the old file, restarts the node and checks it against the network.
+#
 # Run it as root or as a user who can use sudo. "install-full-node.sh --help" lists the options.
 # Exit status: 0 done; 1 stopped (a check failed or a step went wrong); 2 bad options; 3 installed and
 # started, but the node did not answer in time for the last check (run the same command again later).
@@ -61,9 +66,14 @@ NEED_DISK_KB=$((15 * 1000 * 1000))
 RELEASE='' RELEASE_TAG='' QSDM_SHA='' KEY_ID='' CP_HEIGHT='' CP_HASH='' CP_ROOT='' CP_PRODUCER=''
 FROM_WEBSITE=0 WEBSITE_URL=$DEFAULT_WEBSITE API_BASE=$DEFAULT_API DOWNLOAD_BASE='' QSDMCLI=''
 REQUIRE_SIGNATURE=0 WORK_DIR='' ROOT='' DRY_RUN=0 WAIT_MINUTES=30 SKIP_RESOURCE_CHECK=0
+SCHEDULE_FLAG='' UPDATE_SCHEDULE=0
 
 # State.
 IS_ROOT=0 INSTALL_STARTED=0 IMPORT_DONE=0 LOCKED=0 RUN_TMP='' UNPACK_TMP='' HELPER=''
+# The block-maker schedule: the file in use (from the page or --producer-schedule), where it came from,
+# the core.toml to install (the release's, or the release's with that schedule) and what the step totals are.
+SCHEDULE='' SCHEDULE_FROM='' PAGE_SCHEDULE='' TARGET_CONFIG='' TARGET_WHAT='' FIRST_NEW=0
+STEP_TOTAL=8 CHECK_STEP=8 CHECK_LOCAL_TIP=0 CHECK_PUBLIC_TIP=0
 BUNDLE='' BUNDLE_TGZ='' SNAP_NAME='' SNAP_ARCHIVE='' ARCHIVE_SHA='' LOCAL_API='' DL='' STATE=''
 P_STATE='' P_OPT='' P_ETC='' P_SNAP_PARENT='' P_SNAP_DIR='' P_UNIT='' UNPACK_PROBLEM=''
 R_AUTHORIZED='' R_STATE_DIR='' R_HEIGHT='' R_HASH='' R_ROOT='' R_PRODUCER='' R_SIGNED='' R_INSTALLED=''
@@ -76,6 +86,8 @@ Usage: ${PROG} --from-website [options]
    or: ${PROG} --release NAME --release-tag TAG --qsdm-sha256 HEX --key-id HEX
            --checkpoint-height N --checkpoint-hash HEX --checkpoint-state-root HEX
            --checkpoint-producer HEX [options]
+   or: ${PROG} --update-schedule --from-website [options]
+   or: ${PROG} --update-schedule --producer-schedule FILE [options]
 
 Sets up a QSDM full node on this Linux x86_64 server by following RUN_A_FULL_NODE.md: download and
 verify the release, check the snapshot checkpoint, install, import the snapshot, start the
@@ -91,7 +103,19 @@ Values to pin. Take them from https://qsdm.tech/fullnode.html, never from the do
   --checkpoint-state-root HEX  the checkpoint state root
   --checkpoint-producer HEX    the checkpoint producer
   --from-website               read all of the above from https://qsdm.tech/fullnode.html and print
-                               them. Values also given as flags must match the page.
+                               them. Values also given as flags must match the page. When the page
+                               shows a block-maker schedule, it is read too.
+  --producer-schedule FILE     the block-maker schedule shown on https://qsdm.tech/fullnode.html (the
+                               [consensus.producer_transition] text, saved to a file). Only needed
+                               after the block maker has changed. With --from-website it must be the
+                               page's.
+
+When the block maker changes (RUN_A_FULL_NODE.md, "When the block maker changes"):
+  --update-schedule            for a node this installer set up: put the new block-maker schedule
+                               (from --from-website or --producer-schedule) into its core.toml,
+                               keep the old file next to it, restart the node and check it against
+                               the network. The new schedule must continue the node's: the same
+                               earlier block makers from the same blocks. Nothing else changes.
 
 Options:
   --qsdmcli PATH               qsdmcli for the release signature check (default: qsdmcli on PATH).
@@ -127,7 +151,7 @@ EOF
 say() { printf '%s\n' "$*"; }
 ok() { printf '  ok: %s\n' "$*"; }
 note() { printf '  note: %s\n' "$*"; }
-step() { printf '\n[%s/8] %s\n' "$1" "$2"; }
+step() { printf '\n[%s/%s] %s\n' "$1" "$STEP_TOTAL" "$2"; }
 
 # stop WHAT [WHAT TO DO ...]: explain, then exit 1.
 stop() {
@@ -214,6 +238,8 @@ parse_args() {
       --checkpoint-state-root) need_arg "$@"; CP_ROOT=${2,,}; shift 2 ;;
       --checkpoint-producer) need_arg "$@"; CP_PRODUCER=${2,,}; shift 2 ;;
       --from-website) FROM_WEBSITE=1; shift ;;
+      --producer-schedule) need_arg "$@"; SCHEDULE_FLAG=$2; shift 2 ;;
+      --update-schedule) UPDATE_SCHEDULE=1; shift ;;
       --website-url) need_arg "$@"; WEBSITE_URL=$2; shift 2 ;;
       --api) need_arg "$@"; API_BASE=$2; shift 2 ;;
       --download-base) need_arg "$@"; DOWNLOAD_BASE=$2; shift 2 ;;
@@ -292,6 +318,12 @@ validate_args() {
       usage_error "--root must be an existing folder other than /: $ROOT"
     fi
     ROOT=${ROOT%/}
+  fi
+  if [[ -n $SCHEDULE_FLAG && ! ( -f $SCHEDULE_FLAG && -r $SCHEDULE_FLAG ) ]]; then
+    usage_error "--producer-schedule is not a file this user can read: $SCHEDULE_FLAG"
+  fi
+  if [[ $UPDATE_SCHEDULE == 1 && $FROM_WEBSITE == 0 && -z $SCHEDULE_FLAG ]]; then
+    usage_error "--update-schedule needs the new schedule: --from-website (reads it from $DEFAULT_WEBSITE) or --producer-schedule FILE"
   fi
   if [[ -n $QSDMCLI ]]; then
     if [[ ! -f $QSDMCLI || ! -x $QSDMCLI ]]; then
@@ -684,6 +716,374 @@ def cmd_config(path):
     print(f"api_port={port}")
 
 
+# --- the block-maker schedule: [consensus.producer_transition] -------------------------------------
+#
+# PRODUCER_TRANSITION.md: the table that tells a node which key may sign the block at each height. A
+# release's fullnode-core.toml carries the schedule as it was when the release was made. When the block
+# maker changes, qsdm.tech/fullnode.html shows the new schedule as the exact text of the table
+# (<pre class="producer-schedule">), and every node must carry it.
+
+SCHEDULE = "consensus.producer_transition"
+EPOCHS = SCHEDULE + ".epochs"
+V1_KEYS = ("version", "historical_signature_height", "historical_producer", "checkpoint_height", "checkpoint_hash",
+           "effective_height", "replacement_producer", "historical_prefix_bytes", "historical_prefix_sha256")
+V2_KEYS = ("version", "historical_prefix_bytes", "historical_prefix_sha256")
+EPOCH_KEYS = ("from_height", "producer_id", "checkpoint_hash")
+MAX_EPOCHS = 64
+ZERO64 = "0" * 64
+HEADER = re.compile(r"(\[\[?)([A-Za-z0-9_.-]+)(\]\]?)")
+SCHEDULE_VALUE = re.compile(r'("[0-9a-z]*"|[0-9]+)\s*(#.*)?')
+
+
+def depth_after(line, depth, n):
+    """The bracket depth after LINE (strings and comments skipped): above 0 inside a multi-line array."""
+    quote, i = None, 0
+    while i < len(line):
+        c = line[i]
+        if quote:
+            if quote == '"' and c == "\\":
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+        elif c in "\"'":
+            quote = c
+        elif c == "#":
+            break
+        elif c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth < 0:
+                raise Bad(f"line {n}: a ']' without its '['")
+        i += 1
+    if quote:
+        raise Bad(f"line {n}: a string is not closed on its line")
+    return depth
+
+
+def config_tables(lines):
+    """Each table header of a TOML file as (line index, name, is an array table), in order."""
+    headers, depth = [], 0
+    for i, raw in enumerate(lines):
+        line = raw.strip()
+        if depth == 0 and line.startswith("["):
+            m = HEADER.fullmatch(line.split("#", 1)[0].strip())
+            if not m or len(m.group(1)) != len(m.group(3)):
+                raise Bad(f"line {i + 1}: cannot read the table header {line!r}")
+            headers.append((i, m.group(2), len(m.group(1)) == 2))
+            continue
+        if line and not line.startswith("#"):
+            depth = depth_after(line, depth, i + 1)
+    if depth:
+        raise Bad("a multi-line array is not closed")
+    return headers
+
+
+def schedule_span(lines):
+    """(first, end) of the schedule's lines in a core.toml: its [consensus.producer_transition] header to its
+    last setting, with every [[consensus.producer_transition.epochs]] table inside. None if there is none."""
+    headers = config_tables(lines)
+    mine = [k for k, (_, name, array) in enumerate(headers)
+            if name == SCHEDULE or name.startswith(SCHEDULE + ".")]
+    for k in mine:
+        i, name, array = headers[k]
+        if not (name == SCHEDULE and not array) and not (name == EPOCHS and array):
+            raise Bad(f"line {i + 1}: unexpected table [{name}] in the producer schedule")
+    for i, name, array in headers:
+        if name == "consensus" and not array:
+            continue
+        if name == "consensus" or (array and name in (SCHEDULE,)):
+            raise Bad(f"line {i + 1}: unexpected table header for [{name}]")
+    # The producer schedule may not also be set as keys of [consensus] (an inline or dotted table).
+    table = None
+    for i, raw in enumerate(lines):
+        line = raw.strip()
+        found = [h for h in headers if h[0] == i]
+        if found:
+            table = found[0][1]
+            continue
+        if table == "consensus" and re.match(r'"?producer_transition"?\s*[.=]', line):
+            raise Bad(f"line {i + 1}: the producer schedule is written as keys of [consensus]; "
+                      "this installer reads it only as the [consensus.producer_transition] table")
+    if not mine:
+        return None
+    if headers[mine[0]][1] != SCHEDULE or sum(1 for k in mine if headers[k][1] == SCHEDULE) != 1:
+        raise Bad("the [consensus.producer_transition] table must come once, before its epochs")
+    if mine != list(range(mine[0], mine[-1] + 1)):
+        raise Bad("the producer schedule is not in one piece: another table sits between its parts")
+    first = headers[mine[0]][0]
+    end = headers[mine[-1] + 1][0] if mine[-1] + 1 < len(headers) else len(lines)
+    while end > first + 1 and (not lines[end - 1].strip() or lines[end - 1].strip().startswith("#")):
+        end -= 1
+    return first, end
+
+
+def schedule_from_lines(lines, where):
+    """The schedule in LINES (a [consensus.producer_transition] table and its epochs, nothing else), checked
+    with the node's rules (PRODUCER_TRANSITION.md): {version, prefix_bytes, prefix_sha256, epochs}."""
+    table, epochs, current = {}, [], None
+    for n, raw in enumerate(lines, 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            m = HEADER.fullmatch(line.split("#", 1)[0].strip())
+            name = m.group(2) if m and len(m.group(1)) == len(m.group(3)) else None
+            array = bool(m) and len(m.group(1)) == 2
+            if name == SCHEDULE and not array and current is None and not table:
+                current = table
+            elif name == EPOCHS and array and current is not None:
+                current = {}
+                epochs.append(current)
+            else:
+                raise Bad(f"{where} line {n}: unexpected {line!r}")
+            continue
+        if current is None:
+            raise Bad(f"{where} line {n}: a setting before the [consensus.producer_transition] header")
+        m = KEY_VALUE.fullmatch(line)
+        if not m:
+            raise Bad(f"{where} line {n}: cannot read {line!r}")
+        key, raw_value = m.group(1), m.group(2).strip()
+        allowed = EPOCH_KEYS if current is not table else V1_KEYS
+        if key not in allowed:
+            raise Bad(f"{where} line {n}: the producer schedule has a setting this installer does not know: {key}")
+        if key in current:
+            raise Bad(f"{where} line {n}: {key} appears twice")
+        v = SCHEDULE_VALUE.fullmatch(raw_value)
+        if not v:
+            raise Bad(f"{where} line {n}: unexpected value {raw_value!r}")
+        text = v.group(1)
+        current[key] = text[1:-1] if text.startswith('"') else int(text)
+    if current is None:
+        raise Bad(f"{where}: there is no [consensus.producer_transition] table")
+    return checked_schedule(table, epochs, where)
+
+
+def checked_schedule(t, raw_epochs, where):
+    def number(key, value):
+        if type(value) is not int or value <= 0:
+            raise Bad(f"{where}: {key} must be a whole number above 0")
+        return value
+
+    def key_hex(key, value):
+        if not isinstance(value, str) or not HEX64.fullmatch(value) or value == ZERO64:
+            raise Bad(f"{where}: {key} must be 64 lowercase hexadecimal characters, not all zero")
+        return value
+
+    version = t.get("version")
+    if version == 1:
+        if raw_epochs:
+            raise Bad(f"{where}: a version 1 table must not have epochs")
+        missing = [k for k in V1_KEYS if k not in t]
+        if missing:
+            raise Bad(f"{where}: the version 1 table lacks " + ", ".join(missing))
+        cp = number("checkpoint_height", t["checkpoint_height"])
+        if number("effective_height", t["effective_height"]) != cp + 1:
+            raise Bad(f"{where}: effective_height must be checkpoint_height + 1")
+        if number("historical_signature_height", t["historical_signature_height"]) > cp:
+            raise Bad(f"{where}: historical_signature_height must be at most checkpoint_height")
+        old = key_hex("historical_producer", t["historical_producer"])
+        new = key_hex("replacement_producer", t["replacement_producer"])
+        if old == new:
+            raise Bad(f"{where}: the two producers of a version 1 table must differ")
+        epochs = [{"from_height": t["historical_signature_height"], "producer_id": old, "checkpoint_hash": ""},
+                  {"from_height": t["effective_height"], "producer_id": new,
+                   "checkpoint_hash": key_hex("checkpoint_hash", t["checkpoint_hash"])}]
+    elif version == 2:
+        extra = sorted(set(t) - set(V2_KEYS))
+        if extra:
+            raise Bad(f"{where}: a version 2 table must not set " + ", ".join(extra))
+        if not 2 <= len(raw_epochs) <= MAX_EPOCHS:
+            raise Bad(f"{where}: a version 2 table needs 2 to {MAX_EPOCHS} epochs, it has {len(raw_epochs)}")
+        epochs, seen = [], {}
+        for i, e in enumerate(raw_epochs):
+            if "from_height" not in e or "producer_id" not in e:
+                raise Bad(f"{where}: epoch {i} needs from_height and producer_id")
+            height = number(f"epoch {i} from_height", e["from_height"])
+            producer = key_hex(f"epoch {i} producer_id", e["producer_id"])
+            if producer in seen:
+                raise Bad(f"{where}: epoch {i} reuses the key of epoch {seen[producer]}: a key is never used twice")
+            seen[producer] = i
+            if i == 0:
+                if "checkpoint_hash" in e:
+                    raise Bad(f"{where}: epoch 0 must not have a checkpoint_hash")
+                checkpoint = ""
+            else:
+                if height <= epochs[-1]["from_height"]:
+                    raise Bad(f"{where}: epoch {i} must start above epoch {i - 1}")
+                checkpoint = key_hex(f"epoch {i} checkpoint_hash", e.get("checkpoint_hash"))
+            epochs.append({"from_height": height, "producer_id": producer, "checkpoint_hash": checkpoint})
+    else:
+        raise Bad(f"{where}: version must be 1 or 2, not {version!r}")
+    return {"version": version, "prefix_bytes": number("historical_prefix_bytes", t.get("historical_prefix_bytes")),
+            "prefix_sha256": key_hex("historical_prefix_sha256", t.get("historical_prefix_sha256")), "epochs": epochs}
+
+
+def schedule_digest(s):
+    """SHA-256 of the schedule's canonical JSON: two nodes with the same digest enforce the same schedule."""
+    return hashlib.sha256(json.dumps(s, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def snapshot_pins(lines):
+    """checkpoint_height and checkpoint_producer_id of [snapshot_bootstrap], as cmd_config reads them."""
+    table, pins = None, {}
+    for raw in lines:
+        line = raw.strip()
+        if line.startswith("["):
+            table = line.split("#", 1)[0].strip()
+            continue
+        m = KEY_VALUE.fullmatch(line)
+        if table == "[snapshot_bootstrap]" and m and m.group(1) in ("checkpoint_height", "checkpoint_producer_id"):
+            pins[m.group(1)] = toml_value(m.group(2), "[snapshot_bootstrap]")
+    return pins.get("checkpoint_height"), pins.get("checkpoint_producer_id")
+
+
+def producer_at(s, height):
+    found = None
+    for e in s["epochs"]:
+        if e["from_height"] <= height:
+            found = e["producer_id"]
+    return found
+
+
+def print_schedule(s):
+    for i, e in enumerate(s["epochs"]):
+        after = f" after block {e['from_height'] - 1} {e['checkpoint_hash']}" if e["checkpoint_hash"] else ""
+        print(f"epoch={i} from {e['from_height']} {e['producer_id']}{after}")
+    print("digest=" + schedule_digest(s))
+
+
+def schedule_text(path):
+    """A schedule file (the text of qsdm.tech's <pre class="producer-schedule">): the lines, without a BOM,
+    carriage returns, trailing spaces or blank lines around them."""
+    text = read_text(path, 64 * 1024)
+    if text.startswith("﻿"):
+        text = text[1:]
+    lines = [line.rstrip() for line in text.replace("\r\n", "\n").split("\n")]
+    while lines and not lines[0]:
+        lines.pop(0)
+    while lines and not lines[-1]:
+        lines.pop()
+    if not lines:
+        raise Bad("the schedule is empty")
+    if any("\r" in line or "\t" in line for line in lines):
+        raise Bad("the schedule holds a tab or a stray carriage return")
+    return lines
+
+
+class SchedulePage(HTMLParser):
+    """The text of every <pre class="producer-schedule"> on the page."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.found, self.inside, self.nested = [], None, False
+
+    def handle_starttag(self, tag, attrs):
+        if self.inside is not None:
+            self.nested = True
+        elif tag == "pre" and "producer-schedule" in (dict(attrs).get("class") or "").split():
+            self.inside = []
+
+    def handle_endtag(self, tag):
+        if tag == "pre" and self.inside is not None:
+            self.found.append("".join(self.inside))
+            self.inside = None
+
+    def handle_data(self, data):
+        if self.inside is not None:
+            self.inside.append(data)
+
+
+def cmd_page_schedule(path, out):
+    """The schedule shown on fullnode.html, written to OUT: prints "schedule=yes" or "schedule=no"."""
+    page = SchedulePage()
+    page.feed(read_text(path, 2 * 1024 * 1024))
+    page.close()
+    if page.inside is not None or page.nested:
+        raise Bad("the producer schedule on the page is not one plain <pre> block")
+    if len(page.found) > 1:
+        raise Bad(f"the page shows {len(page.found)} producer schedules instead of one")
+    if not page.found:
+        print("schedule=no")
+        return
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
+        f.write(page.found[0])
+    lines = schedule_text(out)
+    schedule_from_lines(lines, "the schedule on the page")
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines) + "\n")
+    print("schedule=yes")
+
+
+def cmd_schedule_same(first, second):
+    """Two schedule files hold the same lines (after schedule_text)."""
+    if schedule_text(first) != schedule_text(second):
+        raise Bad("the two producer schedules differ")
+
+
+def cmd_schedule_apply(config, schedule, out):
+    """CONFIG (a core.toml) with its producer schedule replaced by SCHEDULE, written to OUT.
+
+    SCHEDULE must continue CONFIG's schedule: the same journal prefix pin and the same earlier block makers,
+    each from the same height, with new block makers only added at the end. authorized_block_producers is set
+    to the last block maker (PRIVATE_P2P.md section 4). Nothing else in the file changes. Prints
+    "status=current" (OUT not written: CONFIG already enforces SCHEDULE) or "status=added N", then
+    "first_new=H" (the first block of the first added block maker; 0 when current), the epochs and the digest."""
+    text = read_text(config, 1024 * 1024)
+    lines = text.split("\n")
+    span = schedule_span(lines)
+    if span is None:
+        raise Bad("the node's configuration has no [consensus.producer_transition] table")
+    old = schedule_from_lines(lines[span[0]:span[1]], "the node's configuration")
+    new_lines = schedule_text(schedule)
+    new = schedule_from_lines(new_lines, "the new schedule")
+    if new["version"] != 2:
+        raise Bad("a new schedule from qsdm.tech is always a version 2 table")
+    if (new["prefix_bytes"], new["prefix_sha256"]) != (old["prefix_bytes"], old["prefix_sha256"]):
+        raise Bad("the new schedule pins another journal prefix (historical_prefix_bytes or "
+                  "historical_prefix_sha256) than this node's configuration")
+    n = len(old["epochs"])
+    if len(new["epochs"]) < n or new["epochs"][:n] != old["epochs"]:
+        raise Bad("the new schedule does not continue this node's: an earlier block maker, its first block or "
+                  "its checkpoint hash is different, or one is missing")
+    height, producer = snapshot_pins(lines)
+    if type(height) is int and isinstance(producer, str) and producer_at(new, height) != producer:
+        raise Bad(f"the new schedule names another block maker for the snapshot checkpoint (block {height}) "
+                  f"than [snapshot_bootstrap] does ({producer})")
+    added = len(new["epochs"]) - n
+    if added == 0:
+        print("status=current")
+        print("first_new=0")
+        print_schedule(old)
+        return
+    final = new["epochs"][-1]["producer_id"]
+    body = lines[:span[0]] + new_lines + lines[span[1]:]
+    for i in range(span[0]):
+        if re.match(r"authorized_block_producers\s*=", body[i].strip()):
+            table = [h for h in config_tables(lines) if h[0] < i]
+            if not table or table[-1][1] != "consensus" or table[-1][2]:
+                continue
+            if not re.fullmatch(r'authorized_block_producers\s*=\s*\[[^\]]*\]\s*(#.*)?', body[i].strip()):
+                raise Bad(f"line {i + 1}: authorized_block_producers is not written on one line")
+            body[i] = f'authorized_block_producers = ["{final}"]'
+    result = "\n".join(body)
+    check = result.split("\n")
+    span2 = schedule_span(check)
+    if span2 is None or schedule_from_lines(check[span2[0]:span2[1]], "the written file") != new:
+        raise Bad("internal error: the written file does not hold the new schedule")
+    kept = [x for k, x in enumerate(check) if not span2[0] <= k < span2[1]]
+    before = [x for k, x in enumerate(lines) if not span[0] <= k < span[1]]
+    changed = [k for k, (a, b) in enumerate(zip(kept, before)) if a != b]
+    if len(kept) != len(before) or len(changed) > 1:
+        raise Bad("internal error: the written file changes more than the schedule")
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
+        f.write(result)
+    print(f"status=added {added}")
+    print(f"first_new={new['epochs'][n]['from_height']}")
+    print_schedule(new)
+
+
 # --- the release key, the signed manifest and checksum lists ---------------------------------------
 
 def cmd_key(path):
@@ -800,6 +1200,8 @@ COMMANDS = {
     "website": (cmd_website, 1), "block": (cmd_block, 3), "tip": (cmd_tip, 1),
     "config": (cmd_config, 1), "key": (cmd_key, 1), "manifest": (cmd_manifest, 1),
     "sums": (cmd_sums, 1), "snapshot-sums": (cmd_snapshot_sums, 2), "record": (cmd_record, 1),
+    "page-schedule": (cmd_page_schedule, 2), "schedule-same": (cmd_schedule_same, 2),
+    "schedule-apply": (cmd_schedule_apply, 3),
 }
 
 
@@ -866,6 +1268,53 @@ read_website() {
       *) stop "Internal error: the page reader returned $key." ;;
     esac
   done <<<"$out"
+  out=$(py page-schedule "$page" "$RUN_TMP/page-schedule.toml") ||
+    stop "The block-maker schedule on $WEBSITE_URL cannot be used, so nothing was installed or changed: $(helper_error)" \
+      "Try again later. If it stays so, report it (SECURITY.md in the QSDM repository)."
+  if [[ $out == schedule=yes ]]; then
+    PAGE_SCHEDULE=$RUN_TMP/page-schedule.toml
+  fi
+}
+
+# resolve_schedule: the block-maker schedule to use, from the page and/or --producer-schedule (which must agree).
+resolve_schedule() {
+  if [[ -n $SCHEDULE_FLAG && -n $PAGE_SCHEDULE ]]; then
+    py schedule-same "$PAGE_SCHEDULE" "$SCHEDULE_FLAG" >/dev/null ||
+      stop "--producer-schedule $SCHEDULE_FLAG is not the schedule on $WEBSITE_URL." \
+        "Use the schedule on the page, or find out where yours came from."
+  fi
+  if [[ -n $PAGE_SCHEDULE ]]; then
+    SCHEDULE=$PAGE_SCHEDULE SCHEDULE_FROM="from $WEBSITE_URL"
+  elif [[ -n $SCHEDULE_FLAG ]]; then
+    if [[ $FROM_WEBSITE == 1 ]]; then
+      stop "--producer-schedule was given, but $WEBSITE_URL shows no block-maker schedule." \
+        "Use the schedule the page shows, or none if it shows none."
+    fi
+    SCHEDULE=$SCHEDULE_FLAG SCHEDULE_FROM="in $SCHEDULE_FLAG"
+  fi
+}
+
+# show_schedule HELPER_OUTPUT: the epochs that schedule-apply printed, one block maker per line.
+show_schedule() {
+  local line
+  while IFS= read -r line; do
+    case $line in
+      epoch=*) say "    block maker ${line#epoch=}" ;;
+      digest=*) say "    schedule digest ${line#digest=}" ;;
+    esac
+  done <<<"$1"
+}
+
+# value_of KEY HELPER_OUTPUT: the value of the line KEY=value.
+value_of() {
+  local line
+  while IFS= read -r line; do
+    if [[ $line == "$1="* ]]; then
+      printf '%s' "${line#*=}"
+      return 0
+    fi
+  done <<<"$2"
+  return 1
 }
 
 # merge_value VARIABLE PAGE_VALUE FLAG: a value given as a flag must equal the page's.
@@ -880,11 +1329,18 @@ merge_value() {
 }
 
 show_values() {
-  local signature
+  local signature makers
   if [[ -n $QSDMCLI ]]; then
     signature="checked with $QSDMCLI"
   else
     signature="not checked: qsdmcli not found (see --qsdmcli)"
+  fi
+  if [[ -n $SCHEDULE ]]; then
+    makers="the schedule $SCHEDULE_FROM"
+  elif [[ $FROM_WEBSITE == 1 ]]; then
+    makers="the release's fullnode-core.toml (the page shows no newer schedule)"
+  else
+    makers="the release's fullnode-core.toml (no --producer-schedule given)"
   fi
   say "QSDM full-node installer (RUN_A_FULL_NODE.md in one command)"
   say ""
@@ -907,7 +1363,8 @@ show_values() {
     "downloads from" "$DOWNLOAD_BASE" \
     "public API" "$API_BASE" \
     "work folder" "$WORK_DIR" \
-    "release signature" "$signature"
+    "release signature" "$signature" \
+    "block makers" "$makers"
   if [[ -n $ROOT ]]; then
     printf '  %-19s %s\n' "root (tests only)" "$ROOT"
   fi
@@ -941,6 +1398,14 @@ core_env_text() {
   printf 'CONFIG_FILE=%s\nQSDM_CHAIN_SYNC_URLS=%s\n' "$ETC_DIR/core.toml" "$API_BASE"
 }
 
+schedule_plan() {
+  if [[ -n $SCHEDULE ]]; then
+    printf '\n      Then put the block-maker schedule %s into the [consensus.producer_transition]\n' "$SCHEDULE_FROM"
+    printf '      table of fullnode-core.toml (it must continue the release'"'"'s schedule), and name its last\n'
+    printf '      block maker in authorized_block_producers. Step 5 installs that file as core.toml.'
+  fi
+}
+
 print_plan() {
   local s='' signature
   if [[ $IS_ROOT == 0 ]]; then
@@ -965,7 +1430,7 @@ Dry run: this is the plan. Nothing is downloaded, installed or changed.
       Release signature: $signature.
 [3/8] Check the checkpoint (height $CP_HEIGHT, block hash $CP_HASH,
       state root $CP_ROOT, producer $CP_PRODUCER)
-      against $API_BASE and fullnode-core.toml.
+      against $API_BASE and fullnode-core.toml.$(schedule_plan)
 [4/8] Download the snapshot parts listed in SNAPSHOT-SHA256SUMS, join them into $SNAP_ARCHIVE,
       check it, unpack it into $SNAP_PARENT/$SNAP_NAME and check its SHA256SUMS.
       (Skipped if this node already imported the snapshot.)
@@ -1303,6 +1768,31 @@ step_checkpoint() {
   same_checkpoint producer "$CP_PRODUCER" "$a_producer" "$c_producer"
   ok "all three name the same height, block hash, state root and producer"
   LOCAL_API=http://127.0.0.1:$c_port/api/v1
+  release_schedule
+}
+
+# release_schedule: the core.toml to install: the release's fullnode-core.toml, with the block-maker schedule
+# from the page (or --producer-schedule) when there is one that continues the release's.
+release_schedule() {
+  local out status
+  TARGET_CONFIG=$DL/fullnode-core.toml
+  TARGET_WHAT="the release's fullnode-core.toml"
+  if [[ -z $SCHEDULE ]]; then
+    return 0
+  fi
+  out=$(py schedule-apply "$DL/fullnode-core.toml" "$SCHEDULE" "$RUN_TMP/core.toml") ||
+    stop "The block-maker schedule $SCHEDULE_FROM cannot be used with this release: $(helper_error)" \
+      "Do not continue. Check that it is the schedule on https://qsdm.tech/fullnode.html. If it is, report the difference (SECURITY.md in the QSDM repository)."
+  say "  the block-maker schedule $SCHEDULE_FROM:"
+  show_schedule "$out"
+  status=$(value_of status "$out")
+  if [[ $status == current ]]; then
+    ok "the release's fullnode-core.toml already has this schedule"
+    return 0
+  fi
+  TARGET_CONFIG=$RUN_TMP/core.toml
+  TARGET_WHAT="the release's fullnode-core.toml with the block-maker schedule $SCHEDULE_FROM"
+  ok "it continues the release's schedule with ${status#added } more block maker(s); core.toml will carry it"
 }
 
 # check_inner_sums: the unpacked snapshot against its own SHA256SUMS.
@@ -1455,11 +1945,14 @@ step_snapshot() {
 
 # put_file SOURCE DEST MODE GROUP WHAT: install a file as the guide does, or accept an identical one.
 put_file() {
-  local source=$1 dest=$2 mode=$3 group=$4 what=$5
+  local source=$1 dest=$2 mode=$3 group=$4 what=$5 hint=${6:-}
   if as_root test -e "$dest"; then
     if as_root cmp -s -- "$source" "$dest"; then
       ok "${dest#"$ROOT"} is already in place"
       return 0
+    fi
+    if [[ -n $hint ]]; then
+      stop "${dest#"$ROOT"} already exists and is not $what." "$hint"
     fi
     stop "${dest#"$ROOT"} already exists and is not $what." \
       "The installer does not overwrite it. If it is from an older install, follow \"Keeping up to date\" in RUN_A_FULL_NODE.md. Otherwise move it away, then run the same command again."
@@ -1486,7 +1979,8 @@ step_install() {
   run_root install -d -o "$SERVICE" -g "$SERVICE" -m 0700 "$P_STATE"
   run_root install -d -m 0755 "$P_OPT" "$P_ETC"
   put_file "$BUNDLE/qsdm" "$P_OPT/qsdm" 0755 '' "the qsdm binary of this release"
-  put_file "$DL/fullnode-core.toml" "$P_ETC/core.toml" 0640 "$SERVICE" "the release's fullnode-core.toml"
+  put_file "$TARGET_CONFIG" "$P_ETC/core.toml" 0640 "$SERVICE" "$TARGET_WHAT" \
+    "The installer does not overwrite it. If the block maker changed since this node was set up (qsdm.tech/fullnode.html shows a block-maker schedule), run: $PROG --update-schedule --from-website. If it is from an older release, follow \"Keeping up to date\" in RUN_A_FULL_NODE.md. Otherwise move it away, then run the same command again."
   core_env_text >"$RUN_TMP/core.env"
   put_file "$RUN_TMP/core.env" "$P_ETC/core.env" 0640 "$SERVICE" "the guide's core.env for this API"
   if [[ $IMPORT_DONE == 0 ]]; then
@@ -1649,7 +2143,7 @@ show_journal() {
 
 step_check_network() {
   local deadline local_tip='' public_tip behind height mine theirs mismatch=0 waiting=0
-  step 8 "Check it against the network"
+  step "$CHECK_STEP" "Check it against the network"
   deadline=$(($(date +%s) + WAIT_MINUTES * 60))
   say "  your node's API: $LOCAL_API (loopback only)"
   until local_tip=$(tip_of "$LOCAL_API"); do
@@ -1698,6 +2192,7 @@ step_check_network() {
       mismatch=1
     fi
   done
+  CHECK_LOCAL_TIP=$local_tip CHECK_PUBLIC_TIP=$public_tip
   if [[ $mismatch == 1 ]]; then
     run_root systemctl stop "$SERVICE"
     stop "Your node's blocks do not match the network's (see above). The installer stopped the node, as the guide says." \
@@ -1709,6 +2204,107 @@ step_check_network() {
   else
     ok "the blocks compared are identical"
     note "your node is still catching up (block $local_tip of $public_tip). It carries on by itself. Run the same command again later to repeat this check."
+  fi
+}
+
+# ---------------------------------------------------------------------------------------------------
+# --update-schedule: a new block maker, for a node this installer set up
+# ---------------------------------------------------------------------------------------------------
+
+print_update_plan() {
+  local s=''
+  if [[ $IS_ROOT == 0 ]]; then
+    s='sudo '
+  fi
+  cat <<EOF
+
+Dry run: this is the plan. Nothing is installed or changed.
+
+[2/3] Keep the node's configuration and put in the new schedule:
+        ${s}install -m 0640 -o root -g $SERVICE $ETC_DIR/core.toml $ETC_DIR/core.toml.before-<UTC time>
+        ${s}install -m 0640 -o root -g $SERVICE <core.toml with the new schedule> $ETC_DIR/core.toml
+        ${s}systemctl restart $SERVICE
+      If systemd then reports $SERVICE as failed, the old file goes back and the node is restarted with it.
+[3/3] Wait up to $WAIT_MINUTES minutes for the node to catch up, then compare blocks T-100 and T-1
+      (T is your node's tip) with $API_BASE. From block $FIRST_NEW on, the new block maker signs.
+EOF
+  if [[ -n $ROOT ]]; then
+    say "Every path above would be under $ROOT (--root, tests only)."
+  fi
+}
+
+# restore_config BACKUP: put the kept configuration back and restart the node with it.
+restore_config() {
+  say "  putting the old configuration back:"
+  run_root install -m 0640 -o root -g "$SERVICE" "$1" "$P_ETC/core.toml"
+  run_root systemctl restart "$SERVICE"
+}
+
+update_schedule() {
+  local installed=$RUN_TMP/core.toml.installed new=$RUN_TMP/core.toml.new out status port deadline backup
+  STEP_TOTAL=3 CHECK_STEP=3
+  say "QSDM full-node installer: a new block-maker schedule for this node (RUN_A_FULL_NODE.md, \"When the block maker changes\")"
+  step 1 "Compare the new schedule with this node's"
+  say "  the new schedule is $SCHEDULE_FROM"
+  if ! as_root test -f "$P_ETC/core.toml" || ! as_root test -f "$P_UNIT"; then
+    stop "This server has no full node set up by this installer ($ETC_DIR/core.toml or $UNIT_FILE is missing)." \
+      "Set one up first: run this installer without --update-schedule."
+  fi
+  as_root cat -- "$P_ETC/core.toml" >"$installed" || stop "Could not read $ETC_DIR/core.toml."
+  out=$(py config "$installed") ||
+    stop "$ETC_DIR/core.toml cannot be read: $(helper_error)" "Was it changed by hand? Compare it with the release's fullnode-core.toml."
+  port=$(value_of api_port "$out")
+  LOCAL_API=http://127.0.0.1:$port/api/v1
+  out=$(py schedule-apply "$installed" "$SCHEDULE" "$new") ||
+    stop "The new schedule cannot be used for this node, so nothing was changed: $(helper_error)" \
+      "Check that it is the schedule on https://qsdm.tech/fullnode.html. If it is, report the difference (SECURITY.md in the QSDM repository)."
+  show_schedule "$out"
+  status=$(value_of status "$out")
+  FIRST_NEW=$(value_of first_new "$out")
+  if [[ $status == current ]]; then
+    ok "this node already has this schedule: nothing to change"
+    if [[ $DRY_RUN == 1 ]] || ! systemctl is-active --quiet "$SERVICE"; then
+      return 0
+    fi
+    STEP_TOTAL=2 CHECK_STEP=2
+    step_check_network
+    return 0
+  fi
+  ok "it continues this node's schedule with ${status#added } more block maker(s), the first from block $FIRST_NEW"
+  if [[ $DRY_RUN == 1 ]]; then
+    print_update_plan
+    exit 0
+  fi
+  check_system
+  prepare_sudo
+  prepare_work_dir
+  step 2 "Put in the new schedule and restart the node"
+  INSTALL_STARTED=1
+  backup=$P_ETC/core.toml.before-$(date -u +%Y%m%dT%H%M%SZ)
+  run_root install -m 0640 -o root -g "$SERVICE" "$P_ETC/core.toml" "$backup"
+  run_root install -m 0640 -o root -g "$SERVICE" "$new" "$P_ETC/core.toml"
+  ok "the old configuration is kept as ${backup#"$ROOT"}"
+  run_root systemctl restart "$SERVICE"
+  deadline=$(($(date +%s) + WAIT_MINUTES * 60))
+  say "  waiting for the node to answer (a start loads the whole chain; this can take several minutes)"
+  until tip_of "$LOCAL_API" >/dev/null; do
+    if systemctl is-failed --quiet "$SERVICE"; then
+      show_journal
+      restore_config "$backup"
+      stop "The node did not start with the new schedule: systemd reports $SERVICE as failed. The old configuration is back in place and the node was restarted with it." \
+        "Read its log with: journalctl -u $SERVICE -n 200. Check that the schedule is the one on https://qsdm.tech/fullnode.html; if it is, report the log (SECURITY.md in the QSDM repository)."
+    fi
+    if (($(date +%s) >= deadline)); then
+      not_ready
+    fi
+    sleep 10
+  done
+  ok "the node answers with the new schedule"
+  step_check_network
+  if ((CHECK_PUBLIC_TIP >= FIRST_NEW && CHECK_LOCAL_TIP < FIRST_NEW)); then
+    note "your node has not reached block $FIRST_NEW, the new block maker's first, yet. It carries on by itself: run the same command again later to repeat the check."
+  elif ((CHECK_LOCAL_TIP >= FIRST_NEW)); then
+    ok "your node follows the new block maker (block $FIRST_NEW and later)"
   fi
 }
 
@@ -1746,6 +2342,18 @@ main() {
   write_helper
   if [[ $FROM_WEBSITE == 1 ]]; then
     read_website
+  fi
+  resolve_schedule
+  if [[ $UPDATE_SCHEDULE == 1 ]]; then
+    derive_names
+    if [[ -z $SCHEDULE ]]; then
+      say "$WEBSITE_URL shows no block-maker schedule: the block maker has not changed since the release, so this node needs no update."
+      exit 0
+    fi
+    update_schedule
+    say ""
+    say "Done: the node carries the block-maker schedule $SCHEDULE_FROM."
+    exit 0
   fi
   require_values
   derive_names

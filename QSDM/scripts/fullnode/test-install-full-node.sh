@@ -84,7 +84,7 @@ REAL_INSTALL=$(command -v install)
 REAL_ID=$(command -v id)
 REAL_DF=$(command -v df)
 export REAL_CURL REAL_INSTALL REAL_ID REAL_DF
-export SHIM_LOG=$T/shim.log SHIM_STATE=$T/shim-state
+export SHIM_LOG=$T/shim.log SHIM_STATE=$T/shim-state TEST_CONTROL=$T/control
 
 shim() {
   cat >"$T/shims/$1"
@@ -177,6 +177,17 @@ case ${1:-} in
   is-active) [[ -f $SHIM_STATE/active ]] || exit 3 ;;
   is-failed) [[ -f $SHIM_STATE/failed ]] || exit 1 ;;
   stop) rm -f "$SHIM_STATE/active" ;;
+  restart)
+    # With fail-next-restart, this start fails as a node that refuses its configuration does: systemd marks
+    # the service failed and its API stops answering. The next restart works again.
+    if [[ -f $SHIM_STATE/fail-next-restart ]]; then
+      rm -f "$SHIM_STATE/fail-next-restart" "$SHIM_STATE/active"
+      touch "$SHIM_STATE/failed" "$TEST_CONTROL/local-down"
+    else
+      rm -f "$SHIM_STATE/failed" "$TEST_CONTROL/local-down"
+      touch "$SHIM_STATE/active"
+    fi
+    ;;
   *)
     echo "systemctl stand-in: unexpected arguments: $*" >&2
     exit 2
@@ -418,6 +429,12 @@ RELEASE=hl-test-rc9999
 TAG=fullnode-rc9999
 PRODUCER=$(sha producer)
 CP_HASH=$(sha "block-$M")
+# The release's block-maker schedule (a version 1 table, as the real release has): OLD_PRODUCER signed from block
+# 100, PRODUCER from 500. After the release, the block maker changes twice: JAPAN from 1201, BACK from 1251.
+OLD_PRODUCER=$(sha old-producer)
+PREFIX_SHA=$(sha journal-prefix)
+JAPAN=$(sha japan-key)
+BACK=$(sha singapore-key-2)
 CP_ROOT=$(sha "root-$M")
 
 cat >"$T/server.py" <<'PY'
@@ -605,6 +622,17 @@ bind_address = "127.0.0.1"
 authorized_block_producers = ["$PRODUCER"]
 require_signed_votes = true
 
+[consensus.producer_transition]
+checkpoint_hash = "$(sha block-499)"
+checkpoint_height = 499
+effective_height = 500
+historical_prefix_bytes = 4096
+historical_prefix_sha256 = "$PREFIX_SHA"
+historical_producer = "$OLD_PRODUCER"
+historical_signature_height = 100
+replacement_producer = "$PRODUCER"
+version = 1
+
 [snapshot_bootstrap]
 enabled = true
 checkpoint_height = $M
@@ -645,7 +673,8 @@ make_snapshot() {
   } >"$out/SNAPSHOT-SHA256SUMS"
 }
 
-# make_page FILE [CHECKPOINT_HASH] [EXTRA_ROW]: a fullnode.html shaped like qsdm.tech's.
+# make_page FILE [CHECKPOINT_HASH] [EXTRA_ROW] [MORE_HTML]: a fullnode.html shaped like qsdm.tech's. MORE_HTML
+# goes after the pins (the block-maker section).
 make_page() {
   cat >"$1" <<EOF
 <!doctype html>
@@ -681,7 +710,7 @@ make_page() {
           <code class="pin">curl -s "https://api.qsdm.tech/api/v1/chain/blocks?from=$M&amp;to=$M&amp;limit=1"</code>
         </p>
       </div>
-    </section>
+    </section>${4:-}
   </main>
 </body>
 </html>
@@ -717,6 +746,39 @@ make_snapshot "$d" "$(sha another-checkpoint)"
 make_page "$WWW/site/fullnode.html"
 make_page "$WWW/site/bad-shape.html" "${CP_HASH:0:63}"
 make_page "$WWW/site/extra-row.html" "$CP_HASH" $'\n            <tr><td>Installer SHA-256</td><td class="pin">'"$CP_HASH"'</td></tr>'
+
+# schedule_text EPOCH...: a version 2 block-maker schedule; each EPOCH is "FROM PRODUCER [CHECKPOINT_HASH]".
+schedule_text() {
+  local epoch from producer checkpoint
+  printf '[consensus.producer_transition]\nversion = 2\nhistorical_prefix_bytes = 4096\n'
+  printf 'historical_prefix_sha256 = "%s"\n' "$PREFIX_SHA"
+  for epoch in "$@"; do
+    read -r from producer checkpoint <<<"$epoch"
+    printf '\n[[consensus.producer_transition.epochs]]\nfrom_height = %s\nproducer_id = "%s"\n' "$from" "$producer"
+    if [[ -n $checkpoint ]]; then
+      printf 'checkpoint_hash = "%s"\n' "$checkpoint"
+    fi
+  done
+}
+SCHED_BASE=("100 $OLD_PRODUCER" "500 $PRODUCER $(sha block-499)")
+schedule_text "${SCHED_BASE[@]}" "1201 $JAPAN $(sha block-1200)" >"$T/fixtures/schedule-one.toml"
+schedule_text "${SCHED_BASE[@]}" "1201 $JAPAN $(sha block-1200)" "1251 $BACK $(sha block-1250)" \
+  >"$T/fixtures/schedule-two.toml"
+schedule_text "100 $OLD_PRODUCER" "500 $JAPAN $(sha block-499)" "1201 $BACK $(sha block-1200)" \
+  >"$T/fixtures/schedule-rewrites.toml"
+
+# makers_section FILE: the page's block-maker section, with the schedule in FILE.
+makers_section() {
+  printf '\n    <section class="q-section" aria-labelledby="makers-title">\n'
+  printf '      <h2 id="makers-title">Block makers</h2>\n'
+  printf '      <table class="producer-changes"><tbody><tr><td>1201</td><td>%s</td></tr></tbody></table>\n' "$JAPAN"
+  printf '      <pre class="producer-schedule">'
+  cat -- "$1"
+  printf '</pre>\n    </section>'
+}
+make_page "$WWW/site/sched-one.html" "$CP_HASH" "" "$(makers_section "$T/fixtures/schedule-one.toml")"
+make_page "$WWW/site/sched-two.html" "$CP_HASH" "" "$(makers_section "$T/fixtures/schedule-two.toml")"
+make_page "$WWW/site/sched-rewrites.html" "$CP_HASH" "" "$(makers_section "$T/fixtures/schedule-rewrites.toml")"
 
 # What the guide says, to compare the installer with.
 awk '/^```ini$/ { inside = 1; next } inside && /^```$/ { exit } inside' "$GUIDE" >"$T/guide-unit"
@@ -815,6 +877,19 @@ nothing_served() { [[ $(wc -l <"$SERVER_LOG") == "$SERVER_MARK" ]]; }
 imports_run() { [[ $(grep -c '^argv: --snapshot-import' "$ROOT/fake-qsdm.log" 2>/dev/null || true) == "$1" ]]; }
 fake_logged() { grep -Fxq -- "$1" "$ROOT/fake-qsdm.log"; }
 in_guide() { grep -Fq -- "$1" "$GUIDE"; }
+same_text() { [[ $1 == "$2" ]]; }
+kept_config() { compgen -G "$ROOT/etc/qsdm-follower/core.toml.before-*" >/dev/null; }
+restarts_were() { [[ $(grep -c '^systemctl restart qsdm-follower$' "$SHIM_LOG" || true) == "$1" ]]; }
+# installed_schedule FILE: the [consensus.producer_transition] lines of a core.toml shaped like the fixture's.
+installed_schedule() {
+  sed -n '/^\[consensus\.producer_transition\]$/,/^\[snapshot_bootstrap\]$/p' "$1" | sed -e '$d' | sed -e '$d'
+}
+# outside_schedule FILE: everything else, without the authorized_block_producers line.
+outside_schedule() {
+  sed -e '/^\[consensus\.producer_transition\]$/,/^\[snapshot_bootstrap\]$/{/^\[snapshot_bootstrap\]$/!d;}' \
+    -e '/^authorized_block_producers = /d' "$1"
+}
+same_outside_schedule() { [[ $(outside_schedule "$1") == "$(outside_schedule "$2")" ]]; }
 plan_shows() {
   local line
   while IFS= read -r line; do
@@ -1201,6 +1276,150 @@ run options-http --root "$ROOT" --work-dir "$WORKD" "${ANCHORS[@]}" --api http:/
 expect "plain http: exits 2" rc_is 2
 expect "plain http: says https is needed" says "--api must start with https://"
 expect "plain http: contacted nothing" offline
+expect "nothing under --root" root_untouched
+run options-update --root "$ROOT" --work-dir "$WORKD" --update-schedule
+expect "--update-schedule without a schedule: exits 2" rc_is 2
+expect "--update-schedule without a schedule: says what it needs" \
+  says "--update-schedule needs the new schedule: --from-website (reads it from https://qsdm.tech/fullnode.html) or --producer-schedule FILE"
+run options-schedule --root "$ROOT" --work-dir "$WORKD" "${ANCHORS[@]}" --producer-schedule "$T/no-such-file.toml"
+expect "a missing --producer-schedule file: exits 2" rc_is 2
+expect "a missing --producer-schedule file: says so" says "--producer-schedule is not a file this user can read"
+expect "nothing under --root" root_untouched
+finish
+
+# --- When the block maker changes (RUN_A_FULL_NODE.md): the schedule on the page, and --update-schedule -------
+
+begin sched-install "a fresh install from a page that shows a new block maker: core.toml carries the page's schedule"
+sandbox sched
+local_args good
+run sched-install "${LOCAL[@]}" --from-website --website-url "$BASE/site/sched-one.html"
+expect "exits 0" rc_is 0
+expect "says where the block makers come from" says "the schedule from $BASE/site/sched-one.html"
+expect "lists the new block maker" says "block maker 2 from 1201 $JAPAN after block 1200 $(sha block-1200)"
+expect "says it continues the release's schedule" \
+  says "ok: it continues the release's schedule with 1 more block maker(s); core.toml will carry it"
+expect "installs core.toml with mode 0640, root:qsdm-follower" \
+  logged_re "^install -m 0640 -o root -g qsdm-follower .*/core.toml $ROOT/etc/qsdm-follower/core.toml\$"
+expect "core.toml carries the page's schedule" \
+  same_text "$(installed_schedule "$ROOT/etc/qsdm-follower/core.toml")" "$(cat -- "$T/fixtures/schedule-one.toml")"
+expect "  and names the new block maker in authorized_block_producers" \
+  grep -Fxq "authorized_block_producers = [\"$JAPAN\"]" "$ROOT/etc/qsdm-follower/core.toml"
+expect "  and nothing else changed" same_outside_schedule "$ROOT/etc/qsdm-follower/core.toml" "$GOOD/fullnode-core.toml"
+expect "starts the node" logged "systemctl enable --now qsdm-follower"
+expect "checks it against the network" says "ok: your node is at block $TIP"
+finish
+
+begin sched-rerun "the same install again: core.toml is already in place"
+run sched-rerun "${LOCAL[@]}" --from-website --website-url "$BASE/site/sched-one.html"
+expect "exits 0" rc_is 0
+expect "finds core.toml in place" says "ok: /etc/qsdm-follower/core.toml is already in place"
+finish
+
+begin sched-current "--update-schedule when the node already has the page's schedule: nothing changes"
+run sched-current "${LOCAL[@]}" --update-schedule --from-website --website-url "$BASE/site/sched-one.html"
+expect "exits 0" rc_is 0
+expect "says there is nothing to change" says "ok: this node already has this schedule: nothing to change"
+expect "installs nothing" not logged_re '^install '
+expect "does not restart the node" restarts_were 0
+expect "still checks the node against the network" says "ok: your node is at block $TIP"
+finish
+
+begin sched-newer-install "the page shows another block maker: a plain re-run of the install says to use --update-schedule"
+run sched-newer-install "${LOCAL[@]}" --from-website --website-url "$BASE/site/sched-two.html"
+expect "exits 1" rc_is 1
+expect "says core.toml differs" \
+  says "STOP: /etc/qsdm-follower/core.toml already exists and is not the release's fullnode-core.toml with the block-maker schedule"
+expect "says to run --update-schedule" says "--update-schedule --from-website"
+expect "installs no file" not logged_re '^install -m '
+finish
+
+begin sched-update "--update-schedule with the page's newer schedule: the old file kept, the new one in, a restart and the check"
+cp -- "$ROOT/etc/qsdm-follower/core.toml" "$T/cases/sched-before.toml"
+run sched-update "${LOCAL[@]}" --update-schedule --from-website --website-url "$BASE/site/sched-two.html"
+expect "exits 0" rc_is 0
+expect "lists the new block maker" says "block maker 3 from 1251 $BACK after block 1250 $(sha block-1250)"
+expect "says what it adds" says "ok: it continues this node's schedule with 1 more block maker(s), the first from block 1251"
+expect "keeps the old file" kept_config
+expect "  byte for byte" same_file "$(compgen -G "$ROOT/etc/qsdm-follower/core.toml.before-*" | head -n 1)" \
+  "$T/cases/sched-before.toml"
+expect "core.toml carries the new schedule" \
+  same_text "$(installed_schedule "$ROOT/etc/qsdm-follower/core.toml")" "$(cat -- "$T/fixtures/schedule-two.toml")"
+expect "  and names the last block maker" \
+  grep -Fxq "authorized_block_producers = [\"$BACK\"]" "$ROOT/etc/qsdm-follower/core.toml"
+expect "  and nothing else changed" same_outside_schedule "$ROOT/etc/qsdm-follower/core.toml" "$GOOD/fullnode-core.toml"
+expect "restarts the node once" restarts_were 1
+expect "checks it against the network" says "ok: your node is at block $TIP"
+expect "says the node follows the new block maker" says "ok: your node follows the new block maker (block 1251 and later)"
+expect "says it is done" says "Done: the node carries the block-maker schedule from $BASE/site/sched-two.html."
+finish
+
+begin sched-older "--update-schedule with a schedule older than the node's: refused, nothing changes"
+run sched-older "${LOCAL[@]}" --update-schedule --from-website --website-url "$BASE/site/sched-one.html"
+expect "exits 1" rc_is 1
+expect "says why" \
+  says "STOP: The new schedule cannot be used for this node, so nothing was changed: the new schedule does not continue this node's"
+expect "installs nothing" not logged_re '^install '
+expect "does not restart the node" restarts_were 0
+finish
+
+begin sched-flag "--producer-schedule must be the page's schedule when the page is read too"
+run sched-flag "${LOCAL[@]}" --update-schedule --from-website --website-url "$BASE/site/sched-two.html" \
+  --producer-schedule "$T/fixtures/schedule-one.toml"
+expect "exits 1" rc_is 1
+expect "says they differ" \
+  says "STOP: --producer-schedule $T/fixtures/schedule-one.toml is not the schedule on $BASE/site/sched-two.html."
+expect "changes nothing" not logged_re '^(install|systemctl restart)'
+finish
+
+begin sched-none "--update-schedule when the page shows no schedule: nothing to do"
+run sched-none "${LOCAL[@]}" --update-schedule --from-website --website-url "$BASE/site/fullnode.html"
+expect "exits 0" rc_is 0
+expect "says no update is needed" \
+  says "shows no block-maker schedule: the block maker has not changed since the release, so this node needs no update."
+expect "changes nothing" not logged_re '^(install|systemctl)'
+finish
+
+begin sched-rewrites "a page whose schedule changes an earlier block maker: a fresh install stops before installing"
+sandbox sched-rewrites
+local_args good
+run sched-rewrites "${LOCAL[@]}" --from-website --website-url "$BASE/site/sched-rewrites.html"
+refused "The block-maker schedule from $BASE/site/sched-rewrites.html cannot be used with this release"
+expect "says why" says "does not continue"
+expect "downloaded no snapshot" not served "$SNAP_PARTS"
+finish
+
+begin sched-fails "the node does not start with the new schedule: the old file goes back and the node restarts with it"
+sandbox sched-fails
+local_args good
+run sched-fails-install "${LOCAL[@]}" "${ANCHORS[@]}"
+expect "a node is set up first" rc_is 0
+cp -- "$ROOT/etc/qsdm-follower/core.toml" "$T/cases/sched-fails-before.toml"
+touch "$SHIM_STATE/fail-next-restart"
+run sched-fails "${LOCAL[@]}" --update-schedule --producer-schedule "$T/fixtures/schedule-one.toml"
+expect "exits 1" rc_is 1
+expect "says the node did not start" \
+  says "STOP: The node did not start with the new schedule: systemd reports qsdm-follower as failed. The old configuration is back in place"
+expect "the old core.toml is back" same_file "$ROOT/etc/qsdm-follower/core.toml" "$T/cases/sched-fails-before.toml"
+expect "restarted twice (the new file, then the old one)" restarts_were 2
+expect "the node answers again" not exists "$T/control/local-down"
+finish
+
+begin sched-dry-run "--update-schedule --dry-run prints the plan and changes nothing"
+run sched-dry-run "${LOCAL[@]}" --update-schedule --dry-run --producer-schedule "$T/fixtures/schedule-two.toml"
+expect "exits 0" rc_is 0
+expect "prints the plan" says "Dry run: this is the plan. Nothing is installed or changed."
+expect "plans to keep the old file" \
+  says "install -m 0640 -o root -g qsdm-follower /etc/qsdm-follower/core.toml /etc/qsdm-follower/core.toml.before-<UTC time>"
+expect "plans the restart" says "systemctl restart qsdm-follower"
+expect "changes nothing" not logged_re '^(install|systemctl)'
+finish
+
+begin sched-no-node "--update-schedule on a server without a node set up by this installer"
+sandbox sched-no-node
+local_args good
+run sched-no-node "${LOCAL[@]}" --update-schedule --producer-schedule "$T/fixtures/schedule-one.toml"
+expect "exits 1" rc_is 1
+expect "says why" says "STOP: This server has no full node set up by this installer"
 expect "nothing under --root" root_untouched
 finish
 

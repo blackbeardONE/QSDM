@@ -313,6 +313,35 @@ new epoch and stops following, so every node needs the new file.
 `TestStandInHandsBack` (section 7) runs a hand-over and a hand-back on real
 state directories.
 
+### Telling the full nodes
+
+Full nodes run by others got their schedule from the release's
+`fullnode-core.toml` ([Run a full node](RUN_A_FULL_NODE.md)). After each
+hand-over, and before the new producer's first block if it can be, the project
+publishes the new schedule on https://qsdm.tech/fullnode.html, in a
+"Block makers" section: the exact `[consensus.producer_transition]` text
+(`<pre class="producer-schedule">`) and its digest. That page is where full
+nodes already take their other trust anchors from.
+
+`install-full-node.sh --update-schedule --from-website` puts it into a running
+node: it checks that the new schedule continues the node's (the same prefix
+pin, the same earlier epochs from the same heights, new epochs only at the
+end), keeps the old `core.toml`, sets `authorized_block_producers` to the last
+producer, restarts the node, puts the old file back if the node does not start,
+and compares the node with the network. A new install with `--from-website`
+takes the schedule from the page. Because the installer refuses a changed
+prefix pin, the project keeps the existing pin in every published schedule
+(step 4 stays optional, and is not used for the public network).
+
+The digest is the SHA-256 of the schedule's canonical JSON:
+`{"epochs":[{"checkpoint_hash":...,"from_height":...,"producer_id":...},...],
+"prefix_bytes":...,"prefix_sha256":...,"version":...}` with sorted keys, no
+spaces, and `checkpoint_hash` `""` for epoch 0. Two nodes with the same digest
+enforce the same schedule. A version 1 table and its version 2 spelling have
+different digests (the version is part of it). The release's version 1 table
+(`fullnode-rc1108`) has the digest
+`bd666048acae4de96b637e79852a764f516b7d7bd9b086f09bdd504d3bcf0da5`.
+
 ## 6. What can go wrong
 
 | Situation | Result |
@@ -329,6 +358,8 @@ state directories.
 | The prefix pin is wrong | Startup refused at the journal prefix check. |
 | A state directory without `qsdm_enrollment.json`, for example one that holds only the journal, receipts and accounts | Startup refused under a transition table ("required enrollment snapshot"). A full node's state directory holds it. |
 | A hand-back names an earlier producer's key again | Startup refused (a repeated producer). Use a new key. |
+| A full node set up from a release keeps the release's schedule after a hand-over | It stops at block `N` ("external block producer is not authorized" for `N + 1`) and loses nothing. `install-full-node.sh --update-schedule --from-website` puts the published schedule in, and it carries on. |
+| A published schedule changes an earlier epoch or the prefix pin | `install-full-node.sh` refuses it and changes nothing. |
 | `authorized_block_producers` still lists an old producer | Ignored while the table is configured, as in version 1, but the node logs the stale-allowlist warning. Update it anyway, so that removing the table later fails safe. |
 
 ## 7. Code and tests

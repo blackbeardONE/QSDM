@@ -17,6 +17,24 @@ from 2026-04-22 on.
 
 ### Added
 
+- **Full nodes follow a change of block maker (2026-11-11).** After a
+  hand-over, qsdm.tech/fullnode.html shows the new block-maker schedule (the
+  exact `[consensus.producer_transition]` table) and its digest.
+  `install-full-node.sh --update-schedule --from-website` puts it into a running
+  full node: it checks that the schedule continues the node's (the same prefix
+  pin, the same earlier block makers from the same blocks, new ones only at the
+  end), keeps the old `core.toml` next to it, names the last block maker in
+  `authorized_block_producers`, restarts the node, puts the old file back if the
+  node does not start, and checks the node against the network. A new install
+  with `--from-website` takes the schedule from the page. Before this, a node
+  set up from a release stopped at the old block maker's last block until its
+  operator edited the table by hand. See "When the block maker changes" in
+  [`RUN_A_FULL_NODE.md`](QSDM/docs/docs/RUN_A_FULL_NODE.md) and "Telling the full
+  nodes" in [`PRODUCER_TRANSITION.md`](QSDM/docs/docs/PRODUCER_TRANSITION.md),
+  which also defines the schedule digest. Pages without the new section, and
+  installers from before this change, keep working as before. The installer's
+  sandbox test covers it with 12 new cases.
+
 - **Handing production back, and carrying the mining records (2026-11-10).**
   [`PRODUCER_TRANSITION.md`](QSDM/docs/docs/PRODUCER_TRANSITION.md) has two new
   parts. "Carrying the mining records in a planned hand-over" moves the
@@ -184,6 +202,19 @@ from 2026-04-22 on.
 - **QSDM Hive 1.3.94 Virtual Compute Runtime (2026-07-09).** Mother Hive now discovers live pooled CPU, NVIDIA GPU, and RAM capacity; provides bounded workload controls; shows queue, Agent assignment, duration, cancellation, and verified receipt state; and keeps the private loopback gateway token outside renderer code. The gateway adds authenticated `/v1/resources` and `/v1/workloads` discovery routes while preserving the fixed-workload, no-remote-shell security boundary. A separate design specifies opt-in, wallet-authenticated, one-hop Mother Hive federation across locations without exposing Agent or private Mother credentials.
 
 ### Changed
+
+- **Go 1.26.11 (2026-11-11).** `QSDM/source` and the three Dockerfiles build
+  with Go 1.26.11, which fixes GO-2026-6859 in `net/http`: an HTTP/1 server
+  that limits request bodies with `MaxBytesReader` can crash when a handler
+  reads the body while another goroutine writes the response. The node's API
+  limits every request body that way, around a `TimeoutHandler` whose own
+  goroutine reads the body, so a slow upload that passes the limit just as
+  the 30-second timeout fires could meet the race. govulncheck reported it the
+  day the advisory came out. The producer and the full-node release get it
+  with their next build. The same day `golang.org/x/net` moved to v0.62.0
+  (CVE-2026-78661, a denial of service in `x/net/html`): the node does not use
+  that package (`x/net` comes in through `x/crypto/acme/autocert`), but the
+  container scan flags the module version.
 
 - **A start reads the journal further ahead (2026-11-10).** The startup load
   (`LoadVerifiedJournal`) and the offline journal check (`CheckJournal`)
@@ -656,6 +687,19 @@ from 2026-04-22 on.
 
 ### Fixed
 
+- **2026-11-11: QSDM Hive reuses a GPU's enrollment instead of enrolling it
+  twice.** One GPU can back only one active enrollment, and a GPU keeps its
+  enrollment when QSDM Hive is set up again (a new Windows install, another PC
+  name, a lost `.qsdm` folder). QSDM Hive then made a new NodeID and sent an
+  enrollment the chain refused: "gpu_uuid already bound to an active
+  enrollment". Before it enrolls, QSDM Hive now looks the GPU up in the public
+  enrollment list (`GET /api/v1/mining/enrollments`). When that enrollment
+  belongs to the wallet QSDM Hive signs with, Hive sets `node_id` in
+  `miner.toml` to it and writes its HMAC key (public chain state, read from the
+  enroll transaction) into the key file. Each changed file is first copied to
+  `<file>.bak-<time>`, and no transaction is sent. When another wallet holds
+  the GPU, the error names that enrollment and wallet. Tests:
+  `qsdmMinerEnrollment.spec.ts`.
 - **2026-11-08: the full-node installer waits for the network's API.** At the
   end of an install, `install-full-node.sh` compares the node's blocks with the
   network's. It stopped at the first read the public API did not answer, and
