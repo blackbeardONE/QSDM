@@ -92,6 +92,34 @@ type EnrollmentRecord = {
   unbond_matures_at_height?: number;
 };
 
+// GET /mining/enrollments: the public, paged list of on-chain enrollments.
+type EnrollmentListPage = {
+  records?: Array<EnrollmentRecord | null> | null;
+  has_more?: boolean;
+  next_cursor?: string;
+};
+
+// GET /chain/blocks?from=H&to=H: block H with its transactions.
+type ChainBlocksPage = {
+  blocks?: Array<{
+    transactions?: Array<{ Payload?: string | null } | null> | null;
+  } | null> | null;
+};
+
+// The JSON payload of an enroll transaction (pkg/mining/enrollment
+// EnrollPayload); hmac_key is base64.
+type EnrollTxPayload = {
+  kind?: unknown;
+  node_id?: unknown;
+  gpu_uuid?: unknown;
+  hmac_key?: unknown;
+};
+
+export type QsdmGpuEnrollmentReuse =
+  | { action: 'enroll' }
+  | { action: 'adopt'; record: EnrollmentRecord }
+  | { action: 'other-wallet'; record: EnrollmentRecord; message: string };
+
 export type QsdmNvidiaGPU = {
   uuid: string;
   name: string;
@@ -409,6 +437,141 @@ const rotateLegacyMinerNodeId = (
   return { ...identity, nodeId };
 };
 
+// One GPU can back only one active enrollment (chain error "gpu_uuid already
+// bound to an active enrollment"). An enrollment made by an earlier install,
+// or under another PC name, keeps the GPU, so a second enrollment of the same
+// GPU is refused. These helpers find that enrollment and reuse it when it
+// belongs to the wallet QSDM Hive signs with.
+export const findQsdmActiveEnrollmentForGpu = async (
+  gpuUUID: string,
+  fetchPage: (cursor: string) => Promise<EnrollmentListPage>
+): Promise<EnrollmentRecord | undefined> => {
+  const wanted = gpuUUID.toLowerCase();
+  const visit = async (
+    cursor: string
+  ): Promise<EnrollmentRecord | undefined> => {
+    const page = await fetchPage(cursor);
+    const match = (page.records || []).find(
+      (record): record is EnrollmentRecord =>
+        record?.phase === 'active' && record.gpu_uuid?.toLowerCase() === wanted
+    );
+    if (match) return match;
+    if (!page.has_more || !page.next_cursor || page.next_cursor === cursor)
+      return undefined;
+    return visit(page.next_cursor);
+  };
+  return visit('');
+};
+
+export const decideQsdmGpuEnrollmentReuse = (
+  signerAddress: string,
+  nodeId: string,
+  bound?: EnrollmentRecord
+): QsdmGpuEnrollmentReuse => {
+  if (!bound || bound.node_id === nodeId) return { action: 'enroll' };
+  if (bound.owner?.toLowerCase() === signerAddress.toLowerCase())
+    return { action: 'adopt', record: bound };
+  return {
+    action: 'other-wallet',
+    record: bound,
+    message: `This NVIDIA GPU is already enrolled on QSDM as ${bound.node_id} by wallet ${bound.owner}, and one GPU can have only one enrollment. To mine with this GPU, open QSDM Hive with that wallet, or end that enrollment from that wallet first.`,
+  };
+};
+
+// An enrollment's HMAC key is public chain state (pkg/mining/enrollment): it
+// is in the payload of the enroll transaction. Returns it as hex, or
+// undefined unless exactly one enroll transaction of this node_id and GPU
+// with a 32-128 byte key is in the page.
+export const readQsdmEnrollmentHmacKeyHex = (
+  record: Pick<EnrollmentRecord, 'node_id' | 'gpu_uuid'>,
+  page: ChainBlocksPage
+): string | undefined => {
+  const keys = (page.blocks || [])
+    .flatMap((block) => block?.transactions || [])
+    .map((tx) => {
+      if (!tx?.Payload) return undefined;
+      try {
+        const payload = JSON.parse(
+          Buffer.from(tx.Payload, 'base64').toString('utf8')
+        ) as EnrollTxPayload | null;
+        if (
+          !payload ||
+          payload.kind !== 'enroll' ||
+          payload.node_id !== record.node_id ||
+          String(payload.gpu_uuid || '').toLowerCase() !==
+            record.gpu_uuid.toLowerCase()
+        )
+          return undefined;
+        const hmacKey = payload.hmac_key;
+        if (typeof hmacKey !== 'string') return undefined;
+        const key = Buffer.from(hmacKey, 'base64');
+        return key.length >= 32 && key.length <= 128
+          ? key.toString('hex')
+          : undefined;
+      } catch {
+        return undefined;
+      }
+    })
+    .filter((key): key is string => Boolean(key));
+  return keys.length === 1 ? keys[0] : undefined;
+};
+
+// Points this PC's miner settings at an existing enrollment: its node_id in
+// the miner config and its HMAC key in the key file. Each file that changes
+// is copied to <file>.bak-<time> first.
+export const writeQsdmAdoptedMinerIdentity = (
+  identity: QsdmMinerIdentity,
+  nodeId: string,
+  hmacKeyHex: string,
+  now = Date.now()
+): QsdmMinerIdentity => {
+  const currentKey = fs.existsSync(identity.hmacKeyPath)
+    ? fs.readFileSync(identity.hmacKeyPath, 'utf8').trim().toLowerCase()
+    : '';
+  if (currentKey !== hmacKeyHex) {
+    if (fs.existsSync(identity.hmacKeyPath))
+      fs.copyFileSync(
+        identity.hmacKeyPath,
+        `${identity.hmacKeyPath}.bak-${now}`
+      );
+    fs.writeFileSync(identity.hmacKeyPath, `${hmacKeyHex}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+  }
+  const previous = fs.readFileSync(identity.configPath, 'utf8');
+  const updated = setConfigValue(previous, 'node_id', nodeId);
+  if (updated !== previous) {
+    fs.copyFileSync(identity.configPath, `${identity.configPath}.bak-${now}`);
+    fs.writeFileSync(identity.configPath, updated, {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+  }
+  return { ...identity, nodeId };
+};
+
+const fetchActiveEnrollmentPage = async (cursor: string) => {
+  const response = await axios.get<EnrollmentListPage>(
+    `${resolveQsdmMinerEnrollmentSubmitApiUrl()}/mining/enrollments`,
+    {
+      params: { phase: 'active', limit: 200, ...(cursor ? { cursor } : {}) },
+      timeout: 10_000,
+    }
+  );
+  return response.data;
+};
+
+const fetchEnrollmentHmacKeyHex = async (record: EnrollmentRecord) => {
+  const height = record.enrolled_at_height;
+  if (!height) return undefined;
+  const response = await axios.get<ChainBlocksPage>(
+    `${resolveQsdmMinerEnrollmentSubmitApiUrl()}/chain/blocks`,
+    { params: { from: height, to: height }, timeout: 15_000 }
+  );
+  return readQsdmEnrollmentHmacKeyHex(record, response.data);
+};
+
 const fetchEnrollment = async (nodeId: string) => {
   try {
     const response = await axios.get<EnrollmentRecord>(
@@ -651,6 +814,34 @@ export const enrollQsdmMiner = async (
     throw new Error(
       before.error || 'QSDM Core does not support signed miner enrollment v2.'
     );
+  }
+  // This node_id is not enrolled. If the GPU already backs an enrollment of
+  // this wallet (an earlier install, another PC name), reuse it instead of
+  // sending an enrollment the chain would refuse.
+  if (!before.phase && before.gpu && before.signerAddress) {
+    const reuse = decideQsdmGpuEnrollmentReuse(
+      before.signerAddress,
+      identity.nodeId,
+      await findQsdmActiveEnrollmentForGpu(
+        before.gpu.uuid,
+        fetchActiveEnrollmentPage
+      )
+    );
+    if (reuse.action === 'other-wallet') throw new Error(reuse.message);
+    if (reuse.action === 'adopt') {
+      const hmacKeyHex = await fetchEnrollmentHmacKeyHex(reuse.record);
+      if (!hmacKeyHex)
+        throw new Error(
+          `This NVIDIA GPU is already enrolled on QSDM as ${reuse.record.node_id} by this wallet, but its enrollment transaction could not be read. Check the connection and try again.`
+        );
+      writeQsdmAdoptedMinerIdentity(identity, reuse.record.node_id, hmacKeyHex);
+      const adopted = await getQsdmMinerEnrollmentStatus();
+      if (adopted.ready) return adopted;
+      throw new Error(
+        adopted.error ||
+          `This PC now uses the existing enrollment ${reuse.record.node_id}, but QSDM Core does not report it ready yet. Try again in a minute.`
+      );
+    }
   }
   if (!before.requiredStakeDust)
     throw new Error('QSDM Core did not advertise a miner enrollment bond.');

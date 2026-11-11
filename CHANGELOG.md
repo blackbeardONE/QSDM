@@ -687,6 +687,19 @@ from 2026-04-22 on.
 
 ### Fixed
 
+- **2026-11-11: QSDM Hive reuses a GPU's enrollment instead of enrolling it
+  twice.** One GPU can back only one active enrollment, and a GPU keeps its
+  enrollment when QSDM Hive is set up again (a new Windows install, another PC
+  name, a lost `.qsdm` folder). QSDM Hive then made a new NodeID and sent an
+  enrollment the chain refused: "gpu_uuid already bound to an active
+  enrollment". Before it enrolls, QSDM Hive now looks the GPU up in the public
+  enrollment list (`GET /api/v1/mining/enrollments`). When that enrollment
+  belongs to the wallet QSDM Hive signs with, Hive sets `node_id` in
+  `miner.toml` to it and writes its HMAC key (public chain state, read from the
+  enroll transaction) into the key file. Each changed file is first copied to
+  `<file>.bak-<time>`, and no transaction is sent. When another wallet holds
+  the GPU, the error names that enrollment and wallet. Tests:
+  `qsdmMinerEnrollment.spec.ts`.
 - **2026-11-08: the full-node installer waits for the network's API.** At the
   end of an install, `install-full-node.sh` compares the node's blocks with the
   network's. It stopped at the first read the public API did not answer, and
