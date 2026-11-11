@@ -187,6 +187,167 @@ func TestStandInPromotesAFollower(t *testing.T) {
 	g.stop()
 }
 
+// Handing production back (PRODUCER_TRANSITION.md, "Handing production
+// back"): after a stand-in has produced, production moves on again, here to a
+// node B that followed the stand-in. A key never comes back: the hand-back is
+// a new epoch with a new key, pinned to the stand-in's last block.
+//
+// Producer A seals 3..6 under the version 1 policy; stand-in F takes over at
+// 7 (as in TestStandInPromotesAFollower) and seals 7..9; B and G follow F to
+// 9. A schedule that names A's key again is refused. B, seeded at 9 (checked
+// against G) with a new key K from 10, seals 10..12 on top of block 9. F,
+// restarted with the final schedule, cannot seal. A follower that kept F's
+// schedule refuses B's block 10; G, with the final schedule, takes 10..12,
+// keeps the whole chain across a restart, and holds each block from the
+// producer of its epoch.
+func TestStandInHandsBack(t *testing.T) {
+	if testing.Short() {
+		t.Skip("state-directory hand-over test")
+	}
+	dirA := t.TempDir()
+	v1, signerA := hl1rTransitionPrefix(t, dirA, 2)
+	a := hl1rStartCore(t, dirA, v1, signerA)
+	for a.st.producer.TipHeight() < 4 {
+		a.seal()
+	}
+	a.crash()
+	dirF, dirB, dirG := t.TempDir(), t.TempDir(), t.TempDir()
+	for _, dst := range []string{dirF, dirB, dirG} {
+		standinCopySnapshot(t, dirA, dst)
+	}
+	a = hl1rStartCore(t, dirA, v1, signerA)
+	for a.st.producer.TipHeight() < 6 {
+		a.seal()
+	}
+	a.crash()
+	fromA := standinJournal(t, dirA)
+	last := fromA[6]
+	for _, dir := range []string{dirF, dirB, dirG} {
+		n := standinStartFollower(t, dir, v1)
+		for _, b := range fromA[5:] {
+			if err := n.st.producer.TryAppendExternalBlock(b); err != nil {
+				t.Fatalf("follower append %d: %v", b.Height, err)
+			}
+		}
+		n.stop()
+	}
+
+	// F takes over at 7 and seals 7..9; 9 is its last block.
+	signerF := hl1rSigner(t)
+	v2 := &producerpolicy.Transition{Version: 2, HistoricalPrefixBytes: v1.HistoricalPrefixBytes,
+		HistoricalPrefixSHA256: v1.HistoricalPrefixSHA256,
+		Epochs:                 append(v1.Schedule(), producerpolicy.Epoch{FromHeight: 7, ProducerID: signerF.Address(), CheckpointHash: last.Hash})}
+	if err := v2.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := hl1rTail(t, dirF, "watermark", "seed", "--served-tip", "6",
+		"--follower-height", "6", "--follower-hash", last.Hash); code != 0 {
+		t.Fatalf("seed F: exit %d\n%s", code, out)
+	}
+	f := hl1rStartCore(t, dirF, v2, signerF)
+	for f.st.producer.TipHeight() < 9 {
+		f.seal()
+	}
+	f.crash()
+	fromF := standinJournal(t, dirF)[7:] // as served: with their signatures
+	lastF := fromF[2]
+	for _, dir := range []string{dirB, dirG} {
+		n := standinStartFollower(t, dir, v2)
+		for _, b := range fromF {
+			if err := n.st.producer.TryAppendExternalBlock(b); err != nil {
+				t.Fatalf("follower append stand-in block %d: %v", b.Height, err)
+			}
+		}
+		n.stop()
+	}
+
+	// The hand-back schedule: F's schedule as it is, then a new epoch from 10
+	// pinned to F's last block. A's key cannot come back.
+	handBack := func(producer string) *producerpolicy.Transition {
+		return &producerpolicy.Transition{Version: 2, HistoricalPrefixBytes: v1.HistoricalPrefixBytes,
+			HistoricalPrefixSHA256: v1.HistoricalPrefixSHA256,
+			Epochs:                 append(v2.Schedule(), producerpolicy.Epoch{FromHeight: 10, ProducerID: producer, CheckpointHash: lastF.Hash})}
+	}
+	if err := handBack(signerA.Address()).Validate(); err == nil {
+		t.Fatal("a schedule that names A's key a second time was accepted")
+	}
+	signerK := hl1rSigner(t)
+	v3 := handBack(signerK.Address())
+	if err := v3.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	// B, a follower until now, is seeded at F's last block (checked against
+	// G) and seals 10..12 with K.
+	g := standinStartFollower(t, dirG, v2)
+	gTip, _ := g.st.producer.LatestBlock()
+	g.stop()
+	if gTip == nil || gTip.Height != 9 || gTip.Hash != lastF.Hash {
+		t.Fatalf("G at %+v, want F's block 9", gTip)
+	}
+	if code, out := hl1rTail(t, dirB, "watermark", "seed", "--served-tip", "9",
+		"--follower-height", "9", "--follower-hash", gTip.Hash); code != 0 {
+		t.Fatalf("seed B: exit %d\n%s", code, out)
+	}
+	b := hl1rStartCore(t, dirB, v3, signerK)
+	var sealed []*chain.Block
+	for b.st.producer.TipHeight() < 12 {
+		sealed = append(sealed, b.seal())
+	}
+	b.crash()
+	if b10 := sealed[0]; b10.Height != 10 || b10.PrevHash != lastF.Hash || b10.ProducerID != signerK.Address() {
+		t.Fatalf("first hand-back block: height %d prev %s producer %s", b10.Height, b10.PrevHash, b10.ProducerID)
+	}
+	if w := hl1rW(t, dirB); w.Height != 12 || w.Hash != sealed[2].Hash {
+		t.Fatalf("B's W = %+v, want 12", w)
+	}
+	fromB := standinJournal(t, dirB)[10:]
+
+	// F with the final schedule boots, but cannot seal.
+	fenced := hl1rStartCore(t, dirF, v3, signerF)
+	acc, _ := fenced.st.accounts.Get(hl1rSenders[0])
+	if err := fenced.st.pool.Add(&mempool.Tx{ID: "fenced-f", Sender: hl1rSenders[0], Recipient: hl1rSenders[0], Nonce: acc.Nonce}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fenced.st.producer.ProduceBlock(); !errors.Is(err, chain.ErrExternalProducerNotAuthorized) {
+		t.Fatalf("the stand-in sealed under the hand-back schedule: %v", err)
+	}
+	fenced.crash()
+
+	// A follower that kept F's schedule refuses B's block 10.
+	dirOld := t.TempDir()
+	standinCopyAll(t, dirG, dirOld)
+	old := standinStartFollower(t, dirOld, v2)
+	if err := old.st.producer.TryAppendExternalBlock(fromB[0]); err == nil {
+		t.Fatal("a follower with the stand-in's schedule accepted the hand-back block")
+	}
+	old.stop()
+
+	// G with the final schedule takes 10..12 and keeps the chain across a restart.
+	g = standinStartFollower(t, dirG, v3)
+	for _, blk := range fromB {
+		if err := g.st.producer.TryAppendExternalBlock(blk); err != nil {
+			t.Fatalf("G append hand-back block %d: %v", blk.Height, err)
+		}
+	}
+	g.stop()
+	g = standinStartFollower(t, dirG, v3)
+	if tip, _ := g.st.producer.LatestBlock(); tip == nil || tip.Height != 12 || tip.Hash != fromB[2].Hash {
+		t.Fatalf("G after restart: tip %+v", tip)
+	}
+	g.stop()
+	gotG := standinJournal(t, dirG)
+	for h := 7; h <= 12; h++ {
+		want := signerF.Address()
+		if h >= 10 {
+			want = signerK.Address()
+		}
+		if gotG[h].ProducerID != want {
+			t.Fatalf("G block %d by %s, want %s", h, gotG[h].ProducerID, want)
+		}
+	}
+}
+
 // standinFollower is main()'s follower role on a real state directory: the
 // S4 restore, S5 without a watermark, the journal, and the persistence hook
 // with ProducerRole false, so TryAppendExternalBlock makes each appended
