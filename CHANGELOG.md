@@ -203,6 +203,16 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **Go 1.26.11 (2026-11-11).** `QSDM/source` and the three Dockerfiles build
+  with Go 1.26.11, which fixes GO-2026-6859 in `net/http`: an HTTP/1 server
+  that limits request bodies with `MaxBytesReader` can crash when a handler
+  reads the body while another goroutine writes the response. The node's API
+  limits every request body that way, around a `TimeoutHandler` whose own
+  goroutine reads the body, so a slow upload that passes the limit just as
+  the 30-second timeout fires could meet the race. govulncheck reported it the
+  day the advisory came out. The producer and the full-node release get it
+  with their next build.
+
 - **A start reads the journal further ahead (2026-11-10).** The startup load
   (`LoadVerifiedJournal`) and the offline journal check (`CheckJournal`)
   let the reader hold eight lines per worker ahead of the line being checked,
