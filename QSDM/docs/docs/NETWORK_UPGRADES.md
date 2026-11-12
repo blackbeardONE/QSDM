@@ -18,6 +18,7 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| 2026-11-12 07:46 | node release | Release rc1109: built with Go 1.26.11 (GO-2026-6859 in `net/http`) and golang.org/x/net v0.62.0, and a start reads the journal further ahead (no consensus change); mining paused 5 minutes. Full nodes: fullnode-rc1109 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade) |
 | 2026-11-08 22:15 | full node | Full-node release fullnode-rc1108, the same `qsdm` as release rc1108: a running full node's memory no longer grows between restarts ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade) |
 | 2026-11-08 17:33 | node release | Release rc1108: the blocks the producer appends keep their signatures only in the journal, so its memory stays flat between restarts (no consensus change); mining paused 5 minutes | No |
 | 2026-11-08 16:34 | operations | A second node: the project's full node in Japan verifies every block itself, set up with the one-command installer ([Run a full node](RUN_A_FULL_NODE.md)) | No |
@@ -41,6 +42,23 @@ upgrades harden that pilot network; they do not change its stage. See
 | 2026-10-11 13:18 | 816,600 | Proof-of-Entanglement enforced | **Yes**, if you send CELL with old software |
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
+
+## 2026-11-12: release rc1109
+
+- **When:** node release `hardened-legacy-20261112-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1109`,
+  switched in 2026-11-12 07:46 UTC; mining reopened by itself at 07:51 UTC.
+  A node release, not an activation height.
+- **What changed:** rc1108 built with Go 1.26.11, which fixes GO-2026-6859
+  in `net/http` (a server that limits request bodies with `MaxBytesReader`
+  could crash when a handler reads the body while another goroutine writes
+  the response; the node's API does both), and with golang.org/x/net
+  v0.62.0 (CVE-2026-78661), with the x/crypto, x/sys, x/term, x/text and
+  x/sync versions `QSDM/source` has. A start reads eight journal lines per
+  worker ahead instead of one, the change `QSDM/source` has since
+  2026-11-10. The restart paused mining 5 minutes, as for rc1108; the node loaded the chain in about 3 and a half of them. The full-node release
+  `fullnode-rc1109` is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)).
+  Nothing a block hashes, signs or encodes changed.
+- **What you must do:** nothing. Full-node operators can upgrade.
 
 ## 2026-11-08: release rc1108
 
