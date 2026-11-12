@@ -15,6 +15,16 @@ from 2026-04-22 on.
 
 ## [Unreleased]
 
+### Security
+
+- **2026-11-12: the JavaScript SDK is published only through npm trusted
+  publishing.** `qsdm-sdk` 0.5.0 was published on 2026-11-07 by
+  `.github/workflows/sdk-javascript-publish.yml` through npm's trusted
+  publishing (GitHub's short-lived OIDC token, with provenance). The
+  workflow's transitional fallback to a long-lived `NPM_TOKEN` repository
+  secret is removed, and so is the secret: a publish that npm does not
+  authorize through OIDC now fails (issue #57).
+
 ### Added
 
 - **The Japan full node's status, live (2026-11-13).** The block producer's
