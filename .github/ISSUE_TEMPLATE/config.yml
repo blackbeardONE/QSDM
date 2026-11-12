@@ -1,0 +1,10 @@
+# The "New issue" page. A security finding must never be opened as a public issue: the first link sends reporters to
+# GitHub's private vulnerability reporting, the channel SECURITY.md and qsdm.tech/.well-known/security.txt name first.
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/blackbeardONE/QSDM/security/advisories/new
+    about: Never open a public issue for a vulnerability. Report it privately here; only the maintainers see it.
+  - name: Security policy and bug bounty
+    url: https://qsdm.tech/security.html
+    about: What is in scope, safe harbour, how reports are handled, and the CELL bug bounty.
