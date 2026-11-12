@@ -27,7 +27,7 @@ validator and home gateway builds) come with their own `SHA256SUMS` files.
 > build. It is not the release that runs the public pilot network today
 > (`hardened-legacy-20261112-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1109`, see [Network status](NETWORK_STATUS.md)).
 
-**Full node.** The GitHub release `fullnode-rc1109` (12 November 2026) carries
+**Full node.** The GitHub release `fullnode-rc1110` (13 November 2026) carries
 the producer's exact `qsdm`. The one-command installer,
 `QSDM/scripts/fullnode/install-full-node.sh`, installs the release that
 [qsdm.tech/fullnode.html](https://qsdm.tech/fullnode.html) names. A full node

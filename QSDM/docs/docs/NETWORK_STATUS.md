@@ -26,7 +26,7 @@ examples from October 2026, and the live values are always in the status API.
 | Transfer parents (Proof-of-Entanglement) | **Enforced from block 816,600** (11 October 2026): every CELL transfer names committed parents. Send with Hive 1.4.22 or newer, the web wallet, or `qsdmcli --auto-parents`. See [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md). |
 | Mining | NVIDIA GPUs through QSDM Hive 1.4.21 or newer, **open to every enrolled miner** since 19 October 2026 (protocol v2; every proof carries the enrollment owner's operator signature), in 7-day windows that renew automatically. Mining was paused from 22 October to 1 November 2026 (see [What is running](#what-is-running)). See [Mining today](MINING_TODAY.md). |
 | Supply | Max supply **90,000,000 CELL**, all from mining. No genesis treasury and no premine ([Genesis Policy v1.1](GENESIS_POLICY_v1.1.md)). Transaction fees are burned (credited to no account). |
-| Release | `hardened-legacy-20261112-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1109`, live since 12 November 2026, 07:51 UTC (see [What is running](#what-is-running)) |
+| Release | `hardened-legacy-20261113-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1110`, live since 12 November 2026, 21:30 UTC (see [What is running](#what-is-running)) |
 | Independent audit | None completed. Security review is an open [community review](COMMUNITY_REVIEW.md) with a [bug bounty](BUG_BOUNTY.md) (rewards confirmed by the owner on 17 October 2026; 50,000 CELL pool); a professional audit remains welcome. The [internal security review](SECURITY_AUDIT.md) is a self-maintained checklist. |
 
 ## Check it yourself
@@ -103,8 +103,11 @@ The [explorer](https://qsdm.tech/explorer.html) and the
 
 ## What is running
 
-- **Core release** `hardened-legacy-20261112-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1109`
-  (live since 2026-11-12 07:51 UTC). It is rc1108 (live from 2026-11-08 17:38
+- **Core release** `hardened-legacy-20261113-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1110`
+  (live since 2026-11-12 21:30 UTC). It is rc1109 (live from 2026-11-12 07:51 UTC)
+  with a security fix: only a task's catalog manager may migrate the task, and from block 1,150,000 a block
+  with any other migrate is invalid ([Consensus rules](CONSENSUS_RULES.md#task-migrate-authorization-from-block-1150000)). The restart paused mining 6 minutes. The
+  full-node release `fullnode-rc1110` is the same `qsdm`. rc1109 was rc1108 (live from 2026-11-08 17:38
   UTC) built with Go 1.26.11, which fixes GO-2026-6859 in Go's web server
   (`net/http`), and golang.org/x/net v0.62.0 (CVE-2026-78661), with the
   further journal read-ahead that `QSDM/source` has since 2026-11-10 (a
