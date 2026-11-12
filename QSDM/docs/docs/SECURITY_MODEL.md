@@ -6,8 +6,8 @@ describes the live network, not the end-state design. For the stage of the
 network see [Network status](NETWORK_STATUS.md).
 
 > [!IMPORTANT]
-> QSDM is a pilot network (pre-mainnet) with a single block producer during
-> recovery. No independent external audit has been completed. Do not keep
+> QSDM is a pilot network (pre-mainnet) with a single block producer.
+> No independent external audit has been completed. Do not keep
 > value on it that you cannot afford to lose.
 
 ## Summary
@@ -17,7 +17,7 @@ network see [Network status](NETWORK_STATUS.md).
 | Wallet keys | Generated and kept on your device; private keys are stored encrypted | Your device, your passphrase, and the software you installed |
 | Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL); nonces stop replays; transfers must name committed parents (Proof-of-Entanglement, from block 816,600) | Ed25519 transaction signatures are refused (`ed25519_tx_accepted: false`). CELL stream session keys are still Ed25519 until a stream retirement height is set |
 | Block production | One producer runs the chain; every block is stored and served publicly | You trust that producer to include valid transactions and not to censor or reorder them |
-| Consensus | **Signed consensus enforced from block 827,000** (`signed_consensus_active: true`): every BFT vote and consensus message must carry a valid ML-DSA signature; unsigned consensus traffic is refused | There is only one producer and no independent validators yet, so there is no multi-validator BFT today |
+| Consensus | **Signed consensus enforced from block 827,000** (`signed_consensus_active: true`): every BFT vote and consensus message must carry a valid ML-DSA signature; unsigned consensus traffic is refused | There is only one producer and no independent validators, so there is no multi-validator BFT today |
 | Mining | Enrollment needs a signed enrollment and a 10 CELL bond; proofs carry NVIDIA attestation; duplicate proofs and nonces are rejected durably | Consumer-GPU attestation (`nvidia-hmac-v1`) is an economic control tied to the enrollment and its bond, not a hardware proof |
 | Software downloads | QSDM Hive releases are signed with the v2 release key and checked by Hive before updating | You trust the release key holder; the previous key was rotated in 2026 |
 | Public API | Read endpoints are public; admin and certificate routes are not exposed; write routes are limited during the pilot | Rate limits and nginx rules run on infrastructure operated by the project |
@@ -61,8 +61,11 @@ network see [Network status](NETWORK_STATUS.md).
 
 ## Block production and consensus
 
-- Today one block producer creates every block, with a backup node that follows
-  the chain. Since 2 November 2026 its peer-to-peer port is public, with
+- Today one block producer creates every block. The project's full node in
+  Japan checks every block and is the standby block maker: copies of it,
+  sealed off from the network, rehearsed taking over block production on 10
+  and 11 November 2026, but production has not moved to it. Since 2 November
+  2026 the producer's peer-to-peer port is public, with
   connection, stream and block-request limits; the status API's `peers` counts
   the connected peers. The code of those limits is in this repository: the
   block-request budget is always on, and the connection, stream and gossip
@@ -96,8 +99,9 @@ network see [Network status](NETWORK_STATUS.md).
   consensus message must carry a valid ML-DSA signature, and unsigned
   consensus traffic is refused. This stops forged consensus messages; it does
   not add independent validators. Today the one producer signs them all.
-- Block production by miners, in stages, is the next step on the
-  [Roadmap](ROADMAP.md) (decision of 19 October 2026). Multi-validator BFT is
+- The next step on the [Roadmap](ROADMAP.md) is a live turn of block
+  production to the standby block maker; block production by miners, in
+  stages, follows (decision of 19 October 2026). Multi-validator BFT is
   in the code but no longer planned. The full list of rules in force is in
   [Consensus rules](CONSENSUS_RULES.md).
 - Mainnet needs the [mainnet gates](ROADMAP.md#mainnet-gates) and

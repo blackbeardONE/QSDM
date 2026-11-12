@@ -199,7 +199,7 @@ The Go and JavaScript SDKs expose:
 - get one stream;
 - submit a signed stream action envelope.
 
-JavaScript SDK `0.3.3` (in source; the npm registry currently publishes 0.3.0) also provides:
+JavaScript SDK `qsdm-sdk` 0.5.0 (the source version and the npm latest) also provides:
 
 - `CellStreamWallet`, which serializes nonce lookup, signing, submission, and
   chain confirmation; and

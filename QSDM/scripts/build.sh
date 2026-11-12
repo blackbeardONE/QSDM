@@ -15,9 +15,8 @@ echo ""
 # Check if Go is installed
 if ! command -v go &> /dev/null; then
     echo "ERROR: Go is not installed!"
-    echo "Please install Go 1.20 or higher:"
-    echo "  sudo apt update"
-    echo "  sudo apt install golang-go"
+    echo "Please install Go 1.26.11 from https://go.dev/dl/"
+    echo "(Ubuntu's golang-go package is too old)."
     exit 1
 fi
 

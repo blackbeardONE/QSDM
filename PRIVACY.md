@@ -1,6 +1,6 @@
 # QSDM Privacy Policy
 
-Last updated: November 4, 2026
+Last updated: November 12, 2026
 
 This policy describes data handling by the open-source QSDM Hive desktop
 application and the reference services operated at `qsdm.tech`. A separately
@@ -11,9 +11,10 @@ policy.
 
 Hive stores account profiles, encrypted QSDM keystore files, settings, task
 state, logs, miner enrollment state, and optional Relay credentials in the
-operating system's application-data directories. In a `release-envelope-cache`
-folder there, it also keeps a copy of the last signed release envelope it
-verified from `qsdm.tech`, so that it keeps working when the website cannot be
+operating system's application-data directories. From the first Hive release
+after 1.4.22, Hive also keeps a copy of the last signed release envelope it
+verified from `qsdm.tech` in a `release-envelope-cache` folder there, so that
+it keeps working when the website cannot be
 reached. That file is public release data and holds nothing about you. Wallet
 passphrases and private
 keys are intended to remain on the user's computer and are not account-recovery
@@ -25,7 +26,8 @@ events. Hive contains no advertising tracker.
 
 ## Crash records and diagnostics reports
 
-Hive keeps crash records on your computer. When part of Hive crashes, Hive
+From the first Hive release after 1.4.22, Hive keeps crash records on your
+computer and can save a diagnostics report. When part of Hive crashes, Hive
 writes a short record of it to a `diagnostics` folder in its application-data
 directory. Before it writes, Hive removes the secrets it can find: recovery
 phrases, private keys and other key material, tokens, passwords, email

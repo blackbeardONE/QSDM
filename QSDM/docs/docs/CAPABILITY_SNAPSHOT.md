@@ -1,5 +1,8 @@
 # Capability Snapshot
 
+> **Historical snapshot (2026-08-29).** For the current state, see
+> [Network status](NETWORK_STATUS.md).
+
 Status date: 2026-08-29
 
 This snapshot summarizes the current project files, test evidence, and the local

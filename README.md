@@ -13,7 +13,8 @@ Cloudflare CIRCL) — the standardised post-quantum signature scheme. It is
 designed so that signatures made today stay unforgeable even against a
 future cryptographically relevant quantum computer.
 
-Latest tagged ledger release: **v0.4.3**. Public site: [qsdm.tech](https://qsdm.tech).
+Latest tagged ledger release: **`fullnode-rc1109`** (GitHub, 12 November 2026),
+the exact `qsdm` the block producer runs. Public site: [qsdm.tech](https://qsdm.tech).
 
 QSDM began on 10 May 2025 in its first repository,
 [github.com/BbOldaccount/QSDM](https://github.com/BbOldaccount/QSDM), with
@@ -25,8 +26,10 @@ and moved to this repository on 22 April 2026. See
 
 QSDM is a **public pilot network (pre-mainnet)**. Today:
 
-- Blocks come from **one block producer run by the project**; a backup node
-  follows the chain. Live peer count and consensus flags are published at
+- Blocks come from **one block producer at a time, run by the project** on a
+  server in Singapore. The project's full node in Japan follows the
+  chain and is the standby block maker; it has not yet made blocks on the live
+  network. Live peer count and consensus flags are published at
   [`/api/v1/status`](https://api.qsdm.tech/api/v1/status) and
   [qsdm.tech/network.html](https://qsdm.tech/network.html).
 - CELL wallet transactions (Hive, web wallet, `qsdmcli`) are signed with
@@ -54,7 +57,7 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   (see [`TREASURY_POLICY.md` §9](QSDM/docs/docs/TREASURY_POLICY.md#9-mainnet-release-gates)).
 - Max supply is 90,000,000 CELL, all from mining. There is no genesis
   treasury and no premine of any kind. Transaction fees are burned (credited
-  to no account) until independent validators produce blocks. See
+  to no account) while one producer, run by the project, makes the blocks. See
   [`GENESIS_POLICY_v1.1.md`](QSDM/docs/docs/GENESIS_POLICY_v1.1.md)
   (approved in writing by the owner; v1.1 of 2026-11-01 drops the counsel review).
 
@@ -80,6 +83,16 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   automatically, and 1.4.22 adds Proof-of-Entanglement parents to every
   transfer. Moving from 1.4.20 (Windows) or 1.4.17 (Linux) is a one-time
   manual install from the [download page](https://qsdm.tech/download.html).
+  Merged here but not in 1.4.22, and waiting for the next Hive release: crash
+  records and **Save a diagnostics report…**, working through a qsdm.tech
+  outage with the last signed release envelope Hive verified, and reusing a
+  GPU's existing miner enrollment instead of enrolling it twice (for the error
+  `gpu_uuid already bound to an active enrollment`, see
+  [Mining today: Troubleshooting](QSDM/docs/docs/MINING_TODAY.md#troubleshooting)).
+- **Wallets:** since 2026-11-10 the web wallet on qsdm.tech can be installed
+  as an app on a phone ([Web wallet](QSDM/docs/docs/WEB_WALLET.md)). Browser
+  extension 0.6.0 was sent to the Chrome Web Store on 2026-11-06 and is still
+  in review; no store listing is published yet.
 
 > **Rebrand notice.** Folder names such as `apps/qsdm-landing/` and
 > configuration identifiers (`qsdm.*` configs, `QSDM_*` env vars,
@@ -105,7 +118,7 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
 
 - **Feature summary (current capabilities):** [`QSDM/docs/docs/Feature Summary.md`](QSDM/docs/docs/Feature%20Summary.md)
 - **Operator wiki (end-to-end):** [`QSDM/docs/docs/OPERATOR_GUIDE.md`](QSDM/docs/docs/OPERATOR_GUIDE.md) ⭐ start here if you are new
-- **Run a full node (verify every block yourself):** [`QSDM/docs/docs/RUN_A_FULL_NODE.md`](QSDM/docs/docs/RUN_A_FULL_NODE.md) — signed release, verified snapshot, HTTP sync; values to pin on [qsdm.tech/fullnode.html](https://qsdm.tech/fullnode.html)
+- **Run a full node (verify every block yourself):** [`QSDM/docs/docs/RUN_A_FULL_NODE.md`](QSDM/docs/docs/RUN_A_FULL_NODE.md) — signed release, verified snapshot, HTTP sync; values to pin on [qsdm.tech/fullnode.html](https://qsdm.tech/fullnode.html). One command, [`QSDM/scripts/fullnode/install-full-node.sh`](QSDM/scripts/fullnode/install-full-node.sh), installs the release that page names (`fullnode-rc1109`, the block producer's exact `qsdm`); a full node needs 6 GB of RAM and no GPU. Since 2026-11-11, `install-full-node.sh --update-schedule` lets a full node follow a change of block maker.
 - **Download Hive:** [qsdm.tech/download.html](https://qsdm.tech/download.html)
   (Hive 1.4.21 and later: [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/),
   signed with the v2 release key pinned in
@@ -127,9 +140,9 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
 
 > **New?** The operator wiki answers the three questions every new node
 > operator asks: *do I need an NVIDIA GPU, do I need a paid NGC plan, and
-> do I have to sync to your VPS?* Spoiler: **no, no, and no — but NVIDIA
-> is the first-class mining path today and `api.qsdm.tech` is the
-> recommended bootstrap peer for Phase 4.**
+> do I have to sync to your VPS?* Spoiler: **only to mine (a full node needs
+> no GPU; mining is NVIDIA GPUs only, through QSDM Hive), no, and no — but
+> `api.qsdm.tech` is the recommended bootstrap peer for Phase 4.**
 
 ## Trust surface (live reference node)
 
@@ -157,8 +170,9 @@ their own licences (see [`QSDM/source/wasmer-go-patched/LICENSE`](QSDM/source/wa
 
 ## Windows signing
 
-QSDM is preparing an application for free open-source signing through
-SignPath Foundation. The application is pending, and no artifact may be
-represented as SignPath-signed until it passes the repository's release gates.
+QSDM applied for free open-source signing through SignPath Foundation, but
+the application was declined for now. No QSDM artifact may be described as
+SignPath-signed unless a future paid or Foundation subscription signs that
+exact artifact and the final verification gates pass.
 See the [code signing policy](CODE_SIGNING_POLICY.md) for roles, provenance,
 approval, verification, and incident-response requirements.

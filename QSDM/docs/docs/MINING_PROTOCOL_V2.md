@@ -91,9 +91,9 @@ single validator.
    `MIN_ENROLL_STAKE = 10 CELL` or selects deferred bond accrual.
    Legacy `qsdm/enroll/v1` records remain replay-valid only below
    `SignedContractActivationHeight`. Unenroll bonds the stake for `UnbondWindow`
-   (201,600 blocks (about 23 days at 10-second blocks)) and the `gpu_uuid` releases at maturity, so a
-   physical card can be re-enrolled by a fresh `node_id` after
-   the original record retires. Signed `qsdm/enroll/v2`
+   (201,600 blocks (about 23 days at 10-second blocks)) and frees the `gpu_uuid` at once, so a
+   physical card can be re-enrolled by a fresh `node_id` without
+   waiting for the bond. Signed `qsdm/enroll/v2`
    transactions can also retain the operator's ML-DSA public key
    after `OperatorPublicKeyRetentionHeight`; that fork gate is
    disabled by default for deterministic rollout. Operators schedule
@@ -109,8 +109,8 @@ single validator.
    production acceptance is fail-closed today. HMAC-dependent
    `forged-attestation` and `double-mining` cannot attribute a
    bundle while `EnrollmentRecord.HMACKey` is public symmetric
-   chain state and proofs do not yet carry an operator wallet
-   signature. `freshness-cheat` rejects through
+   chain state. Since 2026-10-19 every live proof carries the enrollment owner's operator signature
+   (Hive 1.4.21 and newer add it), but slashing does not use it yet. `freshness-cheat` rejects through
    `RejectAllWitness` until BFT finality supplies a real
    inclusion witness. Slash attempts therefore produce rejection
    receipts instead of draining stake. Implementation in
@@ -671,8 +671,8 @@ Enrollment lifecycle:
    `qsdm/enroll/v2` transaction carrying an `unenroll` payload. Stake
    bonds for `UnbondWindow`
    (201,600 blocks (about 23 days at 10-second blocks)); `BlockProducer.OnSealedBlock` auto-
-   sweeps matured records and releases the `gpu_uuid` so the
-   physical card can be re-enrolled by a fresh `node_id`.
+   sweeps matured records. The `gpu_uuid` is freed at unenroll, so the
+   physical card can be re-enrolled by a fresh `node_id` at once.
 
 **Why this is not cryptographically airtight.** An operator with
 a legitimately-registered `(node_id, gpu_uuid, hmac_key)` tuple
@@ -870,8 +870,8 @@ transition pipeline.
 Auto-sweep at unbond maturity:
 `BlockProducer.OnSealedBlock = SealedBlockHook(...)`. Matured
 `UnbondMaturesAtHeight ≤ height` records release stake to the
-operator's account and free the `gpu_uuid` binding for fresh
-re-enrollment.
+operator's account. The `gpu_uuid` binding is already freed at
+unenroll, so re-enrollment does not wait for this sweep.
 
 ### 8.2 Slashing
 

@@ -5,15 +5,15 @@
 > **Current status note (2026-10):** This is a historical document. QSDM today is a
 > public pilot network (pre-mainnet): Proof-of-Entanglement transfers, one block producer run by the project.
 > CELL wallet transactions are signed with ML-DSA-87 (NIST FIPS 204), and signed consensus
-> messages are enforced from block 827,000; independent validators and a published
-> security review (an open [community review](COMMUNITY_REVIEW.md); no independent
-> audit has been completed) are still on the roadmap. For what is safe to claim today, see [Capability Snapshot](CAPABILITY_SNAPSHOT.md)
+> messages are enforced from block 827,000. Independent validators are no longer planned: the plan is for miners
+> to produce blocks, in stages (designed, not built yet). A published security review (an open [community review](COMMUNITY_REVIEW.md); no independent
+> audit has been completed) is still to come. For what is safe to claim today, see [Network status](NETWORK_STATUS.md)
 > and [Treasury Policy §9](TREASURY_POLICY.md#9-mainnet-release-gates).
 > The live pilot chain produces blocks with a ~10-second target, so the
 > "not a blockchain" and "no block delays" framing below describes the original design.
 > Proof-of-Entanglement today: each signed transfer's ML-DSA-87 signature is checked
 > under the sender's own key on every node. The parent rules (parents must be committed
-> transactions) are implemented behind an activation height that has not been set yet.
+> transactions) are enforced from block 816,600 (11 October 2026).
 > See [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md).
 
 ---
@@ -110,8 +110,8 @@ Transaction Structure:
 **Not Proof-of-Work or Proof-of-Stake!**
 
 > **Status (2026-10):** step 2 runs on every node today. Steps 1 and 3 are
-> implemented and switch on at a configured activation height that has not
-> been set yet. The full rules, the activation and the client guide are in
+> enforced from block 816,600 (11 October 2026), the activation height on the
+> public pilot. The full rules, the activation and the client guide are in
 > [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md).
 
 PoE validates a signed transfer by:

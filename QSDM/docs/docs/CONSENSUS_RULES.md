@@ -145,9 +145,14 @@ See [Signed transfers](V040_WALLET_SEND_DESIGN.md) and
   valid today becomes invalid. The token state stays empty and no state root
   changes. A release that reports the field shows
   `consensus_auth.qsdm20_activation_height` `0` and `qsdm20_active` `false`.
-- **Independent validators.** There is one block producer and no independent
-  validators. Multi-validator BFT voting is the next step and has not started
-  publicly.
+- **Decentralised block production.** There is one block producer at a time,
+  run by the project, and no independent validators. Since 19 October 2026 the
+  plan is for miners to produce blocks, in stages, instead of a set of
+  independent validators; it is designed, not built. The next step is a live
+  turn of block production to the project's full node in Japan, the standby
+  block maker. Copies of it, sealed off from the network, rehearsed the
+  takeover and the hand-back on 10 and 11 November 2026; the live turn has not
+  happened yet.
 - **Independent external audit.** None has been completed. The
   [security review](SECURITY_AUDIT.md) is a self-assessment. Review now runs as
   an open [community review with a bug bounty](COMMUNITY_REVIEW.md), which is

@@ -52,7 +52,7 @@ Set **`[network] submesh_config`** (or **`QSDM_SUBMESH_CONFIG`**) to a **`config
 
 ### Prerequisites
 
-- Go 1.20 or higher
+- Go 1.26.11 (the version `source/go.mod` requires)
 - SQLite3
 - Git
 
@@ -70,7 +70,8 @@ Set **`[network] submesh_config`** (or **`QSDM_SUBMESH_CONFIG`**) to a **`config
 **Linux (Ubuntu 24.04+):**
 ```bash
 # Install dependencies
-sudo apt install -y build-essential cmake git libssl-dev libsqlite3-dev golang-go
+sudo apt install -y build-essential cmake git libssl-dev libsqlite3-dev
+# Install Go 1.26.11 from https://go.dev/dl/ (Ubuntu's golang-go package is too old)
 
 # Clone repository
 git clone https://github.com/blackbeardONE/QSDM.git
@@ -87,7 +88,7 @@ chmod +x scripts/rebuild_liboqs.sh scripts/build.sh scripts/run.sh
 ./scripts/run.sh
 ```
 
-**For running a node on Ubuntu, see:** [docs/docs/OPERATOR_GUIDE.md](docs/docs/OPERATOR_GUIDE.md)
+**To run a full node of the pilot network,** use the one-command installer [`scripts/fullnode/install-full-node.sh`](scripts/fullnode/install-full-node.sh) and its guide, [docs/docs/RUN_A_FULL_NODE.md](docs/docs/RUN_A_FULL_NODE.md). For other setups, see [docs/docs/OPERATOR_GUIDE.md](docs/docs/OPERATOR_GUIDE.md).
 
 The node will start and initialize libp2p networking. Logs will be written to `qsdm.log`.
 

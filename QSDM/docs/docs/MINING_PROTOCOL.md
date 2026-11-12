@@ -1,5 +1,7 @@
 # QSDM Mining Protocol — MINING_PROTOCOL.md
 
+> **Note:** The live network accepts only [Mining protocol v2](MINING_PROTOCOL_V2.md) proofs from NVIDIA GPUs. This v1 specification is kept for reference.
+>
 > **Status:** Normative. Ratified per Major Update §5 and §11 Phase 0 recommendation. Cryptographic parameters and hash/KDF choices remain **audit-gated** — mainnet activation depends on the external review required by Major Update §11 Phase 4/6.
 >
 > **Audience:** Protocol implementers, auditors, validator operators, miner client authors.

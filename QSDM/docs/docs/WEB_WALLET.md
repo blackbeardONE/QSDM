@@ -294,7 +294,7 @@ Why the deep-link path remains supported:
 - The private key stays in the local wallet/keystore; Sky Fang never sees it.
 - It also works when the browser extension is not installed.
 
-Hive 1.4.21 supports the QSDM Wallet extension for Chrome, Edge,
+Hive 1.4.21 and newer (1.4.22 is current) support the QSDM Wallet extension for Chrome, Edge,
 Chromium, Brave, and Firefox. Supported HTTPS sites can use its `window.qsdm`
 provider for account connection, balance reads, message signing, and approved
 CELL transfers. The extension is not a second wallet: it stores no keystore,
@@ -304,7 +304,8 @@ signing or transfer approval.
 
 Install the extension from your browser's store where available. Manual
 Chromium and Firefox review packages remain on <https://qsdm.tech/download.html>
-for testing.
+for testing. Extension 0.6.0 was sent to the Chrome Web Store on 6 November
+2026 and is still in review; no store listing is published yet.
 The Sky Fang deep link and the extension are complementary transport paths to
 the same Hive-held wallet, not separate accounts.
 

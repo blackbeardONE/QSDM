@@ -1,3 +1,9 @@
+## [Unreleased]
+
+- Crash records and diagnostics: when part of Hive crashes, Hive writes a short record, with the secrets it can find removed, to a `diagnostics` folder in its application-data directory and sends nothing. **Save a diagnostics report…** in the Hive tray icon's menu saves one text file with those records, Hive's current log and basic version, system and graphics details, to attach to a support request.
+- qsdm.tech outages: when an update check fails, Hive keeps working with the last signed release envelope it verified, after checking it again in full, until that envelope's `expires_at`. Hive ignores an envelope older than one it has already verified.
+- Miner enrollment: one GPU can back only one active enrollment. Up to 1.4.22, Hive made a new node ID after a Windows reinstall, a new PC name, a lost `.qsdm` folder or another wallet, and the chain refused the GPU's second enrollment with `gpu_uuid already bound to an active enrollment`. Hive now reuses the existing enrollment: when the wallet Hive holds owns it, Hive copies its miner files to backups first and then writes that enrollment's node ID and key into them; when another wallet owns it, Hive shows a clear error that names the enrollment.
+
 ## [1.4.22]
 
 - Proof-of-Entanglement parents: CELL transfers now sign the node's two newest committed transactions as `parent_cells` (from `GET /api/v1/chain/parents`, or the newest successful receipts on nodes that predate that route) instead of an empty list. Validators accept these parents today and will require them once the network's PoE activation height is reached. If the node refuses a transfer's parents (HTTP 422 `proof-of-entanglement`), Hive signs it again at the same nonce with fresh parents. A node that cannot supply parents still gets an empty list, which works until activation.

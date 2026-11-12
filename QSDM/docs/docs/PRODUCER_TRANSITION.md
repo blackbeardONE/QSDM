@@ -313,9 +313,18 @@ new epoch and stops following, so every node needs the new file.
 `TestStandInHandsBack` (section 7) runs a hand-over and a hand-back on real
 state directories.
 
+The steps were also rehearsed on copies of the project's full node in Japan,
+the standby block maker, sealed off from the network. On 10 November 2026 a
+copy took over block production. On 11 November 2026 a copy rehearsed a full
+takeover with the producer's own mining records (the reconciliation was clean;
+mining was closed, then reopened) and the hand-back to a new key, and the
+mining audit passed: every proof was paid exactly once. Block production has
+not yet been turned over to that node on the live network; that is the next
+step.
+
 ### Telling the full nodes
 
-Full nodes run by others got their schedule from the release's
+Full nodes set up from a release get their schedule from the release's
 `fullnode-core.toml` ([Run a full node](RUN_A_FULL_NODE.md)). After each
 hand-over, and before the new producer's first block if it can be, the project
 publishes the new schedule on https://qsdm.tech/fullnode.html, in a
@@ -441,6 +450,7 @@ Tests:
   so check that the service manager's start timeout allows for it. One figure:
   the project's full node on a 12 GB server answered again 4 minutes 26
   seconds after a restart at block 1,058,193 (release fullnode-rc1108, 9
-  November 2026).
+  November 2026). On 12 November 2026 it answered again 2 minutes 51 seconds
+  after its switch to fullnode-rc1109, at block 1,087,781.
 - A reviewed tool for computing a new prefix pin on a live journal does not
   exist yet; until it does, keep the existing pin (step 4 is optional).

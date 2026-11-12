@@ -1,6 +1,7 @@
 # QSDM Tier-2 GPU Spec Anomaly Checker
 
-> **Status:** Active on `qsdm.tech` (BLR1 validator) since `2026-05-07`.
+> **Status:** Off on the current producer (`GET https://api.qsdm.tech/api/v1/mining/spec-anomalies`
+> answers 503). It was enabled on the earlier BLR1 validator from `2026-05-07`.
 > Advisory only — does NOT cause proof rejection.
 
 ## What it is
@@ -260,7 +261,8 @@ enough to catch real spoofing while quiet on the happy path.
 
 ## Tier-3 reward downgrade
 
-**Status:** Active on `qsdm.tech` (BLR1 validator) since
+**Status:** Off on the current producer, where the Tier-2 check it
+needs is off too. It was enabled on the earlier BLR1 validator from
 `2026-05-07`. Sits one layer above Tier-2 — consumes the
 verdict stream and applies a per-miner sliding-window
 penalty to the blockdriver's per-block share. Strictly
