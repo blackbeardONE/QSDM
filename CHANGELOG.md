@@ -17,6 +17,23 @@ from 2026-04-22 on.
 
 ### Security
 
+- **2026-11-12: the private security channel works again, and is watched.**
+  A reporter found (issue #188) that both channels in
+  [`security.txt`](https://qsdm.tech/.well-known/security.txt) were dead:
+  GitHub private vulnerability reporting was switched off for this
+  repository, and `admin@qsdm.tech` refused all mail. Private vulnerability
+  reporting is on since 2026-11-12, so
+  <https://github.com/blackbeardONE/QSDM/security/advisories/new> accepts
+  reports. The repository's "New issue" page now starts with that link and
+  the security policy, so a finding is not pasted into a public issue by
+  mistake (`.github/ISSUE_TEMPLATE/config.yml`). A weekly check
+  (`.github/workflows/security-contact-check.yml`,
+  `scripts/check_security_contacts.py`, 7 unit tests) fails when
+  `security.txt` stops answering, loses a contact or nears its `Expires`
+  date, when private reporting is off, or when the email domain loses its MX
+  record. The mailbox behind the email address is set at the registrar and
+  tested by hand.
+
 - **2026-11-12: the JavaScript SDK is published only through npm trusted
   publishing.** `qsdm-sdk` 0.5.0 was published on 2026-11-07 by
   `.github/workflows/sdk-javascript-publish.yml` through npm's trusted

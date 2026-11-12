@@ -1,0 +1,49 @@
+name: Check the security contacts
+
+# Issue #188: both channels in security.txt were dead on 2026-11-11 (private vulnerability reporting off,
+# admin@qsdm.tech refusing mail) and nothing said so. This runs every week and fails, so GitHub tells the owner, when
+# security.txt stops answering, loses a contact or nears its Expires date, when the repository stops offering private
+# vulnerability reporting, or when the email domain loses its MX record. The mailbox itself is tested by hand after any
+# change at the registrar (hosted runners cannot use SMTP).
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/security-contact-check.yml"
+      - "scripts/check_security_contacts.py"
+      - "scripts/test_check_security_contacts.py"
+  pull_request:
+    paths:
+      - ".github/workflows/security-contact-check.yml"
+      - "scripts/check_security_contacts.py"
+      - "scripts/test_check_security_contacts.py"
+
+concurrency:
+  group: security-contact-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Test the checker
+        run: python -m unittest scripts.test_check_security_contacts
+
+      - name: Check the published security contacts
+        run: python scripts/check_security_contacts.py
