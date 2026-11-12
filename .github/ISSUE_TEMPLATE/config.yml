@@ -8,3 +8,6 @@ contact_links:
   - name: Security policy and bug bounty
     url: https://qsdm.tech/security.html
     about: What is in scope, safe harbour, how reports are handled, and the CELL bug bounty.
+  - name: Ask the community (Discord)
+    url: https://discord.gg/QZcCY2AdVn
+    about: Questions about mining, QSDM Hive, wallets or running a node. The team never starts a DM or asks for keys.
