@@ -90,13 +90,20 @@ qsdmcli wallet export-recovery --in wallet.json \
 qsdmcli wallet enable-recovery --in old-wallet.json \
   --passphrase-file old-passphrase.txt \
   --recovery-out offline-recovery.txt \
-  --api-url https://api.qsdm.tech/attest/home-validator/api/v1
+  --api-url https://api.qsdm.tech/api/v1
 
 qsdmcli wallet restore-legacy --out restored-old-wallet.json \
   --passphrase-file new-passphrase.txt \
   --recovery-file offline-recovery.txt \
-  --api-url https://api.qsdm.tech/attest/home-validator/api/v1
+  --api-url https://api.qsdm.tech/api/v1
 ```
+
+`--api-url` is the network's public API. `enable-recovery` registers a new
+capsule, which is paused during the pilot
+([API reference](API_REFERENCE.md#wallet-recovery-capsules));
+`restore-legacy` reads an existing capsule and works today. (Earlier versions
+of this page named `https://api.qsdm.tech/attest/home-validator/api/v1`, a
+node that has been offline since October 2026.)
 
 The recovery format is `qsdm-wallet-recovery-v1`:
 

@@ -17,6 +17,17 @@ from 2026-04-22 on.
 
 ### Added
 
+- **The Japan full node's status, live (2026-11-13).** The block producer's
+  server reads the status of the project's full node in Japan every 15
+  seconds; qsdm.tech serves a few
+  public fields of it as `https://qsdm.tech/second-node/status.json` (the tip,
+  version, uptime, role, when it was read and whether the read worked), and
+  the [network page](https://qsdm.tech/network.html) shows the node live next
+  to the producer, with how many blocks it is behind. See "What is running" in
+  [Network status](QSDM/docs/docs/NETWORK_STATUS.md). [Wallet
+  recovery](QSDM/docs/docs/WALLET_RECOVERY.md) no longer points the command-line
+  examples at a node that has been offline since October 2026.
+
 - **Full nodes follow a change of block maker (2026-11-11).** After a
   hand-over, qsdm.tech/fullnode.html shows the new block-maker schedule (the
   exact `[consensus.producer_transition]` table) and its digest.
