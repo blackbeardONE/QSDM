@@ -25,6 +25,7 @@ they were produced with.
 | Proof-of-Entanglement | 816,600 | 2026-10-11 13:18 | `consensus_auth.poe_activation_height`, `poe_active` | A transfer that does not name 2 to 10 valid committed parents |
 | Signed consensus | 827,000 | 2026-10-12 18:11 | `consensus_auth.require_signed_votes`, `signed_message_activation_height`, `signed_consensus_active`, `unsigned_consensus_traffic_accepted` | Any BFT vote or consensus message without a valid ML-DSA signature |
 | Relay-only paid edge tasks | 833,800 | 2026-10-13 13:21 | `consensus_auth.edge_relay_only_activation_height`, `edge_relay_only_active` | A paid edge task settlement that does not come through an authorized settlement relay |
+| Task migrate authorization | 1,150,000 | Scheduled, about 2026-11-19 (the producer's API enforces it since 2026-11-12 21:25) | none (a code constant, `TaskMigrateAuthActivationHeight`) | A task `migrate` not sent by the task's catalog manager, or to a target that is not another registered, unpaused task of the same manager, or that would make a cycle |
 
 Live values on the public node:
 
@@ -107,6 +108,25 @@ single producer signs every consensus message today. Details:
 Paid resource work is in an operator-only test and is not yet open to other
 miners. Details: [Edge pool](EDGE_POOL.md),
 [Task registry](QSDM_TASK_REGISTRY.md).
+
+### Task migrate authorization (from block 1,150,000)
+
+- A `migrate` task action (payload `{"migrated_to":"<task id>"}`) MUST come
+  from the task's catalog manager: the task is registered in the catalog and
+  the sender equals its manifest's `manager`.
+- The target MUST be another registered task of the same manager that is not
+  paused, and following `migrated_to` from the target MUST NOT lead back to
+  the task (a chain of more than 64 steps is refused too).
+- A block that carries any other `migrate` is rejected. Blocks below
+  1,150,000 replay as they were produced.
+
+The producer's API (`/api/v1/tasks/actions/submit-signed`) has refused such
+a migrate with 403 since node release rc1110 (2026-11-12 21:25 UTC), and
+the producer never puts a refused action in a block, so full nodes on older
+releases keep following until they upgrade. Code:
+`QSDM/source/pkg/chain/task_migrate_auth.go`. Details:
+[Task registry](QSDM_TASK_REGISTRY.md),
+[Network upgrades](NETWORK_UPGRADES.md).
 
 ## Other checks on every transfer
 

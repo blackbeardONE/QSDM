@@ -246,6 +246,15 @@ func (s *TaskStateStore) applyAction(action TaskAction, allowLegacyResourceProof
 		return nil, nil
 	}
 
+	// From TaskMigrateAuthActivationHeight, `migrate` is a manager-only catalog
+	// mutation (task_migrate_auth.go). Checked before the task is looked up
+	// with getOrCreateTaskLocked, so a refused action creates nothing.
+	if action.Action == "migrate" && currentHeight >= TaskMigrateAuthActivationHeight {
+		if err := CheckTaskMigrate(s.peekTaskLocked, action); err != nil {
+			return nil, err
+		}
+	}
+
 	task := s.getOrCreateTaskLocked(action.TaskID)
 	participant := task.Participants[action.Sender]
 	if participant.Sender == "" {
