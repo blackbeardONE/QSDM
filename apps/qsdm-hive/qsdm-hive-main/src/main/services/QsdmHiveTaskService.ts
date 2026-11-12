@@ -40,6 +40,7 @@ import {
   normalizeQsdmTaskType,
   throwDetailedError,
 } from 'utils';
+import { TaskMigrationWalk } from 'utils/taskMigrationWalk';
 
 import { ATTENTION_TASK_ID, TASK_CONTRACT_ID } from '../../config/node';
 import {
@@ -1660,13 +1661,24 @@ export class QsdmHiveTaskService {
     return Promise.all(taskDataPromises);
   }
 
-  async findLatestTaskVersion(taskId: string): Promise<string | null> {
+  async findLatestTaskVersion(
+    taskId: string,
+    walk: TaskMigrationWalk = new TaskMigrationWalk()
+  ): Promise<string | null> {
+    // A pointer back to a task already seen (a cycle) or to another manager's
+    // task is not an upgrade: see utils/taskMigrationWalk.
+    if (!walk.enter(taskId)) {
+      return null;
+    }
     const task = await this.getTaskState(taskId, {
       withAvailableBalances: false,
     });
+    if (!walk.sameManager(task.task_manager)) {
+      return null;
+    }
 
     if (task.migrated_to) {
-      return this.findLatestTaskVersion(task.migrated_to);
+      return this.findLatestTaskVersion(task.migrated_to, walk);
     }
     if (!task.is_active) {
       return null;
@@ -1730,7 +1742,8 @@ export class QsdmHiveTaskService {
 
           if (taskData.migrated_to) {
             const newTaskVersionId = await this.findLatestTaskVersion(
-              taskData.migrated_to
+              taskData.migrated_to,
+              new TaskMigrationWalk(pubkey, String(taskData.task_manager ?? ''))
             );
             if (newTaskVersionId) {
               upgradeableTaskIds.push(newTaskVersionId);
