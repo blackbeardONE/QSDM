@@ -164,7 +164,12 @@ The [explorer](https://qsdm.tech/explorer.html) and the
   producer's own mining records (reconciled clean; mining closed, then
   reopened) and the hand-back to a new key. The mining audit passed: every
   proof was paid exactly once. A live turn of block production to it has not
-  happened yet; it is the next step.
+  happened yet; it is the next step. Since 2026-11-13 its status is public:
+  the producer's server reads it from the node every 15 seconds and serves it
+  as `https://qsdm.tech/second-node/status.json` (its tip, version, uptime and
+  role, when it was read, and whether the read worked), and qsdm.tech's
+  [network page](https://qsdm.tech/network.html) shows it next to the
+  producer.
 - **Peer-to-peer.** Since 2026-11-02 the producer accepts libp2p peers from
   the internet on port 4001
   (`/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`,
