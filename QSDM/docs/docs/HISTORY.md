@@ -31,6 +31,8 @@ no longer updated. This repository took over on 22 April 2026.
 | 2026-11-07 | Release rc1107: the producer starts faster, and a full node needs 6 GB of RAM instead of 10 to 12 (full-node release fullnode-rc1107). |
 | 2026-11-08 | Release rc1108: the producer's memory stays flat between restarts; full nodes get the same with fullnode-rc1108. |
 | 2026-11-08 | A second node: the project's full node in Japan verifies every block, set up with the one-command installer. |
+| 2026-11-11 | A copy of the Japan node practiced a full takeover with the producer's own mining records and the hand-back to a new key; full nodes can follow a change of block maker. |
+| 2026-11-12 | Release rc1109: Go 1.26.11 (a fix in Go's web server) and a faster start; full nodes get the same with fullnode-rc1109. |
 
 ## What has not changed since 2025
 

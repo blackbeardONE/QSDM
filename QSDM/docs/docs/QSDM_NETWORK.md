@@ -2,7 +2,7 @@
 
 **Status:** Public pilot network (pre-mainnet), one block producer run by the project
 
-**Running release:** reported live by `https://api.qsdm.tech/api/v1/status` (`hardened-legacy-20261108-d7ffcd4-hl2-edge-go12610-ids-pqe-rc1108` since 8 November 2026)
+**Running release:** reported live by `https://api.qsdm.tech/api/v1/status` (`hardened-legacy-20261112-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1109` since 12 November 2026)
 **Public gateway:** `https://api.qsdm.tech/api/v1`
 
 The latest downloadable candidate and a running validator can differ during a

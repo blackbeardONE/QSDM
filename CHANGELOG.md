@@ -203,6 +203,22 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-12: release rc1109.** The producer runs
+  `hardened-legacy-20261112-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1109` since
+  07:51 UTC (mining paused 07:46-07:51 UTC): rc1108 built with Go 1.26.11
+  and golang.org/x/net v0.62.0 (the two 2026-11-11 changes below), plus the
+  2026-11-10 journal read-ahead (the chain loads faster at start). The restart paused mining 5 minutes, as for rc1108; the node loaded the chain in about 3 and a half of them.
+  The full-node release `fullnode-rc1109` is the same `qsdm`. No consensus
+  change, and no block hash changes.
+
+- **2026-11-12: full-node release fullnode-rc1109.** The GitHub release
+  `fullnode-rc1109` is the exact `qsdm` the block producer runs (release
+  rc1109), with the same snapshot and checkpoint as fullnode-rc1108: Go
+  1.26.11, golang.org/x/net v0.62.0 and the faster start. A node on
+  fullnode-rc1019, fullnode-rc1107 or fullnode-rc1108 upgrades by replacing
+  its `qsdm` binary
+  ([Run a full node](QSDM/docs/docs/RUN_A_FULL_NODE.md#keeping-up-to-date)).
+
 - **Go 1.26.11 (2026-11-11).** `QSDM/source` and the three Dockerfiles build
   with Go 1.26.11, which fixes GO-2026-6859 in `net/http`: an HTTP/1 server
   that limits request bodies with `MaxBytesReader` can crash when a handler
