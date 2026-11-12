@@ -203,6 +203,24 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-12: the documentation describes the network as it runs now.**
+  About 45 documents in this repository and 11 pages of qsdm.tech were checked
+  against the state of 12 November 2026 and brought up to date: release
+  rc1109 and Go 1.26.11; the project's full node in Japan as the standby block
+  maker, with the hand-over rehearsals of 10 and 11 November and the next step,
+  a live turn to it; the plan for miners to produce blocks in place of
+  independent validators (decision of 2026-10-19), also where the docs list the
+  [mainnet gates](QSDM/docs/docs/ROADMAP.md#mainnet-gates);
+  the Hive changes that are merged but wait for the next Hive release; the
+  miner error `gpu_uuid already bound to an active enrollment` (new rows in
+  [Mining today](QSDM/docs/docs/MINING_TODAY.md) and the
+  [Miner quickstart](QSDM/docs/docs/MINER_QUICKSTART.md)); the browser
+  extension's store review; Hive 1.4.17's end date, which has passed; and the
+  Go version for building from source. qsdm.tech's network page showed a
+  "Backup node" box that read an address offline since October; it now
+  describes the full node in Japan, and the whitepaper's facts are as of 12
+  November 2026.
+
 - **2026-11-12: release rc1109.** The producer runs
   `hardened-legacy-20261112-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1109` since
   07:51 UTC (mining paused 07:46-07:51 UTC): rc1108 built with Go 1.26.11
@@ -226,8 +244,9 @@ from 2026-04-22 on.
   limits every request body that way, around a `TimeoutHandler` whose own
   goroutine reads the body, so a slow upload that passes the limit just as
   the 30-second timeout fires could meet the race. govulncheck reported it the
-  day the advisory came out. The producer and the full-node release get it
-  with their next build. The same day `golang.org/x/net` moved to v0.62.0
+  day the advisory came out. The producer and the full-node release got it
+  with their next build, on 2026-11-12 (release rc1109 and `fullnode-rc1109`).
+  The same day `golang.org/x/net` moved to v0.62.0
   (CVE-2026-78661, a denial of service in `x/net/html`): the node does not use
   that package (`x/net` comes in through `x/crypto/acme/autocert`), but the
   container scan flags the module version.
@@ -263,7 +282,9 @@ from 2026-04-22 on.
   binary, as the guide describes: it answered again 4.5 minutes after the stop,
   at the network's tip and with the same blocks. Its memory (RssAnon) was 2.9
   GiB before, after 177,817 blocks appended on fullnode-rc1107, and 2.0 GiB
-  after the restart.
+  after the restart. On 12 November 2026 it moved to fullnode-rc1109 the same
+  way and answered again 2 minutes 51 seconds after the switch, at block
+  1,087,781.
 
 - **2026-11-08: full-node release fullnode-rc1108.** The GitHub release
   `fullnode-rc1108` is the exact `qsdm` the block producer runs (release

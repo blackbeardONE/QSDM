@@ -1,11 +1,12 @@
 # Cryptographic Comparison: QSDM vs Major Blockchain Protocols
 
 > **Current status note (2026-10):** This is a historical document. QSDM today is a
-> public pilot network (pre-mainnet) run by a single block producer during recovery.
+> public pilot network (pre-mainnet) run by a single block producer.
 > CELL wallet transactions are signed with ML-DSA-87 (NIST FIPS 204); signed consensus
-> messages, independent validators and an independent external audit are still on the
-> roadmap. For what is safe to claim today, see [Capability Snapshot](CAPABILITY_SNAPSHOT.md)
-> and [Treasury Policy §9](TREASURY_POLICY.md#9-mainnet-release-gates).
+> is enforced from block 827,000 (12 October 2026). Independent validators are no longer
+> planned: since 2026-10-19 the plan is for miners to produce blocks, in stages. A published
+> security review is still to come. For what is safe to claim today, see [Network status](../docs/NETWORK_STATUS.md)
+> and [Treasury Policy §9](../docs/TREASURY_POLICY.md#9-mainnet-release-gates).
 
 ## Executive Summary
 

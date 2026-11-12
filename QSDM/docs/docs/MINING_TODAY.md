@@ -47,8 +47,8 @@ the network rejects proofs without one.
 > **Coming from Hive 1.4.20 (Windows) or 1.4.17 (Linux)?** Those versions
 > cannot update themselves to 1.4.22 because the release signing key was
 > rotated. Install 1.4.22 once by hand; your wallet and settings are kept.
-> Hive 1.4.17 stops receiving updates after 9 November 2026 and 1.4.20 after
-> 19 December 2026, so install by hand before those dates.
+> Hive 1.4.17 stopped working after 9 November 2026, and 1.4.20 stops after
+> 19 December 2026: install 1.4.22 by hand.
 
 ## 2. Create or restore your wallet
 
@@ -67,7 +67,7 @@ proof with your wallet automatically (the owner signature). If the wallet is
 locked, Hive shows "Unlock your QSDM wallet in Hive to mine." and does not
 start the miner.
 
-## 3. Enroll your GPU (when enrollment is open)
+## 3. Enroll your GPU
 
 Start the **QSDM Miner** task. If the GPU is not enrolled, Hive asks
 **Enroll this NVIDIA miner?** and offers two ways to put up the 10 CELL bond:
@@ -79,6 +79,10 @@ Start the **QSDM Miner** task. If the GPU is not enrolled, Hive asks
 
 Hive then creates a signed enrollment (`qsdm/enroll/v2`) for this GPU and your
 wallet and submits it for you. You do not need to edit any files.
+
+One GPU can back only one active enrollment. If Hive says
+`gpu_uuid already bound to an active enrollment`, see
+[Troubleshooting](#troubleshooting).
 
 The bond stays locked while the GPU is enrolled. Unenrolling starts an
 unbonding period of 201,600 blocks (about 23 days at 10-second blocks) before the CELL is
@@ -129,6 +133,7 @@ Each proof says which NVIDIA attestation it carries:
 | "QSDM protocol mining requires NVIDIA Turing or newer (7.5+)." | The GPU is too old for protocol v2. |
 | Hive cannot read the GPU | Make sure `nvidia-smi` runs in a terminal; update the NVIDIA driver. |
 | Enrollment fails | Enrollment has been open since 17 October 2026. **Lock CELL now** needs at least 10.001 CELL in the wallet; with less, choose **Use mining earnings**. Check [Network status](NETWORK_STATUS.md) for any change. |
+| Enrollment fails with `gpu_uuid already bound to an active enrollment` | One GPU can back only one active enrollment, and this GPU already has one. Hive 1.4.22 makes a new node ID after a Windows reinstall, a new PC name, a lost `.qsdm` folder or another wallet, and the chain refuses the second enrollment. With Hive 1.4.22: if the old `.qsdm` folder still exists, copy its `miner.toml` and `miner-hmac.key` back and restart Hive. Otherwise, the next Hive release finds and reuses the enrollment by itself when Hive holds the wallet that owns it. An enrollment owned by another wallet can be ended only by that wallet (unenroll). After an unenroll the GPU can enroll again at once; the old bond is held for 201,600 blocks (about 23 days) and then returns to its owner. |
 | Miner reports `mining_unavailable` (HTTP 503) | Mining is paused, for example while the producer restarts. Windows renew automatically, so mining reopens by itself; check [Network status](NETWORK_STATUS.md). |
 | Many `429` responses in the miner log | You hit the per-IP rate limit, for example with several rigs behind one internet address. Run fewer rigs per address. |
 | 1.4.20 / 1.4.17 does not offer 1.4.22 | Expected. Install 1.4.22 by hand once. |

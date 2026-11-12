@@ -2,7 +2,7 @@
 
 **Last Updated:** November 2026 · Running release **hardened-legacy-20261112-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1109** · Hive **1.4.22** · Edge Control **1.3.7**
 
-QSDM (Quantum-Secure Dynamic Mesh) is a mesh ledger with post-quantum (ML-DSA-87) wallet signatures whose native coin is **Cell (CELL)**. It currently runs as a public pilot network (pre-mainnet) with Proof-of-Entanglement transfers and one block producer run by the project. Validators are designed to run PoE + BFT consensus; miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
+QSDM (Quantum-Secure Dynamic Mesh) is a mesh ledger with post-quantum (ML-DSA-87) wallet signatures whose native coin is **Cell (CELL)**. It currently runs as a public pilot network (pre-mainnet) with Proof-of-Entanglement transfers and one block producer run by the project. Instead of a set of independent validators, the plan since 19 October 2026 is for miners to produce blocks, in stages (designed, not built yet); miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
 
 For the current state of the public network, see [Network status](NETWORK_STATUS.md).
 
@@ -22,7 +22,7 @@ it is not the CELL network gateway or another Hive client.
 ## Ledger & consensus
 
 - **Proof-of-Entanglement (PoE) + BFT** on a dynamic mesh is the consensus design; today one block producer run by the project makes the blocks. Every node checks each transfer's signature under the sender's own key, and the PoE parent rules (every transfer names 2 to 10 committed transactions as parents) are enforced from block 816,600 ([details](PROOF_OF_ENTANGLEMENT.md)).
-- **ML-DSA-87** wallet transaction signatures (NIST FIPS 204) with Zstd compression and batch signing. The generic P2P transaction-gossip verifier code still also accepts Ed25519, but the producer has no transaction gossip ingress, so it cannot be reached on the live chain; retirement is planned. Signed consensus is enforced from block 827,000.
+- **ML-DSA-87** wallet transaction signatures (NIST FIPS 204) with Zstd compression and batch signing. Ed25519-signed transactions are refused since 16 October 2026 (`ed25519_tx_accepted: false`); CELL stream session keys still use Ed25519 until a retirement height is set. Signed consensus is enforced from block 827,000.
 - **3D mesh validation**, rule-based quarantine, and staked reputation penalties.
 - **Dynamic submeshes** with fee thresholds, priority routing, and geotags.
 - **SQLite + Zstd** storage; **ScyllaDB** path available for high throughput.
@@ -31,14 +31,15 @@ it is not the CELL network gateway or another Hive client.
 ## CELL tokenomics
 
 - **Max supply 90,000,000 CELL, all from mining**, **0% founder allocation**, no genesis treasury, 4-year halvings.
-- No validator block subsidy. Transaction fees are **burned** (credited to no account) until independent validators produce blocks.
+- No validator block subsidy. Transaction fees are **burned** (credited to no account) while one producer, run by the project, makes the blocks.
 - Tokenomics surface on `GET /api/v1/status`.
 
 ## Node roles (enforced)
 
 - **Validator** — CPU-only, `mining_enabled=false`, public REST API, consensus.
+- **Full node** — a node with role `validator` that follows the producer over HTTPS and checks every block itself. Anyone can run one ([Run a full node](RUN_A_FULL_NODE.md)); since 11 November 2026 it can follow a change of block maker.
 - **Miner** — separate process/machine, NVIDIA GPU, HTTPS to validator `/api/v1/mining/*`.
-- No combined full-node mode.
+- No process both validates and mines.
 
 ## Mining (protocol v2)
 
@@ -51,7 +52,7 @@ it is not the CELL network gateway or another Hive client.
 ## Wallet & self-custody
 
 - Operator wallet API plus **`POST /api/v1/wallet/submit-signed`** self-custody path.
-- Browser wallet at `/wallet/` — client-side ML-DSA-87 keystore (WASM + WebCrypto).
+- Browser wallet at `/wallet/` — client-side ML-DSA-87 keystore (WASM + WebCrypto). Since 10 November 2026 the [web wallet](WEB_WALLET.md) also installs as a phone app.
 - QSDM Hive and `qsdmcli` support 24-word recovery-enabled ML-DSA-87 wallets;
   legacy JSON + passphrase wallets remain compatible.
 - `qsdmcli` for wallet new/restore/export/show/sign and task/governance helpers.
@@ -73,8 +74,10 @@ it is not the CELL network gateway or another Hive client.
 - Windows and Linux client for CELL wallets, signed tasks, mining, edge pools, and integrations.
 - Bundles native signer, console miner, CUDA solver, Edge Control/Agent, and the Mother Hive workspace.
 - One QSDM wallet serves Hive and connected websites. The Chrome, Edge, and Firefox extension packages reach the active Hive wallet while exact-origin permissions and per-action approvals keep the keystore and passphrase out of the browser.
+- Browser extension 0.6.0 was sent to the Chrome Web Store on 6 November 2026 and is still in review; no store listing is published.
 - Application Compute Gateway on `127.0.0.1:7742` for bounded local jobs.
 - Sky Fang MMORPG wallet-link task (earn-only CELL; no pay-to-win power). The task is not currently published in the on-chain catalog while the pilot network recovers.
+- From the first Hive release after 1.4.22 (merged, not in 1.4.22): crash records and "Save a diagnostics report…"; Hive keeps working through a qsdm.tech outage with the last signed release envelope it verified, until that envelope's `expires_at`, and ignores an envelope older than one it has already verified; and it reuses a GPU's existing miner enrollment.
 
 ## Edge compute pool
 
@@ -101,10 +104,9 @@ it is not the CELL network gateway or another Hive client.
 - Go SDK — `go get github.com/blackbeardONE/QSDM/QSDM/source/sdk/go`
   (source at `QSDM/source/sdk/go/`; it is its own Go module so the path
   resolves, since the parent module's declared path does not match its
-  location in the repo). JavaScript SDK: `qsdm-sdk` on npm. Current source
-  is **0.3.3**, including the corrected `/api/v1/transactions/{id}` route
-  and CELL Stream runtime; the public registry remains at **0.3.0** until
-  the normal authenticated release workflow publishes 0.3.3. Do not
+  location in the repo). JavaScript SDK: `qsdm-sdk` on npm. Version
+  **0.5.0** is both the current source and the npm latest, including the
+  corrected `/api/v1/transactions/{id}` route and CELL Stream runtime. Do not
   publish the superseded 0.3.1 audit-branch package.
 - WASM wallet module; OpenAPI + API reference; 25+ operator runbooks.
 - Docker / Kubernetes deploy manifests; signed Core releases (Sigstore) and SBOM; Hive installers are signed with the QSDM v2 release key (see [Downloads and verification](DOWNLOADS_AND_VERIFICATION.md)).

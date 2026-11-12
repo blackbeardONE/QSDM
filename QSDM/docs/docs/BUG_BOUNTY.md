@@ -54,7 +54,7 @@ Good-faith research that follows these rules is covered by the safe harbour in
   that is not yours by accident, stop, do not copy it, and tell us.
 - **No denial of service against the live network.** Do not flood, load-test
   or crash the live block producer, the public API (`api.qsdm.tech`), the
-  website, the backup node or any relay. Show availability bugs locally; a
+  website, the project's full node in Japan or any relay. Show availability bugs locally; a
   description plus a local reproduction is enough.
 - **No live exploitation of mining or settlement.** Do not submit forged,
   replayed or duplicate mining proofs, enrollments or edge settlements to the
@@ -77,7 +77,7 @@ component list below follows the [community review scope](COMMUNITY_REVIEW.md#2-
 
 | # | Component | In scope | Out of scope |
 |---|---|---|---|
-| C1 | **Consensus and block authentication** | ML-DSA-87 block, vote, certificate and evidence signatures; the producer allowlist and producer transition; height-gated enforcement (signed consensus from 827,000); anything that makes an honest follower accept an unsigned or wrong-producer block, or makes two honest nodes compute different state (a fork) | Censorship or reordering by the single producer (an accepted pilot limitation); the multi-validator BFT library code that is not wired into production, except as "future" informational reports |
+| C1 | **Consensus and block authentication** | ML-DSA-87 block, vote, certificate and evidence signatures; the producer allowlist and producer transition; the block-maker schedule that full nodes take from qsdm.tech/fullnode.html (`install-full-node.sh --update-schedule`); height-gated enforcement (signed consensus from 827,000); anything that makes an honest follower accept an unsigned or wrong-producer block, or makes two honest nodes compute different state (a fork) | Censorship or reordering by the single producer (an accepted pilot limitation); the multi-validator BFT library code that is not wired into production, except as "future" informational reports |
 | C2 | **Supply, issuance and mining rewards** | The mining admission guard, durable proof store and payout ledger; invariants I1–I7; crash recovery and replay; the emission schedule and the 90,000,000 CELL cap; anything that mints above the schedule, pays a reward twice, or pays the wrong recipient | Choices of emission parameters (policy, not a bug); the size of the synthetic issuance account's bookkeeping balance (a known issue, see §3.2) unless you can turn it into issuance above the schedule |
 | C3 | **Mining protocol v2, attestation and enrollment** | Proof verification; `nvidia-cc-v1` and `nvidia-hmac-v1` verifiers; enrollment, bond and unenrollment; the enrollment admission switch; per-owner and global caps; latches that an anonymous client can trip | The GPU miner kernels and their performance; mining on hardware other than NVIDIA GPUs (not supported) |
 | C4 | **Wallets and transaction signatures** | ML-DSA-87 signing and verification (FIPS 204 via Cloudflare CIRCL); signature malleability or wrong-key acceptance; nonces and replay; keystore encryption (PBKDF2-SHA-256, AES-256-GCM); recovery phrases; account login challenges; `qsdmcli`; key handling and signing in the web wallet and in QSDM Hive's wallet | Attacks that need malware already on the victim's device, a stolen passphrase, or a user pasting attacker code into the browser console |
@@ -133,7 +133,8 @@ path with a greater impact than described here.
    producer transition takes precedence.
 8. The producer's P2P port is public since 2 November 2026. Its connection,
    stream and block-request limits come from releases rc1017 and rc1101 and are
-   not yet in `QSDM/source`.
+   in `QSDM/source` since 4 November 2026 (opt-in `p2p_limits_enabled`, on at
+   the producer; see [P2P limits](P2P_LIMITS.md)).
 9. Rate limits for some routes are enforced at the reverse proxy, not in the
    node.
 10. Core releases are protected by reproducible builds and `SHA256SUMS`; a

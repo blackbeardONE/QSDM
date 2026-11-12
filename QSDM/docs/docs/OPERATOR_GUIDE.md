@@ -33,10 +33,10 @@ replicated byte-for-byte across every validator that has finished its
 initial sync.
 
 > **Today (pilot network):** the design above is the target. Right now the
-> chain is produced by one block producer run by the project, with a
-> backup node following it, and `GET /api/v1/status` may report `peers: 0`.
-> Independent validators are on the roadmap; running one is how you help
-> get there.
+> chain is produced by one block producer run by the project, with the
+> project's full node in Japan following it as the standby block maker (a hand-over was rehearsed on copies of it but is not live yet), and `GET /api/v1/status` may report `peers: 0`.
+> There is no validator set to join: since 19 October 2026 the plan is for miners to produce blocks, in stages
+> (designed, not built). Running a [full node](RUN_A_FULL_NODE.md) is how you help.
 
 ```
                  ┌─────────────────────────────────────────────┐
@@ -71,8 +71,8 @@ initial sync.
    rather than by P2P block requests alone. It is the only public peer.
    Anyone can run a full node that verifies every block and follows the
    chain over HTTPS ([Run a full node](RUN_A_FULL_NODE.md), since
-   19 October 2026). Block production by miners is the next step on the
-   [`ROADMAP.md`](./ROADMAP.md); [`NODE_ROLES.md` §3.2](./NODE_ROLES.md)
+   19 October 2026). The next step on the
+   [`ROADMAP.md`](./ROADMAP.md) is a live turn of block production to the standby block maker (the project's full node in Japan); block production by miners follows. [`NODE_ROLES.md` §3.2](./NODE_ROLES.md)
    describes the multi-validator design.
 2. **Public REST endpoint.** Miners, wallets, and Hive call
    `/api/v1/*` on this hostname. Anyone can stand up their own
@@ -145,7 +145,7 @@ rationale.
 
 | You want to… | Run this | Hardware | Reward |
 |---|---|---|---|
-| Secure the chain (not yet open on the pilot network) | **Validator** | CPU-only VPS | Transaction fees once independent validators produce blocks; fees are burned today |
+| Secure the chain (not yet open on the pilot network) | **Validator** | CPU-only VPS | Transaction fees in the original design; fees are burned today |
 | Mint new Cell supply | **Miner** | NVIDIA GPU (see §3) | Newly-issued Cell per block |
 | Do both | **Two separate machines** running two separate binaries | 1 × CPU VPS + 1 × GPU rig | Both |
 
@@ -181,8 +181,8 @@ end-to-end. The critical bits:
    It answers block requests within a budget (one per peer every 2 s), so
    keep `QSDM_CHAIN_SYNC_URLS` for catching up. It is the only public
    peer; full nodes follow the chain over HTTPS
-   ([Run a full node](RUN_A_FULL_NODE.md)), and block production by miners
-   is the next step (see [`ROADMAP.md`](./ROADMAP.md)).
+   ([Run a full node](RUN_A_FULL_NODE.md)). The next step is a live turn of block production to the standby block maker; block production by miners
+   follows (see [`ROADMAP.md`](./ROADMAP.md)).
    You can add nodes you operate yourself (see §2.3).
 3. Start `qsdm-validator` under systemd, expose `:4001/tcp` to the
    internet, put Caddy in front of `:8080` for TLS.
@@ -227,7 +227,7 @@ power/thermal budget. They are not an earnings estimate.
 
 | Tier | Hardware | Relative hashrate | Practical use | NGC attestation eligible? |
 |---|---|---|---|---|
-| **Reference CPU** | Any x86-64 with Go 1.25+, no GPU | Not accepted on the live network | Protocol conformance and self-test only | No (no GPU to attest) |
+| **Reference CPU** | Any x86-64 with Go 1.26.11 or newer, no GPU | Not accepted on the live network | Protocol conformance and self-test only | No (no GPU to attest) |
 | **Entry NVIDIA (RTX 3050 / 3060)** | CUDA 11+, NVIDIA Container Toolkit | Entry | Home miner | **Yes (free NGC tier)** |
 | **Mid-range NVIDIA (RTX 3080 / 4070)** | CUDA 11+ | Higher | Dedicated home miner | **Yes (free NGC tier)** |
 | **High-end NVIDIA (RTX 4090 / H100-class)** | CUDA 12+ | Highest | Rack-grade | **Yes (free NGC tier)** |

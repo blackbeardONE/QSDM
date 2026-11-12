@@ -7,8 +7,10 @@ by GPU mining, on NVIDIA hardware today, through the **QSDM Hive** desktop app.
 
 QSDM runs as a **public pilot network (pre-mainnet)**: transfers follow the
 **Proof-of-Entanglement** rules, and **one block producer run by the project**
-makes the blocks. The design aims at many independent validators;
-that part is not active yet. [Network status](NETWORK_STATUS.md) shows exactly
+makes the blocks. Since 19 October 2026 the plan is for miners to produce
+blocks, in stages; that is designed, not built. Copies of the project's full
+node in Japan, the standby block maker, have rehearsed taking over block
+production; it has not taken over live yet. [Network status](NETWORK_STATUS.md) shows exactly
 what runs today.
 
 ## The pieces
@@ -24,8 +26,8 @@ what runs today.
 ## CELL in numbers
 
 - Max supply **90,000,000 CELL**, all from mining. No genesis treasury and no
-  premine. Transaction fees are burned (credited to no account) until
-  independent validators produce blocks.
+  premine. Transaction fees are burned (credited to no account) while
+  one producer, run by the project, makes the blocks.
 - 10 second target block time; the block reward halves about every four years.
 - 8 decimals; the smallest unit is called *dust* (1 CELL = 100,000,000 dust).
 

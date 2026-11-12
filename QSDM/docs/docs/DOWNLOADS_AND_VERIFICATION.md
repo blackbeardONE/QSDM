@@ -27,11 +27,17 @@ validator and home gateway builds) come with their own `SHA256SUMS` files.
 > build. It is not the release that runs the public pilot network today
 > (`hardened-legacy-20261112-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1109`, see [Network status](NETWORK_STATUS.md)).
 
+**Full node.** The GitHub release `fullnode-rc1109` (12 November 2026) carries
+the producer's exact `qsdm`. The one-command installer,
+`QSDM/scripts/fullnode/install-full-node.sh`, installs the release that
+[qsdm.tech/fullnode.html](https://qsdm.tech/fullnode.html) names. A full node
+needs 6 GB of RAM. See [Run a full node](RUN_A_FULL_NODE.md).
+
 > [!IMPORTANT]
 > **Upgrading from Hive 1.4.20 (Windows) or 1.4.17 (Linux):** install 1.4.22 by
 > hand once. Those versions trust the previous release key, which was rotated, so
 > they cannot verify 1.4.22 on their own. Your wallet and settings are kept.
-> Hive 1.4.17 stops working after 9 November 2026 and 1.4.20 after
+> Hive 1.4.17 stopped working after 9 November 2026; 1.4.20 stops after
 > 19 December 2026.
 
 ## Check the SHA-256 (everyone)

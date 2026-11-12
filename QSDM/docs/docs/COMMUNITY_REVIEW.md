@@ -35,8 +35,8 @@ unchanged for community review.
 
 | | |
 |---|---|
-| Release | `hardened-legacy-20261016-d7ffcd4-hl2-edge-go1269-ids-pqe` (proposed) |
-| Source commit | `8d7b159` (proposed review commit) |
+| Release | `hardened-legacy-20261112-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1109`, live since 12 November 2026. The full-node release `fullnode-rc1109` on GitHub carries the same `qsdm` |
+| Source commit | `8d7b159` (proposed review commit). The scope was prepared for release `hardened-legacy-20261016-d7ffcd4-hl2-edge-go1269-ids-pqe` at this commit |
 | Go module | `src/` in the review export (`QSDM/source/` in the public repository) |
 | Size | About 145,000 lines of non-test Go in total; the core review set (ranks 1–7 below) is about 45,000–55,000 lines |
 
@@ -76,6 +76,7 @@ network**; see the [rules of engagement](BUG_BOUNTY.md#2-rules-of-engagement).
 | Mining submission | Miners, enrolled or not | The admission guard, per-owner limits, invariants I1–I7 |
 | P2P (libp2p) | Peers | StrictSign pubsub, static bootstrap, reputation bans. The producer's P2P port (4001) is public since 2 November 2026, with connection, stream and block-request limits, and the producer drops transaction gossip |
 | Block acceptance on followers | The producer and any gossip or HTTP source | Producer transition and signature, the signed-consensus gate, full re-execution, Proof-of-Entanglement |
+| Block-maker schedule on full nodes | The schedule published on qsdm.tech/fullnode.html, or a file passed with `--producer-schedule` | The installer (`install-full-node.sh`, also with `--update-schedule`) takes a schedule only if it continues the node's own |
 | Edge relay settlement | Relays, workers, Mother Hive | ML-DSA-87 settlement proof, authorized relay IDs in the task manifest, replay maps |
 | Loopback-only services | LAN and internet | Edge control, the edge-agent relay, faucet, treasury signer URL and dashboard bind to loopback by default |
 | Release supply chain | Module sources, distribution | Pinned image digest, offline module proxy, `-mod=readonly`, two-build bit identity, `SHA256SUMS` |
@@ -131,13 +132,20 @@ The network runs an untagged "hardened-legacy" build. The follower release
 tooling rebuilds that exact `qsdm` bit for bit, so a reviewer can check that
 the binary matches the source they read.
 
-**Toolchain (pinned):**
+**Toolchain (pinned), release rc1109:**
 
-- Go `1.26.9` (`go.mod`), inside
+- Go `1.26.11` (`GOTOOLCHAIN=go1.26.11`, fetched from the offline module
+  proxy), inside
+  `docker.io/library/golang@sha256:23ce71337b726608afb1bc00986e630a05034a87a87ea1fc2cd1ae5cf33387eb`
+  (golang 1.26.10-bookworm, gcc 12.2.0), run by Podman with the network off.
+- `GOFLAGS=-mod=readonly CGO_ENABLED=1`, `-trimpath`, `-buildvcs=false`,
+  build tags `validator_only,dilithium_circl`. Two builds compared
+  bit-identical.
+- Each follower release records its own toolchain in its
+  `follower-manifest.json`. The October review build used Go `1.26.9`
+  (`GOTOOLCHAIN=local`) inside
   `docker.io/library/golang@sha256:bcef992b77b1e2031aaaa51da75cebc32da8e9c182e12e633ea79023c79d9eff`
-  (golang 1.26.9-bookworm, gcc 12.2), run by Podman with the network off.
-- `GOTOOLCHAIN=local GOFLAGS=-mod=readonly CGO_ENABLED=1`, `-trimpath`,
-  `-buildvcs=false`, build tags `validator_only,dilithium_circl`.
+  (golang 1.26.9-bookworm).
 - Modules come from an offline module cache; `go.sum` still verifies every
   module. Without the cache, download modules with checksum verification
   (`GOSUMDB` on). If your build then does not reproduce the published

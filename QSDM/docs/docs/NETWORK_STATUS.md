@@ -6,9 +6,10 @@ live state yourself. It is reviewed with every release; the numbers below are
 examples from October 2026, and the live values are always in the status API.
 
 > [!IMPORTANT]
-> Treat balances and history as pilot data. Mainnet needs the release gates in
+> Treat balances and history as pilot data. Mainnet needs the
+> [mainnet gates](ROADMAP.md#mainnet-gates) and the release gates in
 > [Treasury policy §9](TREASURY_POLICY.md#9-mainnet-release-gates) to close
-> first, including independent validators and a published security review
+> first, including decentralised block production and a published security review
 > (today an open [community review with a bug bounty](COMMUNITY_REVIEW.md);
 > no independent audit has been completed).
 
@@ -17,7 +18,7 @@ examples from October 2026, and the live values are always in the status API.
 | Topic | Today |
 |---|---|
 | Stage | Pilot network (pre-mainnet) |
-| Block production | A **single block producer**. Anyone can run a full node that verifies every block itself ([Run a full node](RUN_A_FULL_NODE.md)); since 8 November 2026 the project runs one on a second server, in Japan. Since 2 November 2026 the producer also accepts peer-to-peer (libp2p) connections on port 4001, with connection, stream and block-request limits (see [What is running](#what-is-running)); the status API's `peers` counts the peers connected to it. |
+| Block production | A **single block producer**. Anyone can run a full node that verifies every block itself ([Run a full node](RUN_A_FULL_NODE.md)); since 8 November 2026 the project runs one on a second server, in Japan. It is the standby block maker: on 10 and 11 November 2026 copies of it, sealed off from the network, rehearsed taking over block production, with the producer's mining records and a hand-back. Block production has not moved to it yet, and since 11 November 2026 full nodes can follow a change of block maker. Since 2 November 2026 the producer also accepts peer-to-peer (libp2p) connections on port 4001, with connection, stream and block-request limits (see [What is running](#what-is-running)); the status API's `peers` counts the peers connected to it. |
 | Block time | 10 second target |
 | Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL) by Hive, the web wallet and `qsdmcli` |
 | Other signatures | **Ed25519 transactions are refused since 16 October 2026** (status API `ed25519_tx_accepted: false`): only ML-DSA-87 signed transactions reach the chain. CELL stream session keys still accept Ed25519 until a stream retirement height is set (`stream_ed25519_session_keys_retired: false`). |
@@ -138,8 +139,9 @@ The [explorer](https://qsdm.tech/explorer.html) and the
   (2026-10-16) and reopened miner enrollment (2026-10-17); since rc1101 also
   a response budget for peer-to-peer block requests (one answer per peer
   every 2 s, 2 per second in total, duplicate blocks dropped before
-  verification), built with Go 1.26.10 (GO-2026-6809) and
-  klauspost/compress v1.18.7 (CVE-2026-63209). The base of this code is
+  verification) and klauspost/compress v1.18.7 (CVE-2026-63209). rc1101 was
+  built with Go 1.26.10 (GO-2026-6809), and rc1109 with Go 1.26.11
+  (GO-2026-6859). The base of this code is
   `QSDM/source` in this repository, which also has the peer-to-peer limits
   (opt-in with `p2p_limits_enabled`, switched on at the producer), the
   block-request budget ([P2P limits](P2P_LIMITS.md)), the Ed25519 retirement,
@@ -150,6 +152,19 @@ The [explorer](https://qsdm.tech/explorer.html) and the
   bootstrap for new full nodes
   ([Verified snapshot bootstrap](SNAPSHOT_BOOTSTRAP.md)). The other new
   features of the release candidates ship switched off.
+- **Second node.** The project's own full node on a second server in Japan
+  (12 GB of memory) was installed on 2026-11-08 with the one-command
+  installer. Since 2026-11-10 it checks itself against the network every 5
+  minutes and alerts the operators. It runs `fullnode-rc1109` since
+  2026-11-12: it answered again 2 minutes 51 seconds after the switch, at
+  block 1,087,781 (on 2026-11-09, with `fullnode-rc1108`, 4 minutes 23
+  seconds). It is the standby block maker. Copies of it, sealed off from the
+  network, rehearsed the hand-over: on 2026-11-10 a copy took over block
+  production, and on 2026-11-11 a copy rehearsed a full takeover with the
+  producer's own mining records (reconciled clean; mining closed, then
+  reopened) and the hand-back to a new key. The mining audit passed: every
+  proof was paid exactly once. A live turn of block production to it has not
+  happened yet; it is the next step.
 - **Peer-to-peer.** Since 2026-11-02 the producer accepts libp2p peers from
   the internet on port 4001
   (`/ip4/194.233.65.156/tcp/4001/p2p/12D3KooWHT2APYkMStuaiLZvto7ZmrPmUag4TStT7MryGn69feum`,
@@ -181,6 +196,9 @@ These parts are designed or implemented in the code but are not switched on for
 the live network. Documents that describe them are marked **Design** in these
 docs.
 
+- A live turn of block production to the standby block maker, the project's
+  full node in Japan. It was rehearsed on copies of that node on 2026-11-10
+  and 2026-11-11, sealed off from the network. It is the next step.
 - Multiple independent validators and BFT finality between them. This is in
   the code but no longer planned: since 2026-10-19 the plan is for miners to
   produce blocks, in stages (see the [Roadmap](ROADMAP.md)). Today one
@@ -201,13 +219,13 @@ See the [Roadmap](ROADMAP.md) for the order of work and
 ## Service availability
 
 Some public services are limited during the pilot. State
-on 2026-11-03:
+on 2026-11-12:
 
 | Service | State |
 |---|---|
 | Status, blocks, transactions, balances (read) | Available |
 | Signed wallet transfers (`POST /api/v1/wallet/submit-signed`) | Available |
-| Mining (work, challenge, submit) on `api.qsdm.tech` | Open to every enrolled miner (public mode since 2026-10-19) in 7-day (168-hour) windows that renew automatically, with caps per owner per 24-hour epoch and per-IP rate limits. The window open on 2026-11-03 ends 2026-11-08 07:32 UTC and the next one starts by itself. |
+| Mining (work, challenge, submit) on `api.qsdm.tech` | Open to every enrolled miner (public mode since 2026-10-19) in 7-day (168-hour) windows that renew automatically, with caps per owner per 24-hour epoch and per-IP rate limits. Each window starts the next one by itself. |
 | New mining enrollments | Open since 2026-10-17. QSDM Hive submits the signed enrollment; the 10 CELL bond is paid up front or from the first rewards. |
 | New account registration | Disabled during the pilot (HTTP 503) |
 | Signed task actions (`POST /api/v1/tasks/actions/submit-signed`) | Open since 2026-10-15. Built-in system task IDs are reserved: only the project's owner key can register them. |

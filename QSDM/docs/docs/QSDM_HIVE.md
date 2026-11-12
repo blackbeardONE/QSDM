@@ -30,6 +30,12 @@ do not hold a user wallet.
   7-day (168-hour) windows that renew automatically, with caps per owner per
   24-hour epoch. Enrollment is open (since 17 October 2026). See
   [Mining today](MINING_TODAY.md) for the step-by-step mining guide.
+- Waiting for the next Hive release (merged, not in 1.4.22): crash records and
+  **Save a diagnostics report…**; working through a qsdm.tech outage with the
+  last signed release record Hive verified, until that record's own expiry,
+  and ignoring a record older than one it already verified (see
+  [Required updates](#required-updates)); and reusing a GPU's existing miner
+  enrollment instead of enrolling it twice.
 
 ## Install path
 
@@ -55,7 +61,8 @@ release. Required updates cannot be disabled in settings. Hive 1.4.21 and newer 
 release records against the v2 release key; see
 [QSDM-native release signing](QSDM_NATIVE_RELEASE_SIGNING.md).
 
-Hive keeps working when qsdm.tech is down or your computer is offline. It saves
+From the first Hive release after 1.4.22, Hive keeps working when qsdm.tech is
+down or your computer is offline. It saves
 the signed release record after every successful check. When it cannot check
 the website, it checks the saved record again in full and uses it until the
 record's own expiry date. If the saved record names a different version, the
@@ -153,7 +160,8 @@ approved store listing, so consumers will not be sent a generic ZIP. Until the
 stores approve those listings, unsigned ZIPs remain under **Advanced manual
 installation** for developers and reviewers only. Chromium manual packages
 must be extracted and loaded in Developer mode; normal Firefox requires a
-Mozilla-signed XPI.
+Mozilla-signed XPI. Extension 0.6.0 was sent to the Chrome Web Store on
+6 November 2026 and is still in review; no store listing is published yet.
 
 Extension 0.4.0 added the first-run wallet handoff. A supported site requests
 `qsdm_openOnboarding`; the extension background worker opens its own

@@ -453,8 +453,8 @@ Not cacheable (`Cache-Control: no-store`); it expires after about 60 seconds.
 
 Body: one proof as canonical JSON per Mining protocol v2, including its
 `attestation` object (`type` is `nvidia-hmac-v1` or `nvidia-cc-v1`). The
-`miner_addr` must be the owner of an active enrollment. Hive 1.4.22 also adds
-the owner's ML-DSA-87 signature.
+`miner_addr` must be the owner of an active enrollment. Every proof must carry
+the enrollment owner's ML-DSA-87 operator signature; Hive 1.4.21 and newer add it.
 
 | Status | Body |
 |---|---|

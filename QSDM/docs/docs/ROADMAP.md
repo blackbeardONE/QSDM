@@ -26,7 +26,14 @@ ready and is announced on [Network status](NETWORK_STATUS.md) and in the
   from 2026-10-22).
 - Anyone can run a full node that verifies every block: a signed full-node release,
   a verified chain snapshot and HTTP sync ([Run a full node](RUN_A_FULL_NODE.md)).
+- The project's full node in Japan (since 2026-11-08, on fullnode-rc1109 since
+  2026-11-12) is the standby block maker. A full takeover with the producer's
+  mining records and the hand-back to a new key were rehearsed on copies of it
+  on 2026-11-10 and 2026-11-11, sealed off from the network; block production
+  has not moved to it yet. Since 2026-11-11 full nodes can follow a change of
+  block maker.
 - Wallet transactions signed with ML-DSA-87.
+- The [web wallet](WEB_WALLET.md) installs as a phone app (since 2026-11-10).
 
 ## Done in October 2026
 
@@ -40,18 +47,32 @@ Each item is a consensus rule on the live chain. Details and dates are in
 | **Relay-only paid edge tasks**: paid edge tasks settle only through an authorized settlement relay | Block 833,800 (2026-10-13 13:21 UTC) |
 | **Reserved built-in task IDs** and the public signed task-action route | Node release of 2026-10-15 |
 
+## Done in November 2026
+
+These are releases and operations, not consensus rules. Details and dates are
+in [Network upgrades](NETWORK_UPGRADES.md) and [Network status](NETWORK_STATUS.md).
+
+| Step | Since |
+|---|---|
+| **Public peer-to-peer**: the producer accepts libp2p peers on port 4001, with limits | 2026-11-02 |
+| **6 GB full nodes**: a full node needs 6 GB of RAM | Full-node release of 2026-11-07 |
+| **A second node**: the project's full node in Japan verifies every block, set up with the one-command installer | 2026-11-08 |
+| **Phone wallet**: the [web wallet](WEB_WALLET.md) installs as a phone app | 2026-11-10 |
+| **Hand-over rehearsals**: copies of the project's full node in Japan, sealed off from the network, took over block production, with the producer's mining records and the hand-back to a new key | 2026-11-10 and 2026-11-11 |
+| **Full nodes follow a change of block maker**: the installer takes the block-maker schedule from qsdm.tech/fullnode.html and puts it into a running node | 2026-11-11 |
+
 ## Next
 
 | Step | What it means for you |
 |---|---|
 | **Retire Ed25519 stream session keys** | Ed25519 transactions are already refused (since 2026-10-16, `ed25519_tx_accepted: false`). CELL stream session keys, which sign stream usage receipts, are still Ed25519. From a published height (`stream_ed25519_retirement_height`) a stream open, which registers such a key, is refused; streams opened before it can still take receipts, settle and close. The rule is in the code; no height is set yet. |
-| **Standby producer** | A second, independently run producer that can take over block production. |
+| **Live turn to the standby block maker** | Block production moves for real to the project's full node in Japan, as rehearsed on copies of it on 2026-11-10 and 2026-11-11. This is the next step. Full nodes then take the new block-maker schedule from qsdm.tech/fullnode.html ([Run a full node](RUN_A_FULL_NODE.md#when-the-block-maker-changes)). |
 | **Block production by miners** | Miners produce blocks, in stages, instead of a set of independent validators (decision of 2026-10-19). The single producer's role ends with the last stage. Designed, not built; each stage is a published network upgrade with at least 7 days' notice. |
 
 ## Mainnet gates
 
-Mainnet is declared only after all of these are done (see
-[Treasury policy §9](TREASURY_POLICY.md#9-mainnet-release-gates)):
+Mainnet is declared only after all of these are done, together with the
+release gates of [Treasury policy §9](TREASURY_POLICY.md#9-mainnet-release-gates):
 
 1. Decentralised block production: the miners-produce-blocks plan in production. (Before the
    decision of 2026-10-19 this gate read "multiple independent validators in production".)

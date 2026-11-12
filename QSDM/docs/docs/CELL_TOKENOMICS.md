@@ -4,7 +4,7 @@
 > owner 2026-10-16 and approved in writing 2026-10-19; v1.1 (2026-11-01) drops the counsel review.** Maximum supply
 > 90,000,000 CELL, all from mining; no genesis treasury (the earlier
 > 10,000,000 CELL treasury proposal is withdrawn); transaction fees are burned
-> (credited to no account) until independent validators produce blocks;
+> (credited to no account) while one producer, run by the project, makes the blocks;
 > mainnet continues the current chain through a published, deterministic
 > migration. Policy SHA-256, signature, migration manifest hash and fork
 > height: not yet published (they will be recorded here). Audit row `tok-01`
@@ -63,7 +63,7 @@ output (`amount: 12345 dust`).
 | Mining emission | **90,000,000 CELL** over ~20 years |
 | Emission curve | halvings every 4 years (see §3) |
 | Validator block subsidy | **0** |
-| Transaction fees | **Burned:** 100% of fees are credited to no account until independent validators produce blocks (see §5) |
+| Transaction fees | **Burned:** 100% of fees are credited to no account while one producer, run by the project, makes the blocks (see §5) |
 
 ### 2.1 No genesis treasury
 
@@ -175,7 +175,7 @@ compressed-time simulation of the first halving and verify:
 
 | Use | Notes |
 |---|---|
-| Transaction fees | Denominated in dust. Burned today (credited to no account) until independent validators produce blocks; see §5. |
+| Transaction fees | Denominated in dust. Burned today (credited to no account) while one producer, run by the project, makes the blocks; see §5. |
 | WASM contract gas | Gas price in dust/gas; already wired in `pkg/wasm`. |
 | Validator bonds | Future: validators stake CELL to participate; slashable. |
 | Miner enrollment bonds | 10 CELL, slashable. May be prepaid or accumulated from protocol mining rewards starting from a zero CELL balance. |
@@ -249,7 +249,7 @@ Earning paths at launch are:
 - **Mining**: run Hive (NVIDIA GPU), earn Cell by producing valid
   proofs.
 - **Validating**: operate a VPS validator node (not yet open on the pilot
-  network). Fees are burned until independent validators produce blocks;
+  network). Fees are burned while one producer, run by the project, makes the blocks;
   any validator fee revenue after that needs a new policy version (§5.1).
 - **Using**: use Cell to pay transaction fees on a service you care about.
 

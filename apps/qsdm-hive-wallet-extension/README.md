@@ -88,7 +88,8 @@ The consumer release path is one named browser-store listing per browser:
 - Brave: the approved Chrome Web Store listing
 - Mozilla Firefox: Firefox Add-ons
 
-Those listings are not published yet. Until approval, Chrome, Edge, Chromium,
+None of these listings is published yet; extension 0.6.0 has been in Chrome
+Web Store review since 2026-11-06. Until approval, Chrome, Edge, Chromium,
 and Brave developers can download the advanced Chromium ZIP and install it
 once:
 

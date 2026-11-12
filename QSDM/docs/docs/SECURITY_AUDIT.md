@@ -42,7 +42,7 @@ All **Critical**, **High**, and **Medium** issues from the initial audit are res
 
 ### 1. Post-Quantum Cryptography
 - ✅ **ML-DSA-87** — NIST FIPS 204 standard (256-bit security)
-- ✅ **Post-quantum signatures** — Wallet transactions signed with ML-DSA-87 (the generic P2P transaction verifier still also accepts Ed25519)
+- ✅ **Post-quantum signatures** — Wallet transactions signed with ML-DSA-87 (Ed25519 transactions are refused since 2026-10-16)
 - ✅ **Post-quantum tokens** — JWT tokens use ML-DSA-87 signatures (HMAC-SHA256 fallback in non-CGO builds)
 
 ### 2. SQL Injection Protection
@@ -490,7 +490,7 @@ Subsequent POST/PUT/DELETE/PATCH (cookie-session callers):
 |---------------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `gosec`       | 0       | No accepted residual findings. Operator-controlled local file paths carry narrow rule-specific dispositions; treasury URLs are literal-loopback-only and redirects are disabled. |
 | `staticcheck` | 0       | No accepted residual findings in `pkg/api/...`; stale helpers and dead compatibility code were removed. |
-| `govulncheck` | 0       | No accepted residual findings. Go 1.25.12 closes GO-2026-4970 and GO-2026-5856; quic-go 0.59.1 closes GO-2026-5676. Module-only notices (trace frames without a package path) do not count; imported affected packages and reachable symbols do. Kad-DHT removal previously closed GO-2024-3218 exposure. |
+| `govulncheck` | 0       | No accepted residual findings. Go 1.25.12 closes GO-2026-4970 and GO-2026-5856; quic-go 0.59.1 closes GO-2026-5676. Module-only notices (trace frames without a package path) do not count; imported affected packages and reachable symbols do. Kad-DHT removal previously closed GO-2024-3218 exposure. Go 1.26.11 closes GO-2026-6859 and golang.org/x/net v0.62.0 closes CVE-2026-78661 (2026-11-11 in the code, 2026-11-12 on the producer). |
 
 **What is still pending:**
 - ⏳ External penetration testing

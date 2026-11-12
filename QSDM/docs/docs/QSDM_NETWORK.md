@@ -63,8 +63,10 @@ A prepared standby should:
 
 QSDM currently has no automatic proposer election or split-brain lease. A
 manual producer handoff is required, and two simultaneous producers can create
-conflicting histories. The handoff procedure is part of the operators' private
-runbooks.
+conflicting histories. The handoff procedure is public
+([Producer transition](PRODUCER_TRANSITION.md)). It was rehearsed on copies of
+the project's full node in Japan on 2026-11-10 and 2026-11-11; block
+production has not been handed over to that node yet.
 
 ### CGNAT fallback
 

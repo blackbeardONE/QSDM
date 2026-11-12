@@ -9,8 +9,8 @@ public CELL wallet addresses without turning the website into a wallet vault.
 > but are currently turned off.
 
 QSDM Account is separate from the node's operator login. Node account
-registration (`/api/v1/auth/register`) is disabled during the current recovery
-period; this does not affect QSDM Account.
+registration (`/api/v1/auth/register`) is disabled during the pilot;
+this does not affect QSDM Account.
 
 ## User flow
 

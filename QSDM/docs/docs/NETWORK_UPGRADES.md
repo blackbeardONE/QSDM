@@ -19,6 +19,7 @@ upgrades harden that pilot network; they do not change its stage. See
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
 | 2026-11-12 07:46 | node release | Release rc1109: built with Go 1.26.11 (GO-2026-6859 in `net/http`) and golang.org/x/net v0.62.0, and a start reads the journal further ahead (no consensus change); mining paused 5 minutes. Full nodes: fullnode-rc1109 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade) |
+| 2026-11-11 | full node | Full nodes can follow a change of block maker: `install-full-node.sh` takes the block-maker schedule from qsdm.tech/fullnode.html (or `--producer-schedule FILE`), and `--update-schedule` puts it into a running node ([Run a full node](RUN_A_FULL_NODE.md#when-the-block-maker-changes)) | No (full-node operators act only after a change of block maker) |
 | 2026-11-08 22:15 | full node | Full-node release fullnode-rc1108, the same `qsdm` as release rc1108: a running full node's memory no longer grows between restarts ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade) |
 | 2026-11-08 17:33 | node release | Release rc1108: the blocks the producer appends keep their signatures only in the journal, so its memory stays flat between restarts (no consensus change); mining paused 5 minutes | No |
 | 2026-11-08 16:34 | operations | A second node: the project's full node in Japan verifies every block itself, set up with the one-command installer ([Run a full node](RUN_A_FULL_NODE.md)) | No |
@@ -231,8 +232,8 @@ The same day a new 7-day mining window started for enrolled Hive miners; see
   Edge Control ships with Hive.
 - **What you must do:** Hive 1.4.21 users get the update in Hive. Hive 1.4.20
   (Windows) and 1.4.17 (Linux) cannot update themselves because the release
-  key was rotated: install 1.4.22 by hand. Hive 1.4.17 stops working after
-  9 November 2026 and 1.4.20 after 19 December 2026. Check the download first:
+  key was rotated: install 1.4.22 by hand. Hive 1.4.17 stopped working after
+  9 November 2026; 1.4.20 stops after 19 December 2026. Check the download first:
   [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).
 
 ## Block 625,000: signed task actions and transaction content root
@@ -263,6 +264,9 @@ The same day a new 7-day mining window started for enrolled Hive miners; see
 - **Ed25519 for stream session keys.** Ed25519 transactions are refused since
   2026-10-16 (`ed25519_tx_accepted: false`), but CELL stream session keys still
   accept Ed25519 until a stream retirement height is set.
-- **Block production by miners (proof of work).** The next step (decision D1, 19 October 2026); not active yet.
+- **A live turn to the standby block maker.** Block production moves to the
+  project's full node in Japan, as rehearsed on copies of it on 2026-11-10 and
+  2026-11-11. The next step.
+- **Block production by miners (proof of work).** Comes after that (decision D1, 19 October 2026); designed, not built.
 
 See the [Roadmap](ROADMAP.md).

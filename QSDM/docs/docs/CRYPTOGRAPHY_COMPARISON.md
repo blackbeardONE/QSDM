@@ -6,6 +6,6 @@
 >
 > QSDM today is a public pilot network (pre-mainnet): Proof-of-Entanglement
 > transfers, one block producer run by the project. CELL wallet transactions are signed with ML-DSA-87
-> (NIST FIPS 204). For what is safe to claim today, see the
-> [Capability Snapshot](CAPABILITY_SNAPSHOT.md) and the
+> (NIST FIPS 204). For what is safe to claim today, see
+> [Network status](NETWORK_STATUS.md) and the
 > [Treasury Policy](TREASURY_POLICY.md) section 9.

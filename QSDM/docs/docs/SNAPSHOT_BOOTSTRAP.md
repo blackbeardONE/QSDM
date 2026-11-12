@@ -92,7 +92,9 @@ loads, so it saves time but not memory (section 6).
   which producer may sign block N (`producer_transition`,
   `authorized_block_producers`) and how block hashes are computed (the
   activation heights). Use the network's settings. For the public network they
-  come with the full-node release (`fullnode-core.toml`).
+  come with the full-node release (`fullnode-core.toml`); after a change of
+  block maker, from the schedule on qsdm.tech/fullnode.html
+  (`install-full-node.sh --update-schedule`).
 - **The `qsdm` binary** you run. Verify the release.
 
 The snapshot itself can come from anyone, over any transport.

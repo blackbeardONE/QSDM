@@ -54,7 +54,7 @@ QSDM_API_URL=http://localhost:8080/api/v1
 | `/api/v1/auth/register` | POST | No | Register |
 | `/api/v1/wallet/create` | any | No | Removed (410 Gone): create the wallet in QSDM Hive or with `qsdmcli wallet new` |
 | `/api/v1/wallet/balance` | GET | Yes | Get balance |
-| `/api/v1/wallet/send` | POST | Yes | Send $JOLLY |
+| `/api/v1/wallet/send` | POST | Yes | Send CELL |
 | `/api/v1/wallet/address` | GET | Yes | Get address |
 | `/api/v1/transactions` | GET | Yes | Transaction history |
 

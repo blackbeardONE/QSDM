@@ -124,9 +124,10 @@ every restart runs, and the running node do. On a server a start takes longer th
 full node in Japan (6 vCPUs, 12 GB) restarted on fullnode-rc1108 on 9 November at block 1 058 195 and answered
 after 4 minutes 23 seconds, 37 seconds of them for the journal prefix check and 3 minutes 36 seconds to load and
 check the chain; on 10 November, right after another 6.7 GB had been read from its disk (the disk cache was cold),
-the load took 7 minutes. A start checks the signature of every block, so it grows with the chain. The next release
+the load took 7 minutes. A start checks the signature of every block, so it grows with the chain. fullnode-rc1109
 reads the journal further ahead of its workers (eight lines each instead of one): on the laptop, on 6 threads, the
-load at 880 377 blocks took 25.0 seconds instead of 28.0. The import rows were measured with the harness's
+load at 880 377 blocks took 25.0 seconds instead of 28.0. The project's full node in Japan answered again 2 minutes
+51 seconds after its switch to fullnode-rc1109 on 12 November, at block 1 087 781. The import rows were measured with the harness's
 import phase, which runs every check of the import but not its staging copy (the import first copies the snapshot's
 files into the state directory and hashes them) or the checkpoint pin; the staging copy and an import at a second
 height were not measured. The last three rows are derived, not measured at a second height: from the sizes of the
@@ -332,7 +333,8 @@ The block maker (the producer) signs every block with its own key, and a full no
 that its block-maker schedule names for that height: the `[consensus.producer_transition]` table in `core.toml`
 ([Producer transition](PRODUCER_TRANSITION.md)). When block production moves to another server, for example to the
 standby block maker and back, the new block maker signs from the next block on with a new key, and every node needs
-the new schedule.
+the new schedule. The block maker has not changed since the first full-node release; the first planned change is a
+turn to the project's full node in Japan, which will be announced on qsdm.tech/fullnode.html.
 
 Until your node has it, it stays at the old block maker's last block: its tip stops moving, its log says
 `external block producer is not authorized` for the next block, and the watch reports `node-stalled`. Nothing is lost:

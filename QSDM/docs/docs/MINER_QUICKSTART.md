@@ -76,7 +76,7 @@ To mine on the live pilot network (pre-mainnet) you need:
   runtime helper, so end users do not need the full CUDA Toolkit. The driver
   must expose the card through `nvidia-smi`, and Linux must provide glibc 2.34
   or newer.
-- **Go 1.25+** to build the miner from source (until the cosign-signed
+- **Go 1.26.11 or newer** to build the miner from source (until the cosign-signed
   `qsdmminer-console` binaries are downloaded from the GitHub release
   page directly, see step 4). No CGO required.
 - **A reward address you own** (this doc, [§2](#2-reward-address)).
@@ -855,6 +855,7 @@ If the validator's `/api/v1/mining/challenge` endpoint is unreachable (503, netw
 |---|---|---|
 | `[preflight] REFUSING TO MINE` at startup | Validator advertises v2 active but binary was launched in v1 mode (no `--protocol=v2`, or `cmd/qsdmminer` against the live network). | Pass `--protocol=v2` with full v2 config; OR for local audit only, pass `--allow-v1`. |
 | `v2 prepare: enrollment not active` | The `/api/v1/mining/enrollment/{node_id}` poller sees `phase != active`. | Run `qsdmcli enrollment-status <node-id>`; if `not_found`, your enroll tx hasn't mined; if `pending_unbond` / `revoked`, re-enroll. |
+| Enrollment refused: `gpu_uuid already bound to an active enrollment` | One GPU can back only one active enrollment, and this GPU already has one. Hive 1.4.22 makes a new node ID after a Windows reinstall, a new PC name, a lost `.qsdm` folder or another wallet, and the chain refuses the second enrollment. | With Hive 1.4.22: if the old `.qsdm` folder still exists, copy its `miner.toml` and `miner-hmac.key` back and restart Hive. Otherwise the next Hive release finds and reuses the enrollment by itself when Hive holds the wallet that owns it. An enrollment owned by another wallet can be ended only by that wallet (unenroll). After an unenroll the GPU can enroll again at once; the old bond is held for 201,600 blocks (about 23 days) and then returns to its owner. |
 | `attestation_stale` rejections from `/api/v1/mining/submit` | Local clock skew >60 s (the `FreshnessWindow`), or validator's `/challenge` endpoint is stalling. | Re-sync NTP; check the `challenge=Ns ago` figure in the live panel. |
 | `attestation_invalid` rejections | HMAC key mismatch — your enrollment record holds a different key than the file `--hmac-key-path` points at. | Verify `sha256sum $HOME/.qsdm/hmac.key` matches the enrollment record; re-enroll if mis-keyed. |
 | `self-test FAILED: solve: context deadline exceeded` | `--self-test-difficulty` is too high for this CPU. | Re-run with `--self-test-difficulty=2` (default). |

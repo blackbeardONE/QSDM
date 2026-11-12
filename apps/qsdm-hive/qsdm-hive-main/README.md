@@ -4,7 +4,7 @@ QSDM Hive is a desktop application for operating a QSDM task node. It provides a
 
 ## Prerequisites
 
-- Node.js 16 or newer
+- Node.js 22.12 or newer, with npm 10.9 or newer
 - npm or yarn
 - Git, if you are cloning from a repository
 
@@ -49,15 +49,17 @@ with `QSDM/deploy/scripts/publish_hive_release.sh`.
 
 Production Windows packaging requires a trusted, timestamped Authenticode
 identity whose publisher exactly matches the approved release configuration.
-The local first-party default is `QSDM`; the pending open-source SignPath
-workflow uses `SignPath Foundation`. `npm run package` fails closed when any
+The local first-party default is `QSDM`; the open-source SignPath
+workflow would use `SignPath Foundation`. `npm run package` fails closed when any
 required executable is unsigned. `npm run package:windows:unsigned` exists only
 for local smoke testing and must never be published or placed behind an updater
 manifest.
 
-QSDM is preparing an application for the SignPath Foundation open-source
-program. Until it is accepted, SignPath signing is not available and unsigned
-Windows packages remain development artifacts. The repository
+QSDM applied for the SignPath Foundation open-source program, but the
+application was declined for now, so SignPath signing is not available and no
+QSDM artifact may be described as SignPath-signed. Current public Windows Hive
+releases are unsigned by Microsoft Authenticode; they are published only when
+the release owner explicitly approves that and all release gates pass. The repository
 [code signing policy](../../../CODE_SIGNING_POLICY.md) defines the trusted-build
 and manual-approval flow; the [privacy policy](../../../PRIVACY.md) documents
 Hive's local and network data boundaries.
@@ -70,7 +72,8 @@ it updates itself to that version. It reads the signed release envelope from
 against the release key built into Hive; see
 [QSDM-native release signing](../../../QSDM/docs/docs/QSDM_NATIVE_RELEASE_SIGNING.md).
 
-Hive keeps working when qsdm.tech is down or the computer is offline. After
+From the first Hive release after 1.4.22, Hive keeps working when qsdm.tech is
+down or the computer is offline. After
 every successful check it saves the signed envelope in a
 `release-envelope-cache` folder in its application-data directory. When a later
 check fails, Hive checks that saved envelope again in full, signature included,
@@ -79,7 +82,8 @@ other time limit. If the saved envelope names a different version, the update
 is still required. Once the envelope has expired, or if the saved copy is
 missing or damaged, Hive stays locked until it can check the website again.
 
-Hive never goes back to an older envelope: one issued before the envelope Hive
+From that release on, Hive never goes back to an older envelope: one issued
+before the envelope Hive
 saved is ignored. Every new release, renewal, or rollback must therefore be a
 newly signed envelope with a later `issued_at`.
 
@@ -87,10 +91,13 @@ newly signed envelope with a later `issued_at`.
 
 - Documentation: https://qsdm.tech/docs
 - Website and support: https://qsdm.tech
-- Problem reports: open the menu of the Hive tray icon, choose **Save a
+- Problem reports: from the first Hive release after 1.4.22, open the menu of
+  the Hive tray icon, choose **Save a
   diagnostics report…** and attach the saved file. Hive keeps crash records on
   your computer and sends nothing; see the
   [privacy policy](../../../PRIVACY.md#crash-records-and-diagnostics-reports).
+- Mining error `gpu_uuid already bound to an active enrollment`: see the
+  troubleshooting in [Mining today](../../../QSDM/docs/docs/MINING_TODAY.md#troubleshooting).
 
 ## License
 
