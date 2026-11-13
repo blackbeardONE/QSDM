@@ -21,7 +21,26 @@ The app is signed ad hoc (`"identity": "-"`), not with an Apple Developer ID, an
 - macOS 12 to 14: right-click (or Control-click) QSDM Hive in Applications, choose **Open**, then **Open** again.
 - macOS 15 and newer: open it once, then go to System Settings > Privacy & Security and choose **Open Anyway**.
 
-A signed and notarized build needs an Apple Developer ID certificate and the `APPLE_ID`, `APPLE_ID_PASS` and `APPLE_TEAM_ID` values that `.erb/scripts/notarize.js` reads; none of these exist yet.
+That is how pull-request and local builds come out. The release build is signed and notarized, and opens with a double-click:
+
+- **Where:** in GitHub, Actions > QSDM Hive macOS > Run workflow, on `main`, with **signed** ticked. It runs only on `main`.
+- **Signing:** the job `release-macos` builds the same universal app and signs it with the Developer ID certificate (every binary, `qsdmcli` included, with the hardened runtime and a secure timestamp).
+- **Notarization:** `.erb/scripts/notarize.js` notarizes and staples the app. The job then signs, notarizes and staples the `.dmg` as well.
+- **Checks:** it fails unless Gatekeeper's own check (`spctl`) accepts both the app and the `.dmg` as "Notarized Developer ID". It then launches the app.
+- **Intel:** the job `release-macos-intel` checks the checksums and Gatekeeper again on an Intel runner, copies the app out of the mounted `.dmg` and launches it.
+- **Output:** the `.dmg`, the `.zip` and `SHA256SUMS-mac.txt` are kept for 30 days as the `qsdm-hive-macos-release-<commit>` artifact.
+
+It needs five repository secrets, set by the Apple account's holder and never written anywhere else:
+
+| Secret | What it is |
+|---|---|
+| `MAC_CSC_LINK` | The Developer ID Application certificate with its private key, exported from Keychain Access as a `.p12`, in base64 (`base64 -i file.p12`). |
+| `MAC_CSC_KEY_PASSWORD` | The password the `.p12` was exported with. |
+| `APPLE_ID` | The Apple ID of the developer account. |
+| `APPLE_ID_PASS` | An app-specific password for that Apple ID (account.apple.com > Sign-In and Security > App-Specific Passwords), used only to notarize. |
+| `APPLE_TEAM_ID` | The 10-character Team ID (developer.apple.com > Account > Membership details). |
+
+The job stops before it builds anything when a secret is missing, or when the `.p12` is not a Developer ID Application certificate of that team.
 
 Hive does not update itself on a Mac: hive-v2 has no signed Mac release. A Mac build checks its version against the signed Linux release; when that release names another version, Hive shows the update screen with a link to the download page. The release host does not publish Mac builds yet.
 
