@@ -1,14 +1,21 @@
 name: QSDM Hive macOS
 
-# QSDM Hive for macOS 12 and newer: one universal app (Intel and Apple silicon), ad-hoc signed, as a wallet and task
-# app. The miner is not part of it (mining needs an NVIDIA GPU: Windows and Linux only). Each runner builds the
-# universal app and launches it natively, so the Apple-silicon run tests the arm64 half and the Intel run the x64 half.
+# QSDM Hive for macOS 12 and newer: one universal app (Intel and Apple silicon), as a wallet and task app. The miner is
+# not part of it (mining needs an NVIDIA GPU: Windows and Linux only). Pull requests and a plain "Run workflow" build it
+# ad-hoc signed on both runners and launch it natively, so the Apple-silicon run tests the arm64 half and the Intel run
+# the x64 half. "Run workflow" on main with "signed" ticked is the release build instead: signed with the Developer ID
+# certificate, notarized and stapled (release-macos), then checked and launched from its dmg on Intel too.
 
 permissions:
   contents: read
 
 on:
   workflow_dispatch:
+    inputs:
+      signed:
+        description: "Release build: sign with the Developer ID certificate and notarize (main only; needs the MAC_CSC_* and APPLE_* secrets)"
+        type: boolean
+        default: false
   pull_request:
     paths:
       - "apps/qsdm-hive/qsdm-hive-main/**"
@@ -25,6 +32,8 @@ concurrency:
 jobs:
   package-macos:
     name: Hive macOS (${{ matrix.runner }})
+    # A release build (signed: true) runs the release jobs below instead.
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.signed }}
     strategy:
       fail-fast: false
       matrix:
@@ -139,3 +148,221 @@ jobs:
             apps/qsdm-hive/qsdm-hive-main/release/build-mac/*.zip
           if-no-files-found: error
           retention-days: 14
+
+  # The release build (Run workflow with "signed" ticked, on main only): the same universal app, signed with the
+  # Developer ID certificate (secrets MAC_CSC_LINK, the .p12 in base64, and MAC_CSC_KEY_PASSWORD); the app notarized
+  # and stapled by .erb/scripts/notarize.js (APPLE_ID, APPLE_ID_PASS: an app-specific password, APPLE_TEAM_ID); the dmg
+  # signed, notarized and stapled as well. Gatekeeper's own check (spctl) must accept both as "Notarized Developer ID".
+  # The secrets reach only the steps that need them; the npm installs run with --ignore-scripts.
+  release-macos:
+    name: Hive macOS release (signed and notarized)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.signed && github.ref == 'refs/heads/main' }}
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: QSDM/source/go.mod
+          cache-dependency-path: QSDM/source/go.sum
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            apps/qsdm-hive/qsdm-hive-main/package-lock.json
+            apps/qsdm-hive/qsdm-hive-main/release/app/package-lock.json
+
+      - name: Check that the signing secrets are set
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for v in MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_ID APPLE_ID_PASS APPLE_TEAM_ID; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then echo "::error::these repository secrets are not set:$missing"; exit 1; fi
+          [[ "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || { echo "::error::APPLE_TEAM_ID is not a 10-character team ID"; exit 1; }
+
+      - name: The certificate's signing identity
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          p12="$RUNNER_TEMP/devid.p12"
+          trap 'rm -f "$p12"' EXIT
+          printf '%s' "$MAC_CSC_LINK" | base64 --decode > "$p12"
+          pem=$(/usr/bin/openssl pkcs12 -in "$p12" -nokeys -passin env:MAC_CSC_KEY_PASSWORD 2>/dev/null || true)
+          subject=$(printf '%s\n' "$pem" | /usr/bin/openssl x509 -noout -subject -nameopt multiline 2>/dev/null \
+            | sed -n 's/^ *commonName *= *//p' | head -n 1)
+          case "$subject" in
+            "Developer ID Application: "*"($APPLE_TEAM_ID)") ;;
+            *) echo "::error::the .p12 is not a Developer ID Application certificate of team $APPLE_TEAM_ID (subject: ${subject:-unreadable; check MAC_CSC_KEY_PASSWORD})"; exit 1 ;;
+          esac
+          echo "signing identity: $subject"
+          echo "MAC_IDENTITY=${subject#Developer ID Application: }" >> "$GITHUB_ENV"
+
+      - name: Build qsdmcli for macOS (x64 and arm64)
+        run: bash QSDM/deploy/scripts/build_hive_macos_native.sh apps/qsdm-hive/qsdm-hive-main
+
+      - name: Install Hive dependencies
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          npm ci --ignore-scripts
+          npm --prefix release/app ci --ignore-scripts
+          npm exec electron-builder -- install-app-deps
+
+      - name: Build Hive
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: npm run build
+
+      # electron-builder imports the .p12 into a temporary keychain, signs every binary of the app (qsdmcli included)
+      # with the hardened runtime and a secure timestamp, and runs the afterSign hook (.erb/scripts/notarize.js), which
+      # notarizes and staples the app. electron-builder's own notarization stays off: it starts only when
+      # APPLE_APP_SPECIFIC_PASSWORD or an API key is set, and neither is.
+      - name: Package, sign and notarize the universal app (dmg and zip)
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: >-
+          npx electron-builder build --mac --universal --publish never
+          --config.directories.output=release/build-mac
+          --config.mac.identity="$MAC_IDENTITY"
+          --config.dmg.sign=true
+
+      - name: Notarize and staple the dmg
+        working-directory: apps/qsdm-hive/qsdm-hive-main/release/build-mac
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(*.dmg); [ "${#dmgs[@]}" -eq 1 ] || { echo "::error::expected one dmg, found ${#dmgs[@]}"; exit 1; }
+          dmg=${dmgs[0]}
+          xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_ID_PASS" --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout 60m --output-format json > "$RUNNER_TEMP/notary-dmg.json"
+          status=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$RUNNER_TEMP/notary-dmg.json")
+          echo "notarization of $dmg: $status"
+          [ "$status" = Accepted ] || { cat "$RUNNER_TEMP/notary-dmg.json"; exit 1; }
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+
+      - name: Verify the signed app and dmg as Gatekeeper does
+        working-directory: apps/qsdm-hive/qsdm-hive-main/release/build-mac
+        run: |
+          set -euo pipefail
+          app="mac-universal/QSDM Hive.app"
+          dmg=$(ls *.dmg)
+          for bin in "$app/Contents/MacOS/QSDM Hive" "$app/Contents/Resources/native/qsdmcli"; do
+            archs=" $(lipo -archs "$bin") "
+            echo "$bin:$archs"
+            [[ "$archs" == *" x86_64 "* && "$archs" == *" arm64 "* ]]
+          done
+          test ! -e "$app/Contents/Resources/miner"
+          test ! -e "$app/Contents/Resources/edge"
+          test "$(/usr/libexec/PlistBuddy -c 'Print LSMinimumSystemVersion' "$app/Contents/Info.plist")" = "12.0"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          info=$(codesign -dv --verbose=4 "$app" 2>&1)
+          printf '%s\n' "$info" | grep -E '^(Authority|TeamIdentifier|Timestamp|Runtime Version)='
+          grep -q '^Authority=Developer ID Application: ' <<<"$info"
+          grep -q '^Runtime Version=' <<<"$info"
+          cli=$(codesign -dv --verbose=4 "$app/Contents/Resources/native/qsdmcli" 2>&1)
+          grep -q '^Authority=Developer ID Application: ' <<<"$cli"
+          xcrun stapler validate "$app"
+          gk=$(spctl --assess --type execute --verbose=4 "$app" 2>&1 || true)
+          printf 'app: %s\n' "$gk"
+          grep -q 'source=Notarized Developer ID' <<<"$gk"
+          gk=$(spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg" 2>&1 || true)
+          printf 'dmg: %s\n' "$gk"
+          grep -q 'source=Notarized Developer ID' <<<"$gk"
+          shasum -a 256 *.dmg *.zip > SHA256SUMS-mac.txt
+          cat SHA256SUMS-mac.txt
+
+      - name: Launch the signed app (renderer smoke test, then a normal start)
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: bash ../../../QSDM/deploy/scripts/smoke_hive_macos.sh "release/build-mac/mac-universal/QSDM Hive.app" "$RUNNER_TEMP/hive-smoke"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: qsdm-hive-macos-release-smoke-arm64-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/hive-smoke/*.png
+            ${{ runner.temp }}/hive-smoke/*.log
+            ${{ runner.temp }}/hive-smoke/*/qsdm-hive/logs/*
+            ${{ runner.temp }}/notary-dmg.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qsdm-hive-macos-release-${{ github.sha }}
+          path: |
+            apps/qsdm-hive/qsdm-hive-main/release/build-mac/*.dmg
+            apps/qsdm-hive/qsdm-hive-main/release/build-mac/*.zip
+            apps/qsdm-hive/qsdm-hive-main/release/build-mac/SHA256SUMS-mac.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  # The release as a user on an Intel Mac gets it: the checksums, Gatekeeper's check of the dmg, the app copied out of
+  # the mounted dmg, Gatekeeper's check of that copy, then the same launch test.
+  release-macos-intel:
+    name: Hive macOS release on Intel (Gatekeeper and launch)
+    needs: release-macos
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: qsdm-hive-macos-release-${{ github.sha }}
+          path: ${{ runner.temp }}/release
+
+      - name: Checksums, Gatekeeper and a launch from the dmg
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/release"
+          shasum -a 256 -c SHA256SUMS-mac.txt
+          dmg=$(ls *.dmg)
+          gk=$(spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg" 2>&1 || true)
+          printf 'dmg: %s\n' "$gk"
+          grep -q 'source=Notarized Developer ID' <<<"$gk"
+          mnt="$RUNNER_TEMP/mnt"
+          mkdir -p "$mnt"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg"
+          ditto "$mnt/QSDM Hive.app" "$RUNNER_TEMP/QSDM Hive.app"
+          hdiutil detach "$mnt" -quiet
+          gk=$(spctl --assess --type execute --verbose=4 "$RUNNER_TEMP/QSDM Hive.app" 2>&1 || true)
+          printf 'app: %s\n' "$gk"
+          grep -q 'source=Notarized Developer ID' <<<"$gk"
+          bash "$GITHUB_WORKSPACE/QSDM/deploy/scripts/smoke_hive_macos.sh" "$RUNNER_TEMP/QSDM Hive.app" "$RUNNER_TEMP/hive-smoke"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: qsdm-hive-macos-release-smoke-x64-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/hive-smoke/*.png
+            ${{ runner.temp }}/hive-smoke/*.log
+            ${{ runner.temp }}/hive-smoke/*/qsdm-hive/logs/*
+          if-no-files-found: warn
+          retention-days: 30
