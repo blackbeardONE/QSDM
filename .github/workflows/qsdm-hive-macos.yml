@@ -151,9 +151,11 @@ jobs:
 
   # The release build (Run workflow with "signed" ticked, on main only): the same universal app, signed with the
   # Developer ID certificate (secrets MAC_CSC_LINK, the .p12 in base64, and MAC_CSC_KEY_PASSWORD); the app notarized
-  # and stapled by .erb/scripts/notarize.js (APPLE_ID, APPLE_ID_PASS: an app-specific password, APPLE_TEAM_ID); the dmg
-  # signed, notarized and stapled as well. Gatekeeper's own check (spctl) must accept both as "Notarized Developer ID".
-  # The secrets reach only the steps that need them; the npm installs run with --ignore-scripts.
+  # and stapled by electron-builder's own notarization (APPLE_ID, APPLE_TEAM_ID, and the app-specific password of the
+  # secret APPLE_ID_PASS handed over as APPLE_APP_SPECIFIC_PASSWORD); the dmg signed, notarized and stapled as well.
+  # Gatekeeper's own check (spctl) must accept both as "Notarized Developer ID". The secrets reach only the steps that
+  # need them; the npm installs run with --ignore-scripts. The certificate holder's name (an individual Apple account's
+  # Developer ID carries the person's name) is masked in this public log before anything can print it.
   release-macos:
     name: Hive macOS release (signed and notarized)
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.signed && github.ref == 'refs/heads/main' }}
@@ -206,12 +208,18 @@ jobs:
           pem=$(/usr/bin/openssl pkcs12 -in "$p12" -nokeys -passin env:MAC_CSC_KEY_PASSWORD 2>/dev/null || true)
           subject=$(printf '%s\n' "$pem" | /usr/bin/openssl x509 -noout -subject -nameopt multiline 2>/dev/null \
             | sed -n 's/^ *commonName *= *//p' | head -n 1)
+          name=${subject#Developer ID Application: }
+          person=${name% (*}
+          # mask the holder's name for the rest of this job before anything can print it
+          if [ -n "$name" ]; then echo "::add-mask::$name"; fi
+          if [ -n "$person" ] && [ "$person" != "$name" ]; then echo "::add-mask::$person"; fi
           case "$subject" in
             "Developer ID Application: "*"($APPLE_TEAM_ID)") ;;
-            *) echo "::error::the .p12 is not a Developer ID Application certificate of team $APPLE_TEAM_ID (subject: ${subject:-unreadable; check MAC_CSC_KEY_PASSWORD})"; exit 1 ;;
+            "") echo "::error::the .p12 does not open with MAC_CSC_KEY_PASSWORD, or holds no certificate"; exit 1 ;;
+            *) echo "::error::the .p12 is not a Developer ID Application certificate of team APPLE_TEAM_ID"; exit 1 ;;
           esac
-          echo "signing identity: $subject"
-          echo "MAC_IDENTITY=${subject#Developer ID Application: }" >> "$GITHUB_ENV"
+          echo "the .p12 is a Developer ID Application certificate of the team (the holder's name is masked in this log)"
+          echo "MAC_IDENTITY=$name" >> "$GITHUB_ENV"
 
       - name: Build qsdmcli for macOS (x64 and arm64)
         run: bash QSDM/deploy/scripts/build_hive_macos_native.sh apps/qsdm-hive/qsdm-hive-main
@@ -228,9 +236,9 @@ jobs:
         run: npm run build
 
       # electron-builder imports the .p12 into a temporary keychain, signs every binary of the app (qsdmcli included)
-      # with the hardened runtime and a secure timestamp, and runs the afterSign hook (.erb/scripts/notarize.js), which
-      # notarizes and staples the app. electron-builder's own notarization stays off: it starts only when
-      # APPLE_APP_SPECIFIC_PASSWORD or an API key is set, and neither is.
+      # with the hardened runtime and a secure timestamp, then notarizes and staples the app itself (electron-builder 26
+      # starts its own notarization whenever APPLE_ID is set, and then needs APPLE_APP_SPECIFIC_PASSWORD). The afterSign
+      # hook .erb/scripts/notarize.js reads APPLE_ID_PASS, which this step does not set, so it skips: one notarization.
       - name: Package, sign and notarize the universal app (dmg and zip)
         working-directory: apps/qsdm-hive/qsdm-hive-main
         env:
@@ -238,7 +246,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           CSC_IDENTITY_AUTO_DISCOVERY: "true"
           APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASS }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: >-
           npx electron-builder build --mac --universal --publish never
@@ -341,8 +349,14 @@ jobs:
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/release"
-          shasum -a 256 -c SHA256SUMS-mac.txt
           dmg=$(ls *.dmg)
+          # mask the certificate holder's name (from the dmg's signature) before spctl and codesign print it
+          info=$(codesign -dv --verbose=4 "$dmg" 2>&1 || true)
+          name=$(printf '%s\n' "$info" | sed -n '/^Authority=Developer ID Application: /{s/^Authority=Developer ID Application: //;p;q;}')
+          person=${name% (*}
+          if [ -n "$name" ]; then echo "::add-mask::$name"; fi
+          if [ -n "$person" ] && [ "$person" != "$name" ]; then echo "::add-mask::$person"; fi
+          shasum -a 256 -c SHA256SUMS-mac.txt
           gk=$(spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg" 2>&1 || true)
           printf 'dmg: %s\n' "$gk"
           grep -q 'source=Notarized Developer ID' <<<"$gk"
