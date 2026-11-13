@@ -321,6 +321,22 @@ func (h *Handlers) QSDMTaskActionSubmitSignedHandler(w http.ResponseWriter, r *h
 		writeErrorResponse(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	// A `migrate` changes the task-wide migration pointer, so only the task's
+	// catalog manager may send it, towards another catalog task of theirs
+	// (chain.CheckTaskMigrate). The chain enforces the same rule from
+	// chain.TaskMigrateAuthActivationHeight; the API refuses it before then too,
+	// so no unauthorized migrate reaches a block.
+	if env.Action == "migrate" {
+		provider := currentTaskStateProvider()
+		if provider == nil {
+			writeErrorResponse(w, http.StatusServiceUnavailable, "task state is not available to check a migrate action")
+			return
+		}
+		if err := chain.CheckTaskMigrate(provider.GetTask, qsdmTaskActionToChain(env)); err != nil {
+			writeErrorResponse(w, http.StatusForbidden, err.Error())
+			return
+		}
+	}
 
 	preflightResult, err := inspectQSDMTaskActionLog(path, env)
 	if err != nil {

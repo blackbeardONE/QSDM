@@ -4,6 +4,7 @@ import {
   PaginatedResponse,
 } from 'models';
 import { Task } from 'renderer/types';
+import { TaskMigrationWalk } from 'utils/taskMigrationWalk';
 
 import { parseTask } from './utils';
 
@@ -14,21 +15,30 @@ export const getTasksById = async (tasksIds: string[]) => {
 };
 
 export const getLatestTaskById = async (
-  taskId: string
+  taskId: string,
+  walk: TaskMigrationWalk = new TaskMigrationWalk()
 ): Promise<Task | null> => {
+  // A pointer back to a task already seen (a cycle) or to another manager's
+  // task ends the walk: see utils/taskMigrationWalk.
+  if (!walk.enter(taskId)) return null;
+
   const task = await window.main.getTaskInfo({ taskAccountPubKey: taskId });
 
   if (!task) return null;
+  if (!walk.sameManager(task.taskManager)) return null;
 
   if (task.isMigrated) {
-    return getLatestTaskById(task.migratedTo);
+    return getLatestTaskById(task.migratedTo, walk);
   }
 
   return { ...task, publicKey: taskId };
 };
 
 export const getLatestTasksById = async (tasksIds: string[]) => {
-  const tasks = await Promise.all(tasksIds.map(getLatestTaskById));
+  // Each id starts its own walk (map would pass the index as the walk).
+  const tasks = await Promise.all(
+    tasksIds.map((taskId) => getLatestTaskById(taskId))
+  );
   return tasks.filter((task): task is Task => task !== null);
 };
 

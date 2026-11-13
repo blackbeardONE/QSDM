@@ -149,6 +149,8 @@ Task actions use the same self-custody identity rule as `/wallet/submit-signed`.
 
 Supported action names are `start`, `stop`, `stake`, `fund`, `unstake`, `submit`, `claim`, `withdraw`, `migrate`, `catalog-register`, `catalog-update`, `catalog-pause`, and `catalog-resume`.
 
+`migrate` (payload `{"migrated_to":"<task id>"}`) points a task at its newer version; QSDM Hive offers that version as an upgrade to everyone running the task. Only the task's catalog manager may send it: the task must be registered in the catalog, the sender must be its `manager`, and the target must be another registered, unpaused task of the same manager whose own `migrated_to` chain does not lead back to the task. Anything else is answered with HTTP 403 and never reaches the mempool, and from block 1,150,000 a block that carries such a migrate is invalid ([Consensus rules](CONSENSUS_RULES.md)). Before that height, blocks replay as they were produced. Until node release rc1110 (2026-11-12) the node accepted a `migrate` from any signed sender; no live task was migrated.
+
 Successful submissions return `mempool_status`. `submitted` means the action was added to the live mempool and `duplicate` means the tx was already pending. A node without a live mempool submitter answers HTTP 503 with `status: "rejected"` and `mempool_status: "not_configured"`, and a mempool rejection answers HTTP 422 with `mempool_status: "rejected"` or `"encode_failed"`; in both cases nothing is written to the JSONL log.
 
 When `qsdm/tasks/v1` actions are included in a block, they consume the sender's live AccountStore nonce.

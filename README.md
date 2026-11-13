@@ -13,8 +13,9 @@ Cloudflare CIRCL) — the standardised post-quantum signature scheme. It is
 designed so that signatures made today stay unforgeable even against a
 future cryptographically relevant quantum computer.
 
-Latest tagged ledger release: **`fullnode-rc1109`** (GitHub, 12 November 2026),
+Latest tagged ledger release: **`fullnode-rc1110`** (GitHub, 13 November 2026),
 the exact `qsdm` the block producer runs. Public site: [qsdm.tech](https://qsdm.tech).
+Community: [Discord](https://discord.gg/QZcCY2AdVn) and [X (@qsdmtech)](https://x.com/qsdmtech).
 
 QSDM began on 10 May 2025 in its first repository,
 [github.com/BbOldaccount/QSDM](https://github.com/BbOldaccount/QSDM), with

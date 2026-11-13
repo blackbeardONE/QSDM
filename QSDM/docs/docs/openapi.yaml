@@ -4437,6 +4437,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '403':
+          description: |
+            A `migrate` that is not allowed: the task is not registered in the
+            catalog, the sender is not its catalog manager, the target is not
+            another registered, unpaused task of the same manager, or the new
+            pointer would make a migration cycle. Nothing reaches the mempool
+            (node release rc1110; blocks enforce the same rule from 1,150,000).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '405':
           description: The method is not POST.
           headers:
@@ -4477,9 +4488,10 @@ paths:
         '503':
           description: |
             QSDM_TASK_ACTION_LOG_PATH is not set, the wallet service is
-            unavailable, or the node is a read-only follower (Error body); or
-            no task mempool is installed (TaskActionSubmitResponse with
-            `status: rejected` and `mempool_status: not_configured`).
+            unavailable, the node is a read-only follower, or a `migrate`
+            arrives while the task state is not available to check it (Error
+            body); or no task mempool is installed (TaskActionSubmitResponse
+            with `status: rejected` and `mempool_status: not_configured`).
           content:
             application/json:
               schema:

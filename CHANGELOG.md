@@ -17,6 +17,32 @@ from 2026-04-22 on.
 
 ### Security
 
+- **2026-11-12: only a task's catalog manager may migrate it (node release
+  rc1110; a consensus rule from block 1,150,000).** A `migrate` task action
+  points a task at its newer version, and QSDM Hive offers that version as
+  an upgrade to everyone running the task. Until rc1110 the node set the
+  pointer for any signed sender, for any task and any target. Reported
+  privately on 12 November 2026; the producer has run the fix since
+  2026-11-12 21:25 UTC, and no live task had been migrated.
+  - `QSDM/source/pkg/chain/task_migrate_auth.go`: `CheckTaskMigrate`. The
+    task must be registered in the catalog, the sender must be its manifest's
+    `manager`, and the target must be another registered, unpaused task of the
+    same manager whose `migrated_to` chain does not lead back to the task. From
+    `TaskMigrateAuthActivationHeight` (1,150,000) `applyAction` refuses a
+    migrate that fails it before the task record is touched, so a block that
+    carries one is invalid; blocks below that height replay as produced.
+  - `/api/v1/tasks/actions/submit-signed` answers 403 to such a migrate (503
+    while the task state is not wired), so it never reaches the mempool.
+  - QSDM Hive (`utils/taskMigrationWalk.ts`): the task service and the upgrade
+    screens follow a migration only to a task of the same manager and stop on
+    a cycle, instead of recursing without end.
+  - Tests: 8 in `task_migrate_auth_test.go`, 1 in
+    `handlers_task_migrate_test.go`, and Hive specs for the walk and the
+    upgrade lookup. Docs: [Consensus rules](QSDM/docs/docs/CONSENSUS_RULES.md),
+    [Network upgrades](QSDM/docs/docs/NETWORK_UPGRADES.md),
+    [Task registry](QSDM/docs/docs/QSDM_TASK_REGISTRY.md), `openapi.yaml`.
+  - Full-node operators: install `fullnode-rc1110` before block 1,150,000.
+
 - **2026-11-12: the private security channel works again, and is watched.**
   A reporter found (issue #188) that both channels in
   [`security.txt`](https://qsdm.tech/.well-known/security.txt) were dead:

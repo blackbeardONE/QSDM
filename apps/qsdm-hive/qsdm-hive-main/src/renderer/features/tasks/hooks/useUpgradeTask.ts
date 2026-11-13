@@ -15,6 +15,7 @@ import {
 } from 'renderer/services';
 import { Task } from 'renderer/types';
 import { getCellFromBaseUnits } from 'utils';
+import { TaskMigrationWalk } from 'utils/taskMigrationWalk';
 
 import {
   TaskUpgradeMutationParams,
@@ -58,11 +59,23 @@ export const useUpgradeTask = ({
     useState<UpgradeStatus>(initialStatus);
 
   const getLatestActiveVersionOfTask = async (
-    taskPublicKey: string
+    taskPublicKey: string,
+    walk: TaskMigrationWalk = new TaskMigrationWalk(
+      task.publicKey,
+      task.taskManager
+    )
   ): Promise<Task> => {
+    // Only a version of the same task manager is an upgrade, and a pointer
+    // back to an earlier version ends the walk: see utils/taskMigrationWalk.
+    if (!walk.enter(taskPublicKey)) {
+      throw new Error('The versions of this task point back to an earlier one');
+    }
     const newTaskState = await window.main.getTaskInfo({
       taskAccountPubKey: taskPublicKey,
     });
+    if (!walk.sameManager(newTaskState.taskManager)) {
+      throw new Error('The new version of this task has another task manager');
+    }
 
     if (newTaskState.isActive) {
       console.log(`UPGRADE TASK: the new version ${taskPublicKey} is active`);
@@ -74,7 +87,8 @@ export const useUpgradeTask = ({
         `UPGRADE TASK: task ${taskPublicKey} has been migrated to ${newTaskState.migratedTo}`
       );
       const newerTaskState = await getLatestActiveVersionOfTask(
-        newTaskState.migratedTo
+        newTaskState.migratedTo,
+        walk
       );
 
       return newerTaskState;

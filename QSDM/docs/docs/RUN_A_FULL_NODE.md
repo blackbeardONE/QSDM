@@ -61,7 +61,7 @@ The manual steps below are what the script does. Use them if you prefer to do it
 | | |
 |---|---|
 | OS and CPU | Linux on x86_64 |
-| RAM | 6 GB for fullnode-rc1109 and fullnode-rc1108 (and fullnode-rc1107): the import and a start each peak at about 2 GiB at 880 376 blocks. A fullnode-rc1109 or fullnode-rc1108 node's memory stays flat while it runs; a fullnode-rc1107 node holds about 0.5 GiB more for every 100 000 blocks it appends until its next restart (11.6 days at 10 seconds per block). The installer stops below 5.5 GiB (below 11 GiB for the older fullnode-rc1019). See [Memory](#memory). |
+| RAM | 6 GB for fullnode-rc1110, fullnode-rc1109 and fullnode-rc1108 (and fullnode-rc1107): the import and a start each peak at about 2 GiB at 880 376 blocks. A fullnode-rc1110, fullnode-rc1109 or fullnode-rc1108 node's memory stays flat while it runs; a fullnode-rc1107 node holds about 0.5 GiB more for every 100 000 blocks it appends until its next restart (11.6 days at 10 seconds per block). The installer stops below 5.5 GiB (below 11 GiB for the older fullnode-rc1019). See [Memory](#memory). |
 | Disk | about 15 GB during setup (download, unpacked snapshot, state), about 6 GB afterwards, growing with the chain |
 | Network | outbound HTTPS to `api.qsdm.tech`; no inbound port |
 | Tools | `curl`, `sha256sum`, `tar`, Python 3; `qsdmcli` for the release signature check (optional, see step 2) |
@@ -72,7 +72,10 @@ The import and every start load the whole chain into memory, and the node keeps 
 memory a node needs grows with the chain. Go's garbage collector lets the heap grow to about twice what is in use
 before it collects, so the peak is about twice the heap, and a running node can use about as much as a start.
 
-fullnode-rc1109 (12 November 2026), the release qsdm.tech/fullnode.html names and the installer installs, is
+fullnode-rc1110 (13 November 2026), the release qsdm.tech/fullnode.html names and the installer installs, is
+fullnode-rc1109 with a security fix: only a task's catalog manager may migrate the task, and from block 1,150,000
+(about 19 November 2026) a block with any other migrate is invalid ([Consensus rules](CONSENSUS_RULES.md#task-migrate-authorization-from-block-1150000)), so install it
+before that height. fullnode-rc1109 (12 November 2026) is
 fullnode-rc1108 built with Go 1.26.11 (it fixes GO-2026-6859 in Go's web server) and golang.org/x/net v0.62.0, and
 its start reads eight journal lines per worker ahead instead of one (the journal load at height 880 377 took 25.0
 seconds instead of 28.0 on 6 threads, at the same peak memory). fullnode-rc1108 (8 November 2026) is fullnode-rc1107
@@ -137,7 +140,7 @@ heap per 100 000 blocks. At 10 seconds per block, 100 000 blocks take 11.6 days.
 in the journal too, once the next block is written there: in a test that appends 2 000 signed blocks, each block
 kept about 0.6 KB of heap instead of about 5.4 KB.
 
-To run fullnode-rc1019 in less memory, upgrade it to fullnode-rc1109 (see [Keeping up to date](#keeping-up-to-date)),
+To run fullnode-rc1019 in less memory, upgrade it to fullnode-rc1110 (see [Keeping up to date](#keeping-up-to-date)),
 or set Go's soft memory limit for the service: run
 `sudo systemctl edit qsdm-follower`, add `Environment=GOMEMLIMIT=...` under `[Service]`, then
 `sudo systemctl restart qsdm-follower`. Choose a value below the server's memory and well above the heap the node

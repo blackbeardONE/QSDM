@@ -18,6 +18,8 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| About 2026-11-19 (scheduled) | 1,150,000 | Only a task's catalog manager may migrate it: a block with any other `migrate` is invalid ([Consensus rules](CONSENSUS_RULES.md#task-migrate-authorization-from-block-1150000)) | **Yes**, full-node operators: run fullnode-rc1110 or newer before this height |
+| 2026-11-12 21:25 | node release | Release rc1110: a security fix. The API refuses a task `migrate` from anyone but the task's catalog manager, to a target that is not another registered, unpaused task of the same manager, or into a cycle; blocks enforce the same rule from 1,150,000. Mining paused 6 minutes. Full nodes: fullnode-rc1110 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | Full-node operators: upgrade before block 1,150,000 |
 | 2026-11-12 07:46 | node release | Release rc1109: built with Go 1.26.11 (GO-2026-6859 in `net/http`) and golang.org/x/net v0.62.0, and a start reads the journal further ahead (no consensus change); mining paused 5 minutes. Full nodes: fullnode-rc1109 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade) |
 | 2026-11-11 | full node | Full nodes can follow a change of block maker: `install-full-node.sh` takes the block-maker schedule from qsdm.tech/fullnode.html (or `--producer-schedule FILE`), and `--update-schedule` puts it into a running node ([Run a full node](RUN_A_FULL_NODE.md#when-the-block-maker-changes)) | No (full-node operators act only after a change of block maker) |
 | 2026-11-08 22:15 | full node | Full-node release fullnode-rc1108, the same `qsdm` as release rc1108: a running full node's memory no longer grows between restarts ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade) |
@@ -43,6 +45,32 @@ upgrades harden that pilot network; they do not change its stage. See
 | 2026-10-11 13:18 | 816,600 | Proof-of-Entanglement enforced | **Yes**, if you send CELL with old software |
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
+
+## 2026-11-12: release rc1110 (a security fix), and the migrate rule from block 1,150,000
+
+- **When:** node release `hardened-legacy-20261113-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1110`,
+  switched in 2026-11-12 21:25 UTC; mining reopened by itself at 21:30 UTC.
+  The same rule becomes a consensus rule at block **1,150,000** (about
+  19 November 2026 at 10-second blocks).
+- **What changed:** a `migrate` task action points a task at its newer
+  version, and QSDM Hive offers that version as an upgrade to everyone running
+  the task. Until rc1110 the node accepted a `migrate` from any signed wallet,
+  for any task and any target. It now requires that the task is registered in
+  the catalog, that the sender is the task's catalog `manager`, and that the
+  target is another registered, unpaused task of the same manager whose own
+  `migrated_to` chain does not lead back to the task.
+  `/api/v1/tasks/actions/submit-signed` answers 403 to anything else, so it
+  never reaches a block. From block 1,150,000 a block that carries such a
+  migrate is invalid; blocks below that height replay as they were produced.
+  The flaw was reported privately on 12 November 2026; no live task had been
+  migrated. Same Go 1.26.11 and modules as rc1109.
+- **QSDM Hive:** the next Hive release also follows a migration only to a task
+  of the same manager, and stops on a cycle.
+- **What you have to do:** nothing as a wallet holder, miner or task
+  publisher. Full-node operators: install `fullnode-rc1110` (the same `qsdm`)
+  before block 1,150,000. An older full node keeps following, because the
+  producer never puts a refused migrate in a block, but only rc1110 or newer
+  checks the rule itself.
 
 ## 2026-11-12: release rc1109
 
