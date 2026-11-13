@@ -124,6 +124,35 @@ describe('HiveVersionGate updater integration', () => {
     expect(screen.queryByText('Protected Hive')).not.toBeInTheDocument();
   });
 
+  it('on a Mac, sends the user to the download page instead of updating itself', async () => {
+    (useQuery as jest.Mock).mockReturnValue({
+      data: {
+        ...oldVersionPolicy,
+        downloadUrl: 'https://qsdm.tech/download.html',
+        selfUpdates: false,
+      },
+      isLoading: false,
+      isFetching: false,
+      refetch: jest.fn(),
+    });
+
+    render(
+      <HiveVersionGate>
+        <div>Protected Hive</div>
+      </HiveVersionGate>
+    );
+
+    expect(
+      await screen.findByText(/does not update itself on a Mac/)
+    ).toBeInTheDocument();
+    expect(screen.getByText('Download Installer')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Retry Automatic Update')
+    ).not.toBeInTheDocument();
+    expect(checkAppUpdate).not.toHaveBeenCalled();
+    expect(screen.queryByText('Protected Hive')).not.toBeInTheDocument();
+  });
+
   it('keeps update listeners isolated when the gate unmounts', () => {
     (useQuery as jest.Mock).mockReturnValue({
       data: { ...oldVersionPolicy, compatible: true, reason: 'current' },

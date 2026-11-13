@@ -171,6 +171,24 @@ describe('qsdmWalletProviderNativeHost', () => {
       })
     ).toThrow('extension key does not match Hive');
   });
+
+  it('declines on macOS without writing anything (no Mac native host yet)', () => {
+    const fixture = createFixture();
+    const appDataPath = path.join(fixture.root, 'app-data');
+    const result = registerQsdmWalletProviderNativeHost({
+      platform: 'darwin',
+      resourcesPath: fixture.resourcesPath,
+      appDataPath,
+      homeDirectory: path.join(fixture.root, 'home'),
+      nativeHostPath: fixture.nativeHostPath,
+    });
+
+    expect(result.installed).toBe(false);
+    expect(result.reason).toBe(
+      'Browser wallet bridge is not supported on darwin'
+    );
+    expect(fs.existsSync(appDataPath)).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -10,8 +10,10 @@ import { RendererEndpoints } from 'config/endpoints';
 
 import { app } from './app';
 import {
+  checkForUpdates,
   getQsdmHiveUpdateFeedUrl,
   initializeAppUpdater,
+  QSDM_HIVE_NO_SELF_UPDATE_MESSAGE,
   resetAppUpdaterForTests,
   shouldEnableAutoUpdates,
 } from './AppUpdater';
@@ -90,15 +92,52 @@ describe('AppUpdater release channels', () => {
   });
 
   it('does not let environment overrides disable stable production updates', () => {
+    for (const platform of ['win32', 'linux'] as NodeJS.Platform[]) {
+      expect(
+        shouldEnableAutoUpdates(
+          {
+            NODE_ENV: 'production',
+            QSDM_DISABLE_AUTO_UPDATES: '1',
+          },
+          '1.4.12',
+          platform
+        )
+      ).toBe(true);
+    }
+  });
+
+  it('never installs signed Windows or Linux updates on macOS', () => {
     expect(
       shouldEnableAutoUpdates(
-        {
-          NODE_ENV: 'production',
-          QSDM_DISABLE_AUTO_UPDATES: '1',
-        },
-        '1.4.12'
+        { NODE_ENV: 'production', QSDM_ENABLE_AUTO_UPDATES: '1' },
+        '1.4.12',
+        'darwin'
       )
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it('never configures, fetches or runs the updater on macOS', async () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform');
+    const calls = () => [
+      updater.setFeedURL.mock.calls.length,
+      updater.checkForUpdates.mock.calls.length,
+      updater.downloadUpdate.mock.calls.length,
+      (getVerifiedQsdmHiveRelease as jest.Mock).mock.calls.length,
+    ];
+    const before = calls();
+    resetAppUpdaterForTests();
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    try {
+      await initializeAppUpdater(undefined, jest.fn());
+      // The update screen's own check is refused too.
+      await expect(checkForUpdates()).rejects.toThrow(
+        QSDM_HIVE_NO_SELF_UPDATE_MESSAGE
+      );
+    } finally {
+      if (original) Object.defineProperty(process, 'platform', original);
+      resetAppUpdaterForTests();
+    }
+    expect(calls()).toEqual(before);
   });
 });
 

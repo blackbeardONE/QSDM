@@ -18,6 +18,9 @@ export type HiveVersionPolicyStatus = {
   // True when the required version comes from the signed release envelope
   // Hive saved earlier, because the release feed could not be used just now.
   fromCache?: boolean;
+  // False on macOS: no signed Mac release exists for Hive to install itself,
+  // so the update screen sends the user to the download page.
+  selfUpdates?: boolean;
 };
 
 export default (

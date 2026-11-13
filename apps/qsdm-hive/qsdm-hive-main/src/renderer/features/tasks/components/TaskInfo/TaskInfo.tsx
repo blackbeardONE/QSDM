@@ -4,6 +4,10 @@ import { useMutation, useQuery, useQueryClient } from 'react-query';
 
 import CellCoinIcon from 'assets/svgs/cell-coin-small.svg';
 import {
+  isQsdmMiningPlatform,
+  QSDM_MINING_UNSUPPORTED_MESSAGE,
+} from 'config/qsdmPlatformSupport';
+import {
   isQsdmMinerSystemTaskId,
   isQsdmMotherHiveSystemTaskId,
   isQsdmSkyFangLinkSystemTaskId,
@@ -20,6 +24,7 @@ import { TaskPairing } from 'models';
 import { TaskMetadata } from 'models/task';
 import { useAverageSlotTime } from 'renderer/features/common';
 import {
+  getPlatform,
   getQsdmSkyFangLinkStatus,
   getQsdmMinerRewardStatus,
   getQsdmMotherHiveStatus,
@@ -592,6 +597,16 @@ export function TaskInfo({
   const isMinerTask = isQsdmMinerSystemTaskId(publicKey);
   const isMotherHiveTask = isQsdmMotherHiveSystemTaskId(publicKey);
   const isSkyFangLinkTask = isQsdmSkyFangLinkSystemTaskId(publicKey);
+  // Mining needs Windows or Linux with an NVIDIA GPU; on a Mac the panel says
+  // so instead of offering a miner that cannot start.
+  const { data: platformInfo } = useQuery('checkPlatform', getPlatform, {
+    enabled: isMinerTask,
+    staleTime: Infinity,
+  });
+  const miningUnsupported =
+    isMinerTask &&
+    !!platformInfo?.platform &&
+    !isQsdmMiningPlatform(platformInfo.platform);
   const { data: minerRewardStatus, isLoading: isLoadingMinerRewardStatus } =
     useQuery(
       [QueryKeys.QsdmMinerRewardStatus, publicKey],
@@ -715,6 +730,9 @@ export function TaskInfo({
 
       {isMinerTask && (
         <div className="flex flex-col gap-3 rounded-lg border border-qsdm-border bg-qsdm-panel px-4 py-3 text-xs">
+          {miningUnsupported && (
+            <MinerNotice>{QSDM_MINING_UNSUPPORTED_MESSAGE}</MinerNotice>
+          )}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-x-6 gap-y-3">
             <MinerStat label="Reward source">
               QSDM protocol mining emission

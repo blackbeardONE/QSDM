@@ -56,10 +56,16 @@ const getCommonLocalWorkspaceRoots = () => {
   if (home) {
     roots.push(
       path.join(home, 'Projects', 'QSDM+'),
-      path.join(home, 'Projects', 'QSDM'),
-      path.join(home, 'Documents', 'QSDM+'),
-      path.join(home, 'Documents', 'QSDM')
+      path.join(home, 'Projects', 'QSDM')
     );
+    // macOS asks the user before an app may look inside ~/Documents; this
+    // developer convenience must not raise that privacy prompt on a Mac.
+    if (process.platform !== 'darwin') {
+      roots.push(
+        path.join(home, 'Documents', 'QSDM+'),
+        path.join(home, 'Documents', 'QSDM')
+      );
+    }
   }
 
   if (process.platform === 'win32') {

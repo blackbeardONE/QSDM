@@ -103,7 +103,11 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
       policy.currentVersion,
       policy.requiredVersion
     );
-    if (policy.reason !== 'version-mismatch' || versionRelation !== -1) {
+    if (
+      policy.selfUpdates === false ||
+      policy.reason !== 'version-mismatch' ||
+      versionRelation !== -1
+    ) {
       setUpdateStage('manual');
       return;
     }
@@ -150,6 +154,7 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
       ? 'Hive could not verify the approved release manifest.'
       : 'This Hive build does not match the approved release.';
   const canInstallAutomatically =
+    policy?.selfUpdates !== false &&
     policy?.reason === 'version-mismatch' &&
     compareHiveVersions(policy.currentVersion, policy.requiredVersion) === -1;
   const updateStatus = getUpdateStatus(updateStage, requiredVersion);
@@ -198,6 +203,13 @@ export function HiveVersionGate({ children }: Props): JSX.Element {
         {policy?.error && (
           <p className="mb-6 rounded-lg border border-qsdm-danger/40 bg-qsdm-danger/10 p-3 text-sm text-[#ffb4b4]">
             {policy.error}
+          </p>
+        )}
+
+        {policy?.selfUpdates === false && (
+          <p className="mb-6 rounded-lg border border-qsdm-teal/30 bg-qsdm-teal/5 p-3 text-sm text-qsdm-text">
+            Hive does not update itself on a Mac yet. Download the new version,
+            then replace QSDM Hive in Applications.
           </p>
         )}
 

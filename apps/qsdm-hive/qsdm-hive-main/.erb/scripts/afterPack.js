@@ -6,10 +6,57 @@ const {
   assertPackagedRuntimeDependencies,
 } = require('./verify-runtime-dependencies.cjs');
 
-// cspell:ignore qsdmminer
+// cspell:ignore qsdmminer asar
+
+// macOS: runs for the x64 and the arm64 app and again for the universal app
+// merged from them. The runtime modules are in the app's asar archives,
+// qsdmcli is packed and executable, and nothing of the miner or the edge
+// helpers is (mining needs an NVIDIA GPU: Windows and Linux only). The app is
+// not run here: it is signed only after this hook.
+function afterPackMac(context) {
+  const app = path.join(
+    context.appOutDir,
+    `${context.packager.appInfo.productFilename}.app`
+  );
+  const resources = path.join(app, 'Contents', 'Resources');
+  // When the two architectures' app.asar differ (their native modules do),
+  // the universal app keeps both, as app-x64.asar and app-arm64.asar, behind
+  // a small app.asar that loads the right one.
+  const perArchArchives = ['app-x64.asar', 'app-arm64.asar'].map((name) =>
+    path.join(resources, name)
+  );
+  const archives = perArchArchives.every((archive) => fs.existsSync(archive))
+    ? perArchArchives
+    : [path.join(resources, 'app.asar')];
+  const required = runtimeDependencies(
+    path.resolve(__dirname, '../../release/app')
+  );
+  for (const archive of archives) {
+    assertPackagedRuntimeDependencies(archive, required);
+  }
+  const qsdmcli = path.join(resources, 'native', 'qsdmcli');
+  try {
+    fs.accessSync(qsdmcli, fs.constants.X_OK);
+  } catch {
+    throw new Error(
+      `Packaged macOS qsdmcli is missing or not executable: ${qsdmcli}`
+    );
+  }
+  for (const folder of ['miner', 'edge']) {
+    if (fs.existsSync(path.join(resources, folder))) {
+      throw new Error(
+        `The macOS app must not carry ${folder}/ (the miner and the Edge tools are Windows and Linux only)`
+      );
+    }
+  }
+}
 
 exports.default = async function afterPack(context) {
   const platform = context.electronPlatformName;
+  if (platform === 'darwin') {
+    afterPackMac(context);
+    return;
+  }
   if (platform !== 'linux' && platform !== 'win32') return;
   const required = runtimeDependencies(
     path.resolve(__dirname, '../../release/app')

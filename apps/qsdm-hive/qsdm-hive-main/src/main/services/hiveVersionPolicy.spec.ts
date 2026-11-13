@@ -2,8 +2,11 @@ import {
   canUseLocalHiveVersionPolicyOverrides,
   getDefaultHiveVersionManifestUrl,
   getCurrentHiveVersion,
+  getHiveSignedReleaseManifestUrl,
   getHiveVersionManifestUrl,
   getHiveVersionPolicyStatus,
+  getHiveVersionReferencePlatform,
+  hasOwnSignedReleaseChannel,
   isUnsignedPreviewHiveVersion,
   parseHiveReleaseManifest,
   resetHiveVersionPolicyCacheForTests,
@@ -24,6 +27,40 @@ describe('hiveVersionPolicy', () => {
 
   afterAll(() => {
     process.env = originalEnv;
+  });
+
+  it('checks a Mac build against the signed Linux release and sends it to the download page', () => {
+    expect(getHiveVersionReferencePlatform('darwin')).toBe('linux');
+    expect(getHiveVersionReferencePlatform('linux')).toBe('linux');
+    expect(getHiveVersionReferencePlatform('win32')).toBe('win32');
+    expect(hasOwnSignedReleaseChannel('darwin')).toBe(false);
+    expect(hasOwnSignedReleaseChannel('linux')).toBe(true);
+    expect(hasOwnSignedReleaseChannel('win32')).toBe(true);
+    // macOS used to throw here ("signed updates do not support darwin"), which
+    // blocked every guarded endpoint of a Mac build.
+    expect(getHiveSignedReleaseManifestUrl('darwin')).toBe(
+      getHiveSignedReleaseManifestUrl('linux')
+    );
+  });
+
+  it('tells the update screen that only a Mac build cannot update itself', async () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform');
+    process.env.QSDM_HIVE_REQUIRED_VERSION = '999.0.0';
+    try {
+      for (const [platform, selfUpdates] of [
+        ['darwin', false],
+        ['linux', true],
+        ['win32', true],
+      ] as const) {
+        Object.defineProperty(process, 'platform', { value: platform });
+        // eslint-disable-next-line no-await-in-loop
+        const status = await getHiveVersionPolicyStatus({ forceRefresh: true });
+        expect(status.updateRequired).toBe(true);
+        expect(status.selfUpdates).toBe(selfUpdates);
+      }
+    } finally {
+      if (original) Object.defineProperty(process, 'platform', original);
+    }
   });
 
   it('accepts only the exact required Hive version', async () => {

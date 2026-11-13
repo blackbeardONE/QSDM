@@ -11,6 +11,7 @@ import { app } from './app';
 import { getAppDataPath } from './node/helpers/getAppDataPath';
 import {
   getCurrentHiveVersion,
+  hasOwnSignedReleaseChannel,
   isUnsignedPreviewHiveVersion,
 } from './services/hiveVersionPolicy';
 import {
@@ -47,13 +48,24 @@ let updateCheckPromise: Promise<UpdateCheckResult | null> | null = null;
 let updateDownloadPromise: Promise<string[]> | null = null;
 let installPromptOpen = false;
 
+export const QSDM_HIVE_NO_SELF_UPDATE_MESSAGE =
+  'QSDM Hive does not update itself on macOS: there is no signed Mac release yet. Download new versions from https://qsdm.tech/download.html.';
+
 export function shouldEnableAutoUpdates(
   env: NodeJS.ProcessEnv = process.env,
-  currentVersion = getCurrentHiveVersion()
+  currentVersion = getCurrentHiveVersion(),
+  platform: NodeJS.Platform = process.platform
 ) {
   // An unsigned preview must never become an automatic trust transition.
   // Preview users move to the first signed stable release manually.
   if (isUnsignedPreviewHiveVersion(currentVersion)) {
+    return false;
+  }
+
+  // macOS has no signed installer on the hive-v2 channel: never fetch or run a
+  // Windows or Linux update there. The version policy still checks the version
+  // (against the signed Linux release) and links to the download page.
+  if (!hasOwnSignedReleaseChannel(platform)) {
     return false;
   }
 
@@ -94,7 +106,9 @@ export async function initializeAppUpdater(
 ) {
   if (!shouldEnableAutoUpdates()) {
     console.log(
-      'QSDM Hive auto updates are disabled for this runtime. Set QSDM_ENABLE_AUTO_UPDATES=1 to enable release checks in development.'
+      hasOwnSignedReleaseChannel()
+        ? 'QSDM Hive auto updates are disabled for this runtime. Set QSDM_ENABLE_AUTO_UPDATES=1 to enable release checks in development.'
+        : QSDM_HIVE_NO_SELF_UPDATE_MESSAGE
     );
     return;
   }
@@ -301,6 +315,12 @@ function createCheckForTheUpdatesInterval() {
 async function runUpdateCheck(
   reason: string
 ): Promise<UpdateCheckResult | null> {
+  // Every check, scheduled or asked for by the update screen, goes through
+  // here: on macOS the updater is never configured, fetched or run, so no
+  // Windows or Linux release can be downloaded or installed there.
+  if (!hasOwnSignedReleaseChannel()) {
+    throw new Error(QSDM_HIVE_NO_SELF_UPDATE_MESSAGE);
+  }
   if (updateCheckPromise) {
     return updateCheckPromise;
   }
