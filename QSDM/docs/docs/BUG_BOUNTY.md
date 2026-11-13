@@ -261,8 +261,13 @@ allowed, ask through the private channel first.
 ## 9. Acknowledgments
 
 Reporters who agree to be named are listed in the
-[review log](COMMUNITY_REVIEW.md#7-review-log). No bounty reports have been
-received or paid yet.
+[review log](COMMUNITY_REVIEW.md#7-review-log).
+
+- **tokenist / swaplaner**: the first report (R1, 12 November 2026, Medium):
+  any signed wallet could set any task's migration pointer. Fixed in
+  release rc1110; advisory
+  [GHSA-ppp3-xm6g-w5wc](https://github.com/blackbeardONE/QSDM/security/advisories/GHSA-ppp3-xm6g-w5wc)
+  (13 November 2026). Reward: 1,000 CELL.
 
 ## 10. Changes to this policy
 

@@ -42,6 +42,10 @@ from 2026-04-22 on.
     [Network upgrades](QSDM/docs/docs/NETWORK_UPGRADES.md),
     [Task registry](QSDM/docs/docs/QSDM_TASK_REGISTRY.md), `openapi.yaml`.
   - Full-node operators: install `fullnode-rc1110` before block 1,150,000.
+  - Credit: reported by tokenist / swaplaner, the first report under the
+    [bug bounty](QSDM/docs/docs/BUG_BOUNTY.md) (Medium, 1,000 CELL). Advisory
+    [GHSA-ppp3-xm6g-w5wc](https://github.com/blackbeardONE/QSDM/security/advisories/GHSA-ppp3-xm6g-w5wc),
+    published 2026-11-13; review log entry R1.
 
 - **2026-11-12: the private security channel works again, and is watched.**
   A reporter found (issue #188) that both channels in

@@ -291,8 +291,9 @@ has been reviewed.
 | ID | Date | Who | Component(s) | Commit / release | Type | Result | Link |
 |---|---|---|---|---|---|---|---|
 | R0 | 2026-10-17 | QSDM project | All | `8d7b159` (proposed) | Program | Community review and bug bounty published. Bounty tiers and a 50,000 CELL pool confirmed by the owner on 17 October 2026. Review export with build and follower-release tooling: **not yet published** | This page |
+| R1 | 2026-11-12 | tokenist / swaplaner | 7 (task actions) | rc1109; fixed in rc1110, `fullnode-rc1110` and #198 (`8463dfb`) | Finding (Medium) | Any signed wallet could set any task's migration pointer (`migrated_to`). The producer refuses such a `migrate` since 2026-11-12 21:25 UTC, and it is a consensus rule from block 1,150,000. Reward 1,000 CELL; the transfer ID is added here when it is paid | [GHSA-ppp3-xm6g-w5wc](https://github.com/blackbeardONE/QSDM/security/advisories/GHSA-ppp3-xm6g-w5wc) |
 
-No external reviews, build attestations or bounty reports have been logged yet.
+One bounty report is logged (R1). No external reviews or build attestations have been logged yet.
 
 **To add an entry**, include: a short ID (next free `R<n>`), the date, your
 name or handle (or "anonymous"), the components from §2.2, the exact commit or
