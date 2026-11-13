@@ -61,7 +61,7 @@ The manual steps below are what the script does. Use them if you prefer to do it
 | | |
 |---|---|
 | OS and CPU | Linux on x86_64 |
-| RAM | 6 GB for fullnode-rc1110, fullnode-rc1109 and fullnode-rc1108 (and fullnode-rc1107): the import and a start each peak at about 2 GiB at 880 376 blocks. A fullnode-rc1110, fullnode-rc1109 or fullnode-rc1108 node's memory stays flat while it runs; a fullnode-rc1107 node holds about 0.5 GiB more for every 100 000 blocks it appends until its next restart (11.6 days at 10 seconds per block). The installer stops below 5.5 GiB (below 11 GiB for the older fullnode-rc1019). See [Memory](#memory). |
+| RAM | 6 GB for fullnode-rc1111, fullnode-rc1110, fullnode-rc1109 and fullnode-rc1108 (and fullnode-rc1107): the import and a start each peak at about 2 GiB at 880 376 blocks. A fullnode-rc1111, fullnode-rc1110, fullnode-rc1109 or fullnode-rc1108 node's memory stays flat while it runs; a fullnode-rc1107 node holds about 0.5 GiB more for every 100 000 blocks it appends until its next restart (11.6 days at 10 seconds per block). The installer stops below 5.5 GiB (below 11 GiB for the older fullnode-rc1019). See [Memory](#memory). |
 | Disk | about 15 GB during setup (download, unpacked snapshot, state), about 6 GB afterwards, growing with the chain |
 | Network | outbound HTTPS to `api.qsdm.tech`; no inbound port |
 | Tools | `curl`, `sha256sum`, `tar`, Python 3; `qsdmcli` for the release signature check (optional, see step 2) |
@@ -72,7 +72,10 @@ The import and every start load the whole chain into memory, and the node keeps 
 memory a node needs grows with the chain. Go's garbage collector lets the heap grow to about twice what is in use
 before it collects, so the peak is about twice the heap, and a running node can use about as much as a start.
 
-fullnode-rc1110 (13 November 2026), the release qsdm.tech/fullnode.html names and the installer installs, is
+fullnode-rc1111, the release qsdm.tech/fullnode.html names and the installer installs, is fullnode-rc1110 with one
+more rule: a transaction ID names one transaction, whatever its contract, and from block 1,160,000 (about
+21 November 2026) a block that repeats a committed ID is invalid ([Consensus rules](CONSENSUS_RULES.md#transaction-id-uniqueness-from-block-1160000)), so install it
+before that height. fullnode-rc1110 (13 November 2026) is
 fullnode-rc1109 with a security fix: only a task's catalog manager may migrate the task, and from block 1,150,000
 (about 19 November 2026) a block with any other migrate is invalid ([Consensus rules](CONSENSUS_RULES.md#task-migrate-authorization-from-block-1150000)), so install it
 before that height. fullnode-rc1109 (12 November 2026) is
@@ -140,7 +143,7 @@ heap per 100 000 blocks. At 10 seconds per block, 100 000 blocks take 11.6 days.
 in the journal too, once the next block is written there: in a test that appends 2 000 signed blocks, each block
 kept about 0.6 KB of heap instead of about 5.4 KB.
 
-To run fullnode-rc1019 in less memory, upgrade it to fullnode-rc1110 (see [Keeping up to date](#keeping-up-to-date)),
+To run fullnode-rc1019 in less memory, upgrade it to fullnode-rc1111 (see [Keeping up to date](#keeping-up-to-date)),
 or set Go's soft memory limit for the service: run
 `sudo systemctl edit qsdm-follower`, add `Environment=GOMEMLIMIT=...` under `[Service]`, then
 `sudo systemctl restart qsdm-follower`. Choose a value below the server's memory and well above the heap the node
@@ -338,7 +341,7 @@ that its block-maker schedule names for that height: the `[consensus.producer_tr
 standby block maker and back, the new block maker signs from the next block on with a new key, and every node needs
 the new schedule. The block maker changed on 13 November 2026: the project's full node in Japan made blocks 1,095,602
 to 1,095,784, and the producer has signed with a new key since block 1,095,785. A node with the schedule of the
-full-node releases (up to `fullnode-rc1110`) stops at block 1,095,601 until it has the new one: four block makers,
+full-node releases (up to `fullnode-rc1111`) stops at block 1,095,601 until it has the new one: four block makers,
 digest `fd23fbcae12315a4…`, on qsdm.tech/fullnode.html and in
 [Producer transition](PRODUCER_TRANSITION.md#the-public-schedule).
 

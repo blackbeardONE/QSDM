@@ -355,6 +355,10 @@ func (bp *BlockProducer) ProduceBlock() (block *Block, err error) {
 	}
 
 	txs := bp.pool.Drain(bp.maxTxBlock)
+	// A drained transaction whose ID already belongs to a committed one (or to
+	// a failed one of another contract) is discarded without a receipt, so the
+	// receipt that owns the ID stays (txid_unique.go).
+	txs = dropReceiptCollisions(txs, bp.appendReceipts)
 	if len(txs) == 0 {
 		return nil, fmt.Errorf("no transactions to include")
 	}

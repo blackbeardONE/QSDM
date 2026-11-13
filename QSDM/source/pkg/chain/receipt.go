@@ -94,7 +94,15 @@ func (rs *ReceiptStore) Store(receipt *TxReceipt) {
 	// and byBlock 1->2. Making it true here is cheaper than correcting the
 	// comment, and fixes the invited operation rather than documenting it as
 	// unsafe.
-	if _, exists := rs.byTxID[receipt.TxID]; exists {
+	//
+	// Since rc1111 (txid_unique.go) only a failed receipt is replaced, and only
+	// by a receipt for the same contract: a committed receipt is final, in
+	// memory and when the receipts file is replayed at start-up.
+	if prev, exists := rs.byTxID[receipt.TxID]; exists {
+		if !receiptMayReplace(prev, receipt) {
+			noteReceiptKept(prev, receipt)
+			return
+		}
 		rs.replaceLocked(receipt)
 		return
 	}

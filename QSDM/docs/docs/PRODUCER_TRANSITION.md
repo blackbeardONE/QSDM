@@ -351,7 +351,7 @@ The digest is the SHA-256 of the schedule's canonical JSON:
 spaces, and `checkpoint_hash` `""` for epoch 0. Two nodes with the same digest
 enforce the same schedule. A version 1 table and its version 2 spelling have
 different digests (the version is part of it). The release's version 1 table
-(`fullnode-rc1108`, `fullnode-rc1109` and `fullnode-rc1110`) has the digest
+(`fullnode-rc1108` to `fullnode-rc1111`) has the digest
 `bd666048acae4de96b637e79852a764f516b7d7bd9b086f09bdd504d3bcf0da5`.
 
 ### The public schedule

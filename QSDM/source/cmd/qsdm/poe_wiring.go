@@ -69,6 +69,15 @@ func poeMetricsCollector(p *chain.BlockProducer) monitoring.MetricCollector {
 				"Admitted wallet transfers that would fail the PoE rules once active, by rule",
 				s.ShadowWouldReject[reason], map[string]string{"reason": reason}))
 		}
+		// Transaction IDs are unique across contracts (chain/txid_unique.go).
+		t := chain.TxIDUniqueStats()
+		out = append(out,
+			gauge("qsdm_txid_unique_activation_height", "First block at which every transaction ID must be unused in the PoE reference window, whatever its contract", float64(t.ActivationHeight)),
+			counter("qsdm_txid_admission_refused_total", "Signed task actions refused because their ID belongs to another recorded or pending transaction", t.AdmissionRefused, nil),
+			counter("qsdm_txid_production_skipped_total", "Drained transactions left out of a block because their ID already owns a receipt", t.ProductionSkipped, nil),
+			counter("qsdm_txid_receipts_kept_total", "Receipts kept when a later receipt with the same ID would have replaced them", t.ReceiptsKept, nil),
+			counter("qsdm_txid_external_blocks_refused_total", "External blocks refused because a non-transfer transaction repeated a committed ID", t.BlocksRefused, nil),
+		)
 		return out
 	}
 }

@@ -35,7 +35,7 @@ unchanged for community review.
 
 | | |
 |---|---|
-| Release | `hardened-legacy-20261113-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1110`, live since 12 November 2026, 21:30 UTC. The full-node release `fullnode-rc1110` on GitHub carries the same `qsdm` |
+| Release | `hardened-legacy-20261114-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1111`, live since 13 November 2026, 18:41 UTC. The full-node release `fullnode-rc1111` on GitHub carries the same `qsdm` |
 | Source commit | `8d7b159` (proposed review commit). The scope was prepared for release `hardened-legacy-20261016-d7ffcd4-hl2-edge-go1269-ids-pqe` at this commit |
 | Go module | `src/` in the review export (`QSDM/source/` in the public repository) |
 | Size | About 145,000 lines of non-test Go in total; the core review set (ranks 1–7 below) is about 45,000–55,000 lines |

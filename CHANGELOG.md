@@ -271,6 +271,33 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-13: a transaction ID names one transaction, whatever its contract
+  (node release rc1111; a consensus rule from block 1,160,000).** Wallet
+  transfers have been held to this since block 816,600; rc1111 extends it to
+  every contract. The producer has run it since 2026-11-13 18:41 UTC.
+  - `QSDM/source/pkg/chain/txid_unique.go`: the producer admits a signed task
+    action only when no receipt and no other pending transaction holds its ID
+    (`/api/v1/tasks/actions/submit-signed` answers 409, `status` `duplicate`,
+    `mempool_status` `id_taken`, and writes nothing to the action log). Block
+    production leaves out a transaction whose ID already has a committed
+    receipt, or a failed one of another contract, and writes no receipt for
+    it. A committed receipt is final: a later receipt with the same ID replaces
+    only a failed receipt of the same contract, also when the receipts file is
+    replayed at start.
+  - From `TxIDUniqueActivationHeight` (1,160,000) a block is invalid when any
+    of its transactions repeats an ID committed in the Proof-of-Entanglement
+    reference window (8,640 blocks) or earlier in the same block, whatever its
+    contract (`poeBlockScope.check`); blocks below that height replay as
+    produced.
+  - Metrics: `qsdm_txid_unique_activation_height`,
+    `qsdm_txid_admission_refused_total`, `qsdm_txid_production_skipped_total`,
+    `qsdm_txid_receipts_kept_total`, `qsdm_txid_external_blocks_refused_total`.
+  - Tests: 11 in `txid_unique_test.go`, 1 in
+    `handlers_task_actions_txid_test.go`. Docs:
+    [Consensus rules](QSDM/docs/docs/CONSENSUS_RULES.md),
+    [Network upgrades](QSDM/docs/docs/NETWORK_UPGRADES.md), `openapi.yaml`.
+  - Full-node operators: install `fullnode-rc1111` before block 1,160,000.
+
 - **2026-11-13: the first live turn of block production.** Mining closed at
   11:53:37 UTC and the producer stopped at block 1,095,601. The project's full
   node in Japan made blocks 1,095,602 to 1,095,784 with its own key (the first
