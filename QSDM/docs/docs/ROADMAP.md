@@ -26,12 +26,12 @@ ready and is announced on [Network status](NETWORK_STATUS.md) and in the
   from 2026-10-22).
 - Anyone can run a full node that verifies every block: a signed full-node release,
   a verified chain snapshot and HTTP sync ([Run a full node](RUN_A_FULL_NODE.md)).
-- The project's full node in Japan (since 2026-11-08, on fullnode-rc1109 since
-  2026-11-12) is the standby block maker. A full takeover with the producer's
-  mining records and the hand-back to a new key were rehearsed on copies of it
-  on 2026-11-10 and 2026-11-11, sealed off from the network; block production
-  has not moved to it yet. Since 2026-11-11 full nodes can follow a change of
-  block maker.
+- The project's full node in Japan (since 2026-11-08, on fullnode-rc1110 since
+  2026-11-13) is the standby block maker. After rehearsals on copies of it
+  (2026-11-10 and 2026-11-11), the live turn ran on 2026-11-13: it made blocks
+  1,095,602 to 1,095,784, and the producer took over again with a new key.
+  Full nodes follow a change of block maker (since 2026-11-11) with the
+  schedule on qsdm.tech/fullnode.html.
 - Wallet transactions signed with ML-DSA-87.
 - The [web wallet](WEB_WALLET.md) installs as a phone app (since 2026-11-10).
 
@@ -60,13 +60,13 @@ in [Network upgrades](NETWORK_UPGRADES.md) and [Network status](NETWORK_STATUS.m
 | **Phone wallet**: the [web wallet](WEB_WALLET.md) installs as a phone app | 2026-11-10 |
 | **Hand-over rehearsals**: copies of the project's full node in Japan, sealed off from the network, took over block production, with the producer's mining records and the hand-back to a new key | 2026-11-10 and 2026-11-11 |
 | **Full nodes follow a change of block maker**: the installer takes the block-maker schedule from qsdm.tech/fullnode.html and puts it into a running node | 2026-11-11 |
+| **Live turn of block production**: the project's full node in Japan made blocks 1,095,602 to 1,095,784, then the producer took over again with a new key; full nodes take the new schedule from qsdm.tech/fullnode.html | 2026-11-13 |
 
 ## Next
 
 | Step | What it means for you |
 |---|---|
 | **Retire Ed25519 stream session keys** | Ed25519 transactions are already refused (since 2026-10-16, `ed25519_tx_accepted: false`). CELL stream session keys, which sign stream usage receipts, are still Ed25519. From a published height (`stream_ed25519_retirement_height`) a stream open, which registers such a key, is refused; streams opened before it can still take receipts, settle and close. The rule is in the code; no height is set yet. |
-| **Live turn to the standby block maker** | Block production moves for real to the project's full node in Japan, as rehearsed on copies of it on 2026-11-10 and 2026-11-11. This is the next step. Full nodes then take the new block-maker schedule from qsdm.tech/fullnode.html ([Run a full node](RUN_A_FULL_NODE.md#when-the-block-maker-changes)). |
 | **Block production by miners** | Miners produce blocks, in stages, instead of a set of independent validators (decision of 2026-10-19). The single producer's role ends with the last stage. Designed, not built; each stage is a published network upgrade with at least 7 days' notice. |
 
 ## Mainnet gates

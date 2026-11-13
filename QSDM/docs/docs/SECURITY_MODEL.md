@@ -62,9 +62,11 @@ network see [Network status](NETWORK_STATUS.md).
 ## Block production and consensus
 
 - Today one block producer creates every block. The project's full node in
-  Japan checks every block and is the standby block maker: copies of it,
-  sealed off from the network, rehearsed taking over block production on 10
-  and 11 November 2026, but production has not moved to it. Since 2 November
+  Japan checks every block and is the standby block maker: after rehearsals
+  on copies of it (10 and 11 November 2026), it made blocks 1,095,602 to
+  1,095,784 in a live turn on 13 November 2026, and the producer then took
+  over again with a new key. Every node checks each block's signer against
+  the same block-maker schedule. Since 2 November
   2026 the producer's peer-to-peer port is public, with
   connection, stream and block-request limits; the status API's `peers` counts
   the connected peers. The code of those limits is in this repository: the
@@ -99,9 +101,9 @@ network see [Network status](NETWORK_STATUS.md).
   consensus message must carry a valid ML-DSA signature, and unsigned
   consensus traffic is refused. This stops forged consensus messages; it does
   not add independent validators. Today the one producer signs them all.
-- The next step on the [Roadmap](ROADMAP.md) is a live turn of block
-  production to the standby block maker; block production by miners, in
-  stages, follows (decision of 19 October 2026). Multi-validator BFT is
+- The live turn of block production to the standby block maker ran on 13
+  November 2026; the next step on the [Roadmap](ROADMAP.md) is block
+  production by miners, in stages (decision of 19 October 2026). Multi-validator BFT is
   in the code but no longer planned. The full list of rules in force is in
   [Consensus rules](CONSENSUS_RULES.md).
 - Mainnet needs the [mainnet gates](ROADMAP.md#mainnet-gates) and

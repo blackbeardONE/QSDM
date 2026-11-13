@@ -29,8 +29,9 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
 
 - Blocks come from **one block producer at a time, run by the project** on a
   server in Singapore. The project's full node in Japan follows the
-  chain and is the standby block maker; it has not yet made blocks on the live
-  network. Live peer count and consensus flags are published at
+  chain and is the standby block maker; on 13 November 2026 it made blocks
+  1,095,602 to 1,095,784 in a live turn, then the producer took over again with
+  a new key. Live peer count and consensus flags are published at
   [`/api/v1/status`](https://api.qsdm.tech/api/v1/status) and
   [qsdm.tech/network.html](https://qsdm.tech/network.html).
 - CELL wallet transactions (Hive, web wallet, `qsdmcli`) are signed with

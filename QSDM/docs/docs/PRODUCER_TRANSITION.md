@@ -14,11 +14,12 @@ instead and does not read that list (see the stale-allowlist warning in
 There are two versions of the table:
 
 - **Version 1** describes exactly one hand-over: a historical producer, then a
-  replacement producer. The public network has had one hand-over so far, at
-  height 659,977, and a version 1 table describes it.
+  replacement producer. Until 13 November 2026 the public network had had one
+  hand-over, at height 659,977, and a version 1 table described it.
 - **Version 2** lists every producer the chain has had, in order, as producer
   epochs. It is needed for a second hand-over, for example to a standby
-  producer.
+  producer. The public network uses it since the live turn of 13 November
+  2026 ([The public schedule](#the-public-schedule)).
 
 A node that runs this code with its existing version 1 table behaves exactly as
 before. Version 2 applies only when a table says `version = 2`.
@@ -318,9 +319,11 @@ the standby block maker, sealed off from the network. On 10 November 2026 a
 copy took over block production. On 11 November 2026 a copy rehearsed a full
 takeover with the producer's own mining records (the reconciliation was clean;
 mining was closed, then reopened) and the hand-back to a new key, and the
-mining audit passed: every proof was paid exactly once. Block production has
-not yet been turned over to that node on the live network; that is the next
-step.
+mining audit passed: every proof was paid exactly once. On 13 November 2026
+the turn followed on the live network: the producer stopped at block
+1,095,601, the node made blocks 1,095,602 to 1,095,784 with its own key, and
+the producer made the blocks again from block 1,095,785 with a new key. The
+mining audit of the node's records passed and the chain did not fork.
 
 ### Telling the full nodes
 
@@ -348,8 +351,45 @@ The digest is the SHA-256 of the schedule's canonical JSON:
 spaces, and `checkpoint_hash` `""` for epoch 0. Two nodes with the same digest
 enforce the same schedule. A version 1 table and its version 2 spelling have
 different digests (the version is part of it). The release's version 1 table
-(`fullnode-rc1108` and `fullnode-rc1109`) has the digest
+(`fullnode-rc1108`, `fullnode-rc1109` and `fullnode-rc1110`) has the digest
 `bd666048acae4de96b637e79852a764f516b7d7bd9b086f09bdd504d3bcf0da5`.
+
+### The public schedule
+
+Since the live turn of 13 November 2026 every node must carry this table.
+qsdm.tech/fullnode.html shows the same text; a node with the version 1 table
+of the full-node releases stops at block 1,095,601 until it has it
+([Run a full node](RUN_A_FULL_NODE.md#when-the-block-maker-changes)).
+
+```toml
+[consensus.producer_transition]
+version = 2
+historical_prefix_bytes = 2728741562
+historical_prefix_sha256 = "3c4db4879b82544ccef7e2abe0c0e2ef7741864e13307fc95978abc393f7057b"
+
+[[consensus.producer_transition.epochs]]
+from_height = 482566
+producer_id = "42d05e653f004d0aa71ae9cebc7b2a5b5d0dc7bb41b219a8e99d7c29229c438b"
+
+[[consensus.producer_transition.epochs]]
+from_height = 659977
+producer_id = "1cf60b16cf9aee5e8eaf67a8518a2b2ba7bc54f2dd607f05bc5a861b7a94c859"
+checkpoint_hash = "16884d35cee8b805fab51f1ecad740022fdb991e0fece15394774e1c5b7cdd0b"
+
+[[consensus.producer_transition.epochs]]
+from_height = 1095602
+producer_id = "2c1ff51975c523a36be9803025a02f069cc3dc1194bbc9174d557e76f30b5425"
+checkpoint_hash = "1155a34f94ec5aebfdfd703a8da020a647f9831482633e496a8304e931ead50e"
+
+[[consensus.producer_transition.epochs]]
+from_height = 1095785
+producer_id = "287ddb7643997cdb3651091e1fc67c360d472349e5b6d674c6b68a05fed54a4a"
+checkpoint_hash = "735eb4a6b69b989a5282e30209dac323f7b0e520ff908c4edb21daec4bf7fb5e"
+```
+
+Its digest is `fd23fbcae12315a4e6d4abce24bd908d0e738d6227b6d3203c03d772238c1345`. The
+producer since block 1,095,785 is the last epoch's key; the key of the epoch
+from 659,977 never signs again.
 
 ## 6. What can go wrong
 

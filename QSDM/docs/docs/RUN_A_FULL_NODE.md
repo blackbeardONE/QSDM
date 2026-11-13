@@ -336,8 +336,11 @@ The block maker (the producer) signs every block with its own key, and a full no
 that its block-maker schedule names for that height: the `[consensus.producer_transition]` table in `core.toml`
 ([Producer transition](PRODUCER_TRANSITION.md)). When block production moves to another server, for example to the
 standby block maker and back, the new block maker signs from the next block on with a new key, and every node needs
-the new schedule. The block maker has not changed since the first full-node release; the first planned change is a
-turn to the project's full node in Japan, which will be announced on qsdm.tech/fullnode.html.
+the new schedule. The block maker changed on 13 November 2026: the project's full node in Japan made blocks 1,095,602
+to 1,095,784, and the producer has signed with a new key since block 1,095,785. A node with the schedule of the
+full-node releases (up to `fullnode-rc1110`) stops at block 1,095,601 until it has the new one: four block makers,
+digest `fd23fbcae12315a4…`, on qsdm.tech/fullnode.html and in
+[Producer transition](PRODUCER_TRANSITION.md#the-public-schedule).
 
 Until your node has it, it stays at the old block maker's last block: its tip stops moving, its log says
 `external block producer is not authorized` for the next block, and the watch reports `node-stalled`. Nothing is lost:
