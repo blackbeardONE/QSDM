@@ -271,6 +271,21 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-13: the first live turn of block production.** Mining closed at
+  11:53:37 UTC and the producer stopped at block 1,095,601. The project's full
+  node in Japan made blocks 1,095,602 to 1,095,784 with its own key (the first
+  at 11:59:57 UTC); the producer made the blocks again from block 1,095,785
+  (12:50:22 UTC) with a new key, and mining reopened at 12:59:10 UTC. The
+  mining audit of the Japan node's records passed, every block of the turn has
+  its receipt on the producer, and both nodes enforce the same version 2
+  block-maker schedule with four block makers
+  ([Producer transition](QSDM/docs/docs/PRODUCER_TRANSITION.md#the-public-schedule)).
+  Full-node operators take it from qsdm.tech/fullnode.html with
+  `install-full-node.sh --update-schedule --from-website`; a node with the
+  release's schedule stops at block 1,095,601. The docs that said the turn had
+  not happened yet now say it did ([Network upgrades](QSDM/docs/docs/NETWORK_UPGRADES.md),
+  [Network status](QSDM/docs/docs/NETWORK_STATUS.md), [Roadmap](QSDM/docs/docs/ROADMAP.md)).
+
 - **2026-11-13: Go dependencies updated in one change.** `go-libp2p` 0.48.0 ->
   0.51.0, `go-sqlite3` 1.14.52 -> 1.14.53 and `golang.org/x/sys` 0.49.0 ->
   0.50.0, with `pion/stun/v3` raised from 3.1.1 to 3.1.5 at the same time:

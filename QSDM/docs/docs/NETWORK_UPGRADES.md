@@ -19,6 +19,7 @@ upgrades harden that pilot network; they do not change its stage. See
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
 | About 2026-11-19 (scheduled) | 1,150,000 | Only a task's catalog manager may migrate it: a block with any other `migrate` is invalid ([Consensus rules](CONSENSUS_RULES.md#task-migrate-authorization-from-block-1150000)) | **Yes**, full-node operators: run fullnode-rc1110 or newer before this height |
+| 2026-11-13 11:59 to 12:50 | 1,095,602 and 1,095,785 | The first live turn of block production: the project's full node in Japan made blocks 1,095,602 to 1,095,784 with its own key, then the producer again from 1,095,785 with a new key; the block-maker schedule is a version 2 table with four block makers; mining paused 65 minutes ([details](#2026-11-13-the-first-live-turn-of-block-production)) | **Yes**, full-node operators: take the new schedule from qsdm.tech/fullnode.html (`install-full-node.sh --update-schedule --from-website`); a node with the old schedule stops at block 1,095,601 |
 | 2026-11-12 21:25 | node release | Release rc1110: a security fix. The API refuses a task `migrate` from anyone but the task's catalog manager, to a target that is not another registered, unpaused task of the same manager, or into a cycle; blocks enforce the same rule from 1,150,000. Mining paused 6 minutes. Full nodes: fullnode-rc1110 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | Full-node operators: upgrade before block 1,150,000 |
 | 2026-11-12 07:46 | node release | Release rc1109: built with Go 1.26.11 (GO-2026-6859 in `net/http`) and golang.org/x/net v0.62.0, and a start reads the journal further ahead (no consensus change); mining paused 5 minutes. Full nodes: fullnode-rc1109 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade) |
 | 2026-11-11 | full node | Full nodes can follow a change of block maker: `install-full-node.sh` takes the block-maker schedule from qsdm.tech/fullnode.html (or `--producer-schedule FILE`), and `--update-schedule` puts it into a running node ([Run a full node](RUN_A_FULL_NODE.md#when-the-block-maker-changes)) | No (full-node operators act only after a change of block maker) |
@@ -45,6 +46,29 @@ upgrades harden that pilot network; they do not change its stage. See
 | 2026-10-11 13:18 | 816,600 | Proof-of-Entanglement enforced | **Yes**, if you send CELL with old software |
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
+
+## 2026-11-13: the first live turn of block production
+
+- **When:** mining closed at 11:53:37 UTC and the producer stopped at block
+  1,095,601 (11:53:53 UTC). The project's full node in Japan sealed block
+  1,095,602 at 11:59:57 UTC and made blocks up to 1,095,784. The producer made
+  the blocks again from block 1,095,785 (12:50:22 UTC), and mining reopened at
+  12:59:10 UTC. Blocks paused about 6 and about 20 minutes.
+- **What changed:** the block-maker schedule
+  ([Producer transition](PRODUCER_TRANSITION.md#the-public-schedule)) is a
+  version 2 table with four block makers: the historical producer from block
+  482,566, `1cf60b16…` from 659,977, the Japan node's turn key
+  `2c1ff519…` from 1,095,602, and the producer's new key `287ddb76…`
+  from 1,095,785. The key `1cf60b16…` never signs again. No consensus rule
+  changed. The chain did not fork, and no CELL was paid during the turn
+  (mining was closed). The mining audit of the Japan node's records passed,
+  and every block of the turn has its receipt on the producer.
+- **What you have to do:** nothing as a wallet holder or miner. Full-node
+  operators: a node with the schedule of the full-node release stops at block
+  1,095,601. Take the new schedule from qsdm.tech/fullnode.html with
+  `bash install-full-node.sh --update-schedule --from-website`
+  ([Run a full node](RUN_A_FULL_NODE.md#when-the-block-maker-changes)); a new
+  install takes it by itself. Its digest is `fd23fbcae12315a4e6d4abce24bd908d0e738d6227b6d3203c03d772238c1345`.
 
 ## 2026-11-12: release rc1110 (a security fix), and the migrate rule from block 1,150,000
 
@@ -292,9 +316,6 @@ The same day a new 7-day mining window started for enrolled Hive miners; see
 - **Ed25519 for stream session keys.** Ed25519 transactions are refused since
   2026-10-16 (`ed25519_tx_accepted: false`), but CELL stream session keys still
   accept Ed25519 until a stream retirement height is set.
-- **A live turn to the standby block maker.** Block production moves to the
-  project's full node in Japan, as rehearsed on copies of it on 2026-11-10 and
-  2026-11-11. The next step.
-- **Block production by miners (proof of work).** Comes after that (decision D1, 19 October 2026); designed, not built.
+- **Block production by miners (proof of work).** The next step (decision D1, 19 October 2026); designed, not built.
 
 See the [Roadmap](ROADMAP.md).
