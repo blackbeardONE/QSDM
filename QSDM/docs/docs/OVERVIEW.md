@@ -8,9 +8,10 @@ by GPU mining, on NVIDIA hardware today, through the **QSDM Hive** desktop app.
 QSDM runs as a **public pilot network (pre-mainnet)**: transfers follow the
 **Proof-of-Entanglement** rules, and **one block producer run by the project**
 makes the blocks. Since 19 October 2026 the plan is for miners to produce
-blocks, in stages; that is designed, not built. Copies of the project's full
-node in Japan, the standby block maker, have rehearsed taking over block
-production; it has not taken over live yet. [Network status](NETWORK_STATUS.md) shows exactly
+blocks, in stages; that is designed, not built. The project's full node in
+Japan, the standby block maker, took over block production for a live turn on
+13 November 2026 (blocks 1,095,602 to 1,095,784) before the producer took over
+again with a new key. [Network status](NETWORK_STATUS.md) shows exactly
 what runs today.
 
 ## The pieces

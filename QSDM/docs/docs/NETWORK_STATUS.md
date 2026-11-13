@@ -18,7 +18,7 @@ examples from October 2026, and the live values are always in the status API.
 | Topic | Today |
 |---|---|
 | Stage | Pilot network (pre-mainnet) |
-| Block production | A **single block producer**. Anyone can run a full node that verifies every block itself ([Run a full node](RUN_A_FULL_NODE.md)); since 8 November 2026 the project runs one on a second server, in Japan. It is the standby block maker: on 10 and 11 November 2026 copies of it, sealed off from the network, rehearsed taking over block production, with the producer's mining records and a hand-back. Block production has not moved to it yet, and since 11 November 2026 full nodes can follow a change of block maker. Since 2 November 2026 the producer also accepts peer-to-peer (libp2p) connections on port 4001, with connection, stream and block-request limits (see [What is running](#what-is-running)); the status API's `peers` counts the peers connected to it. |
+| Block production | A **single block producer**. Anyone can run a full node that verifies every block itself ([Run a full node](RUN_A_FULL_NODE.md)); since 8 November 2026 the project runs one on a second server, in Japan. It is the standby block maker: on 10 and 11 November 2026 copies of it, sealed off from the network, rehearsed taking over block production, with the producer's mining records and a hand-back. On 13 November 2026 block production moved to it for a live turn: it made blocks 1,095,602 to 1,095,784, and the producer has made the blocks again since block 1,095,785, with a new key. Full nodes take the new block-maker schedule from qsdm.tech/fullnode.html (they can follow a change of block maker since 11 November 2026). Since 2 November 2026 the producer also accepts peer-to-peer (libp2p) connections on port 4001, with connection, stream and block-request limits (see [What is running](#what-is-running)); the status API's `peers` counts the peers connected to it. |
 | Block time | 10 second target |
 | Wallet transactions | Signed with **ML-DSA-87** (NIST FIPS 204, Cloudflare CIRCL) by Hive, the web wallet and `qsdmcli` |
 | Other signatures | **Ed25519 transactions are refused since 16 October 2026** (status API `ed25519_tx_accepted: false`): only ML-DSA-87 signed transactions reach the chain. CELL stream session keys still accept Ed25519 until a stream retirement height is set (`stream_ed25519_session_keys_retired: false`). |
@@ -158,16 +158,23 @@ The [explorer](https://qsdm.tech/explorer.html) and the
 - **Second node.** The project's own full node on a second server in Japan
   (12 GB of memory) was installed on 2026-11-08 with the one-command
   installer. Since 2026-11-10 it checks itself against the network every 5
-  minutes and alerts the operators. It runs `fullnode-rc1109` since
-  2026-11-12: it answered again 2 minutes 51 seconds after the switch, at
-  block 1,087,781 (on 2026-11-09, with `fullnode-rc1108`, 4 minutes 23
-  seconds). It is the standby block maker. Copies of it, sealed off from the
+  minutes and alerts the operators. It runs `fullnode-rc1110` since
+  2026-11-13 (with `fullnode-rc1109` it answered again 2 minutes 51 seconds
+  after the switch on 2026-11-12, at block 1,087,781; on 2026-11-09, with
+  `fullnode-rc1108`, 4 minutes 23 seconds). It is the standby block maker. Copies of it, sealed off from the
   network, rehearsed the hand-over: on 2026-11-10 a copy took over block
   production, and on 2026-11-11 a copy rehearsed a full takeover with the
   producer's own mining records (reconciled clean; mining closed, then
   reopened) and the hand-back to a new key. The mining audit passed: every
-  proof was paid exactly once. A live turn of block production to it has not
-  happened yet; it is the next step. Since 2026-11-13 its status is public:
+  proof was paid exactly once. On 2026-11-13 the live turn followed: mining
+  closed at 11:53:37 UTC and the producer stopped at block 1,095,601; the node
+  made blocks 1,095,602 to 1,095,784 (183 blocks) with its own key, the first
+  at 11:59:57 UTC; the producer made the blocks again from block 1,095,785
+  (12:50:22 UTC) with a new key, and mining reopened at 12:59:10 UTC, after
+  65 minutes. The mining audit of the node's records passed, every block of
+  the turn has its receipt on the producer, and both nodes enforce the same
+  block-maker schedule. The node follows the chain again and stays the standby
+  block maker. Since 2026-11-13 its status is public:
   the producer's server reads it from the node every 15 seconds and serves it
   as `https://qsdm.tech/second-node/status.json` (its tip, version, uptime and
   role, when it was read, and whether the read worked), and qsdm.tech's
@@ -204,9 +211,6 @@ These parts are designed or implemented in the code but are not switched on for
 the live network. Documents that describe them are marked **Design** in these
 docs.
 
-- A live turn of block production to the standby block maker, the project's
-  full node in Japan. It was rehearsed on copies of that node on 2026-11-10
-  and 2026-11-11, sealed off from the network. It is the next step.
 - Multiple independent validators and BFT finality between them. This is in
   the code but no longer planned: since 2026-10-19 the plan is for miners to
   produce blocks, in stages (see the [Roadmap](ROADMAP.md)). Today one

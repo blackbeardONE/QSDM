@@ -168,11 +168,11 @@ See [Signed transfers](V040_WALLET_SEND_DESIGN.md) and
 - **Decentralised block production.** There is one block producer at a time,
   run by the project, and no independent validators. Since 19 October 2026 the
   plan is for miners to produce blocks, in stages, instead of a set of
-  independent validators; it is designed, not built. The next step is a live
-  turn of block production to the project's full node in Japan, the standby
-  block maker. Copies of it, sealed off from the network, rehearsed the
-  takeover and the hand-back on 10 and 11 November 2026; the live turn has not
-  happened yet.
+  independent validators; it is designed, not built, and it is the next step.
+  On 13 November 2026 block production moved to the project's full node in
+  Japan, the standby block maker, for a live turn (blocks 1,095,602 to
+  1,095,784) and back to the producer with a new key; there is still one
+  block producer at a time.
 - **Independent external audit.** None has been completed. The
   [security review](SECURITY_AUDIT.md) is a self-assessment. Review now runs as
   an open [community review with a bug bounty](COMMUNITY_REVIEW.md), which is
