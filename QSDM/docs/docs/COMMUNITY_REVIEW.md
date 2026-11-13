@@ -291,7 +291,7 @@ has been reviewed.
 | ID | Date | Who | Component(s) | Commit / release | Type | Result | Link |
 |---|---|---|---|---|---|---|---|
 | R0 | 2026-10-17 | QSDM project | All | `8d7b159` (proposed) | Program | Community review and bug bounty published. Bounty tiers and a 50,000 CELL pool confirmed by the owner on 17 October 2026. Review export with build and follower-release tooling: **not yet published** | This page |
-| R1 | 2026-11-12 | tokenist / swaplaner | 7 (task actions) | rc1109; fixed in rc1110, `fullnode-rc1110` and #198 (`8463dfb`) | Finding (Medium) | Any signed wallet could set any task's migration pointer (`migrated_to`). The producer refuses such a `migrate` since 2026-11-12 21:25 UTC, and it is a consensus rule from block 1,150,000. Reward 1,000 CELL; the transfer ID is added here when it is paid | [GHSA-ppp3-xm6g-w5wc](https://github.com/blackbeardONE/QSDM/security/advisories/GHSA-ppp3-xm6g-w5wc) |
+| R1 | 2026-11-12 | tokenist / swaplaner | 7 (task actions) | rc1109; fixed in rc1110, `fullnode-rc1110` and #198 (`8463dfb`) | Finding (Medium) | Any signed wallet could set any task's migration pointer (`migrated_to`). The producer refuses such a `migrate` since 2026-11-12 21:25 UTC, and it is a consensus rule from block 1,150,000. Reward 1,000 CELL, paid on 2026-11-13 (the transfer ID is added here only with the reporter's consent) | [GHSA-ppp3-xm6g-w5wc](https://github.com/blackbeardONE/QSDM/security/advisories/GHSA-ppp3-xm6g-w5wc) |
 
 One bounty report is logged (R1). No external reviews or build attestations have been logged yet.
 

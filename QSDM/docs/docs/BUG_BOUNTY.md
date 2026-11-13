@@ -267,7 +267,7 @@ Reporters who agree to be named are listed in the
   any signed wallet could set any task's migration pointer. Fixed in
   release rc1110; advisory
   [GHSA-ppp3-xm6g-w5wc](https://github.com/blackbeardONE/QSDM/security/advisories/GHSA-ppp3-xm6g-w5wc)
-  (13 November 2026). Reward: 1,000 CELL.
+  (13 November 2026). Reward: 1,000 CELL, paid on 13 November 2026.
 
 ## 10. Changes to this policy
 
