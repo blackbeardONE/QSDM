@@ -39,6 +39,10 @@ export type HiveVersionPolicyStatus = {
   // Hive saved after an earlier successful check, because the release feed
   // could not be used just now; `error` then says why.
   fromCache?: boolean;
+  // False where Hive has no signed release of its own to install (macOS): the
+  // update screen then sends the user to the download page instead of
+  // updating itself.
+  selfUpdates?: boolean;
 };
 
 export type HiveVersionPolicyOptions = {
@@ -206,7 +210,10 @@ export async function getHiveVersionPolicyStatus(
     return cachedStatus;
   }
 
-  const status = await resolveHiveVersionPolicyStatus();
+  const status: HiveVersionPolicyStatus = {
+    ...(await resolveHiveVersionPolicyStatus()),
+    selfUpdates: hasOwnSignedReleaseChannel(process.platform),
+  };
   cachedStatus = status;
   cachedStatusAt = now;
   return status;

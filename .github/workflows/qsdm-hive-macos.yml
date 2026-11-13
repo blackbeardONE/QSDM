@@ -70,7 +70,7 @@ jobs:
           npm exec electron-builder -- install-app-deps
 
       # The full jest suite runs on Linux and Windows; on macOS the type check and the specs of what macOS changes:
-      # the mining gate, the version policy, the updater switch and the browser-extension bridge.
+      # the mining gate, the version policy, the updater switch, the update screen and the browser-extension bridge.
       - name: Type check and the macOS specs
         working-directory: apps/qsdm-hive/qsdm-hive-main
         run: |
@@ -79,7 +79,9 @@ jobs:
             src/main/services/qsdmMiningPlatform.spec.ts \
             src/main/services/hiveVersionPolicy.spec.ts \
             src/main/services/qsdmWalletProviderNativeHost.spec.ts \
-            src/main/AppUpdater.spec.ts -t "release channels|hiveVersionPolicy|mining platforms|qsdmWalletProviderNativeHost"
+            src/renderer/features/version/HiveVersionGate.spec.tsx \
+            src/main/AppUpdater.spec.ts \
+            -t "release channels|hiveVersionPolicy|mining platforms|qsdmWalletProviderNativeHost|HiveVersionGate"
 
       - name: Build Hive
         working-directory: apps/qsdm-hive/qsdm-hive-main

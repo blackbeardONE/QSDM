@@ -43,6 +43,26 @@ describe('hiveVersionPolicy', () => {
     );
   });
 
+  it('tells the update screen that only a Mac build cannot update itself', async () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform');
+    process.env.QSDM_HIVE_REQUIRED_VERSION = '999.0.0';
+    try {
+      for (const [platform, selfUpdates] of [
+        ['darwin', false],
+        ['linux', true],
+        ['win32', true],
+      ] as const) {
+        Object.defineProperty(process, 'platform', { value: platform });
+        // eslint-disable-next-line no-await-in-loop
+        const status = await getHiveVersionPolicyStatus({ forceRefresh: true });
+        expect(status.updateRequired).toBe(true);
+        expect(status.selfUpdates).toBe(selfUpdates);
+      }
+    } finally {
+      if (original) Object.defineProperty(process, 'platform', original);
+    }
+  });
+
   it('accepts only the exact required Hive version', async () => {
     process.env.QSDM_HIVE_REQUIRED_VERSION = getCurrentHiveVersion();
     const status = await getHiveVersionPolicyStatus({ forceRefresh: true });
