@@ -156,11 +156,13 @@ jobs:
   # Gatekeeper's own check (spctl) must accept both as "Notarized Developer ID". The secrets reach only the steps that
   # need them; the npm installs run with --ignore-scripts. The certificate holder's name (an individual Apple account's
   # Developer ID carries the person's name) is masked in this public log before anything can print it.
+  # Apple usually notarizes in minutes, but a new team's first submissions can take hours (the first run here was still
+  # waiting at its old 120-minute limit): the job gets GitHub's maximum for hosted runners, 6 hours.
   release-macos:
     name: Hive macOS release (signed and notarized)
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.signed && github.ref == 'refs/heads/main' }}
     runs-on: macos-15
-    timeout-minutes: 120
+    timeout-minutes: 360
     env:
       PUPPETEER_SKIP_DOWNLOAD: "true"
       PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
@@ -266,7 +268,7 @@ jobs:
           dmgs=(*.dmg); [ "${#dmgs[@]}" -eq 1 ] || { echo "::error::expected one dmg, found ${#dmgs[@]}"; exit 1; }
           dmg=${dmgs[0]}
           xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_ID_PASS" --team-id "$APPLE_TEAM_ID" \
-            --wait --timeout 60m --output-format json > "$RUNNER_TEMP/notary-dmg.json"
+            --wait --timeout 150m --output-format json > "$RUNNER_TEMP/notary-dmg.json"
           status=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$RUNNER_TEMP/notary-dmg.json")
           echo "notarization of $dmg: $status"
           [ "$status" = Accepted ] || { cat "$RUNNER_TEMP/notary-dmg.json"; exit 1; }
