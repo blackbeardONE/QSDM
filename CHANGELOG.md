@@ -267,6 +267,13 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-13: Go dependencies updated in one change.** `go-libp2p` 0.48.0 ->
+  0.51.0, `go-sqlite3` 1.14.52 -> 1.14.53 and `golang.org/x/sys` 0.49.0 ->
+  0.50.0, with `pion/stun/v3` raised from 3.1.1 to 3.1.5 at the same time:
+  `go-libp2p` 0.51 on its own would make GO-2026-6163 (fixed in `pion/stun`
+  3.1.5) reachable from peer discovery. `govulncheck` finds no reachable
+  vulnerability. This replaces Dependabot's pull requests #189, #190 and #191.
+
 - **2026-11-12: the documentation describes the network as it runs now.**
   About 45 documents in this repository and 11 pages of qsdm.tech were checked
   against the state of 12 November 2026 and brought up to date: release
