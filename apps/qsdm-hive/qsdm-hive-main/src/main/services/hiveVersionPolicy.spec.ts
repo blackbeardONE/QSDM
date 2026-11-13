@@ -2,8 +2,11 @@ import {
   canUseLocalHiveVersionPolicyOverrides,
   getDefaultHiveVersionManifestUrl,
   getCurrentHiveVersion,
+  getHiveSignedReleaseManifestUrl,
   getHiveVersionManifestUrl,
   getHiveVersionPolicyStatus,
+  getHiveVersionReferencePlatform,
+  hasOwnSignedReleaseChannel,
   isUnsignedPreviewHiveVersion,
   parseHiveReleaseManifest,
   resetHiveVersionPolicyCacheForTests,
@@ -24,6 +27,20 @@ describe('hiveVersionPolicy', () => {
 
   afterAll(() => {
     process.env = originalEnv;
+  });
+
+  it('checks a Mac build against the signed Linux release and sends it to the download page', () => {
+    expect(getHiveVersionReferencePlatform('darwin')).toBe('linux');
+    expect(getHiveVersionReferencePlatform('linux')).toBe('linux');
+    expect(getHiveVersionReferencePlatform('win32')).toBe('win32');
+    expect(hasOwnSignedReleaseChannel('darwin')).toBe(false);
+    expect(hasOwnSignedReleaseChannel('linux')).toBe(true);
+    expect(hasOwnSignedReleaseChannel('win32')).toBe(true);
+    // macOS used to throw here ("signed updates do not support darwin"), which
+    // blocked every guarded endpoint of a Mac build.
+    expect(getHiveSignedReleaseManifestUrl('darwin')).toBe(
+      getHiveSignedReleaseManifestUrl('linux')
+    );
   });
 
   it('accepts only the exact required Hive version', async () => {

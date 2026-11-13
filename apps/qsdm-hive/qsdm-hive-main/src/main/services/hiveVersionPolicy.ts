@@ -92,11 +92,34 @@ export function getHiveVersionManifestUrl(
   );
 }
 
+/**
+ * The platform whose signed release names the Hive version this build must
+ * match. macOS builds have no signed release envelope or installer of their
+ * own on the hive-v2 channel: every platform ships the same Hive version, so a
+ * Mac checks its version against the signed Linux release (verified in full,
+ * like any other) and is sent to the download page, never to a Linux file.
+ */
+export function getHiveVersionReferencePlatform(
+  platform: NodeJS.Platform = process.platform
+): NodeJS.Platform {
+  return platform === 'darwin' ? 'linux' : platform;
+}
+
+/** True when this build installs its own updates from the signed channel. */
+export function hasOwnSignedReleaseChannel(
+  platform: NodeJS.Platform = process.platform
+) {
+  return getHiveVersionReferencePlatform(platform) === platform;
+}
+
 export function getHiveSignedReleaseManifestUrl(
   platform: NodeJS.Platform = process.platform
 ) {
   const baseUrl = getHiveReleaseBaseUrl();
-  return getQsdmHiveReleaseManifestUrl(platform, baseUrl);
+  return getQsdmHiveReleaseManifestUrl(
+    getHiveVersionReferencePlatform(platform),
+    baseUrl
+  );
 }
 
 export function isUnsignedPreviewHiveVersion(version: string) {
@@ -242,7 +265,7 @@ async function resolveHiveVersionPolicyStatus(): Promise<HiveVersionPolicyStatus
     // The feed's signed release, or during an outage the signed release saved
     // after the last successful check, verified again in full.
     const release = await getQsdmHiveReleaseWithEnvelopeCache({
-      platform: process.platform,
+      platform: getHiveVersionReferencePlatform(process.platform),
       baseUrl: getHiveReleaseBaseUrl(),
       cacheDirectory: getReleaseEnvelopeCacheDirectory(),
     });
@@ -251,7 +274,9 @@ async function resolveHiveVersionPolicyStatus(): Promise<HiveVersionPolicyStatus
       currentVersion,
       requiredVersion: release.manifest.version,
       manifestUrl: release.manifestUrl,
-      downloadUrl: release.installerUrl || fallbackDownloadUrl,
+      downloadUrl: hasOwnSignedReleaseChannel(process.platform)
+        ? release.installerUrl || fallbackDownloadUrl
+        : fallbackDownloadUrl,
     });
     return release.source === 'cache'
       ? { ...status, fromCache: true, error: release.feedError }

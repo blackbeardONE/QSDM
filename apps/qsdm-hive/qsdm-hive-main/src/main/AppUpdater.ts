@@ -11,6 +11,7 @@ import { app } from './app';
 import { getAppDataPath } from './node/helpers/getAppDataPath';
 import {
   getCurrentHiveVersion,
+  hasOwnSignedReleaseChannel,
   isUnsignedPreviewHiveVersion,
 } from './services/hiveVersionPolicy';
 import {
@@ -49,11 +50,19 @@ let installPromptOpen = false;
 
 export function shouldEnableAutoUpdates(
   env: NodeJS.ProcessEnv = process.env,
-  currentVersion = getCurrentHiveVersion()
+  currentVersion = getCurrentHiveVersion(),
+  platform: NodeJS.Platform = process.platform
 ) {
   // An unsigned preview must never become an automatic trust transition.
   // Preview users move to the first signed stable release manually.
   if (isUnsignedPreviewHiveVersion(currentVersion)) {
+    return false;
+  }
+
+  // macOS has no signed installer on the hive-v2 channel: never fetch or run a
+  // Windows or Linux update there. The version policy still checks the version
+  // (against the signed Linux release) and links to the download page.
+  if (!hasOwnSignedReleaseChannel(platform)) {
     return false;
   }
 

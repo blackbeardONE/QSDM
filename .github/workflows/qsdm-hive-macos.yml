@@ -1,0 +1,139 @@
+name: QSDM Hive macOS
+
+# QSDM Hive for macOS 12 and newer: one universal app (Intel and Apple silicon), ad-hoc signed, as a wallet and task
+# app. The miner is not part of it (mining needs an NVIDIA GPU: Windows and Linux only). Each runner builds the
+# universal app and launches it natively, so the Apple-silicon run tests the arm64 half and the Intel run the x64 half.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/qsdm-hive/qsdm-hive-main/**"
+      - "apps/qsdm-hive-wallet-extension/**"
+      - "QSDM/source/cmd/qsdmcli/**"
+      - "QSDM/deploy/scripts/build_hive_macos_native.sh"
+      - "QSDM/deploy/scripts/smoke_hive_macos.sh"
+      - ".github/workflows/qsdm-hive-macos.yml"
+
+concurrency:
+  group: qsdm-hive-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-macos:
+    name: Hive macOS (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15         # Apple silicon (arm64)
+            arch: arm64
+          - runner: macos-15-intel   # Intel (x64)
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      # The app is signed ad hoc (identity "-"), with no certificate and no secret. electron-builder skips all signing
+      # in pull-request builds unless CSC_FOR_PULL_REQUEST is set; an unsigned app cannot start on Apple silicon.
+      CSC_FOR_PULL_REQUEST: "true"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: QSDM/source/go.mod
+          cache-dependency-path: QSDM/source/go.sum
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: |
+            apps/qsdm-hive/qsdm-hive-main/package-lock.json
+            apps/qsdm-hive/qsdm-hive-main/release/app/package-lock.json
+
+      - name: Build qsdmcli for macOS (x64 and arm64)
+        run: bash QSDM/deploy/scripts/build_hive_macos_native.sh apps/qsdm-hive/qsdm-hive-main
+
+      - name: Install Hive dependencies
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          npm ci --ignore-scripts
+          npm --prefix release/app ci --ignore-scripts
+          npm exec electron-builder -- install-app-deps
+
+      # The full jest suite runs on Linux and Windows; on macOS the type check and the specs of what macOS changes:
+      # the mining gate, the version policy, the updater switch and the browser-extension bridge.
+      - name: Type check and the macOS specs
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          npx tsc --noEmit
+          npx jest --runInBand \
+            src/main/services/qsdmMiningPlatform.spec.ts \
+            src/main/services/hiveVersionPolicy.spec.ts \
+            src/main/services/qsdmWalletProviderNativeHost.spec.ts \
+            src/main/AppUpdater.spec.ts -t "release channels|hiveVersionPolicy|mining platforms|qsdmWalletProviderNativeHost"
+
+      - name: Build Hive
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: npm run build
+
+      - name: Package the universal app (dmg and zip)
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: npx electron-builder build --mac --universal --publish never --config.directories.output=release/build-mac
+
+      - name: Verify the app
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          set -euo pipefail
+          app="release/build-mac/mac-universal/QSDM Hive.app"
+          test -d "$app"
+          for bin in "$app/Contents/MacOS/QSDM Hive" "$app/Contents/Resources/native/qsdmcli"; do
+            archs=" $(lipo -archs "$bin") "
+            echo "$bin:$archs"
+            [[ "$archs" == *" x86_64 "* && "$archs" == *" arm64 "* ]]
+          done
+          test ! -e "$app/Contents/Resources/miner"
+          test ! -e "$app/Contents/Resources/edge"
+          test "$(/usr/libexec/PlistBuddy -c 'Print LSMinimumSystemVersion' "$app/Contents/Info.plist")" = "12.0"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          # qsdmcli must run on this CPU (126/127: cannot execute; 128 and up: killed, e.g. a bad signature).
+          set +e
+          "$app/Contents/Resources/native/qsdmcli" --help >"$RUNNER_TEMP/qsdmcli-help.txt" 2>&1
+          rc=$?
+          set -e
+          head -n 5 "$RUNNER_TEMP/qsdmcli-help.txt"
+          test "$rc" -lt 126
+          ls -la release/build-mac
+
+      - name: Launch the app (renderer smoke test, then a normal start)
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: bash ../../../QSDM/deploy/scripts/smoke_hive_macos.sh "release/build-mac/mac-universal/QSDM Hive.app" "$RUNNER_TEMP/hive-smoke"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: qsdm-hive-macos-smoke-${{ matrix.arch }}-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/hive-smoke/*.png
+            ${{ runner.temp }}/hive-smoke/*.log
+            ${{ runner.temp }}/hive-smoke/*/qsdm-hive/logs/*
+          if-no-files-found: warn
+          retention-days: 14
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: matrix.arch == 'arm64'
+        with:
+          name: qsdm-hive-macos-${{ github.sha }}
+          path: |
+            apps/qsdm-hive/qsdm-hive-main/release/build-mac/*.dmg
+            apps/qsdm-hive/qsdm-hive-main/release/build-mac/*.zip
+          if-no-files-found: error
+          retention-days: 14

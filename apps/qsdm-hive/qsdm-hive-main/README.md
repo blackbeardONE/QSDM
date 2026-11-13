@@ -2,6 +2,18 @@
 
 QSDM Hive is a desktop application for operating a QSDM task node. It provides a focused interface for running tasks, managing wallets, checking rewards, and monitoring node health.
 
+## Platforms
+
+- **Windows and Linux (x64):** the wallet, tasks and the CELL miner.
+- **macOS 12 (Monterey) or newer, on Intel and Apple silicon Macs:** the
+  wallet and tasks. There is no mining on a Mac: mining needs Windows or Linux
+  with an NVIDIA GPU, so the Mac app does not include the miner.
+  The Mac app is not signed by Apple yet. The first time, right-click (or
+  Control-click) QSDM Hive in Applications and choose **Open**, then **Open**
+  again; on macOS 15 and newer, open it once, then choose **Open Anyway** in
+  System Settings > Privacy & Security. Hive does not update itself on a Mac
+  yet: install each new version by hand. See [PACKAGING.md](PACKAGING.md#macos).
+
 ## Prerequisites
 
 - Node.js 22.12 or newer, with npm 10.9 or newer
@@ -43,7 +55,9 @@ npm run package
 ```
 
 Windows artifacts are written to `release/build/`. Linux artifacts are written
-to `release/build-linux/` and must be built on Linux. Direct Electron Builder
+to `release/build-linux/` and must be built on Linux. The macOS app (universal,
+ad-hoc signed, not notarized) is written to `release/build-mac/` and must be
+built on a Mac; see [PACKAGING.md](PACKAGING.md#macos). Direct Electron Builder
 publishing is disabled; the release host publishes a verified Windows/Linux set
 with `QSDM/deploy/scripts/publish_hive_release.sh`.
 

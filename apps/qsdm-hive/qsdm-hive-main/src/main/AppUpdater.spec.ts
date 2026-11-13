@@ -90,15 +90,28 @@ describe('AppUpdater release channels', () => {
   });
 
   it('does not let environment overrides disable stable production updates', () => {
+    for (const platform of ['win32', 'linux'] as NodeJS.Platform[]) {
+      expect(
+        shouldEnableAutoUpdates(
+          {
+            NODE_ENV: 'production',
+            QSDM_DISABLE_AUTO_UPDATES: '1',
+          },
+          '1.4.12',
+          platform
+        )
+      ).toBe(true);
+    }
+  });
+
+  it('never installs signed Windows or Linux updates on macOS', () => {
     expect(
       shouldEnableAutoUpdates(
-        {
-          NODE_ENV: 'production',
-          QSDM_DISABLE_AUTO_UPDATES: '1',
-        },
-        '1.4.12'
+        { NODE_ENV: 'production', QSDM_ENABLE_AUTO_UPDATES: '1' },
+        '1.4.12',
+        'darwin'
       )
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 

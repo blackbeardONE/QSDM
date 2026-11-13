@@ -43,16 +43,30 @@
     "category": "public.app-category.productivity",
     "target": [
       {
-        "target": "default",
+        "target": "dmg",
+        "arch": ["universal"]
+      },
+      {
+        "target": "zip",
         "arch": ["universal"]
       }
     ],
     "type": "distribution",
     "artifactName": "qsdm-hive-${version}-${os}-${arch}.${ext}",
+    "icon": "assets/icon.icns",
+    "identity": "-",
     "hardenedRuntime": true,
     "gatekeeperAssess": false,
+    "minimumSystemVersion": "12.0",
     "entitlements": "build/entitlements.mac.plist",
     "entitlementsInherit": "build/entitlements.mac.plist",
+    "extraResources": [
+      {
+        "from": "native/darwin/${arch}",
+        "to": "native",
+        "filter": ["qsdmcli"]
+      }
+    ],
     "extendInfo": {
       "NSBluetoothAlwaysUsageDescription": false
     }

@@ -18,6 +18,11 @@ import {
   QSDM_CELL_DECIMALS,
 } from 'config/qsdm';
 import {
+  isQsdmMiningPlatform,
+  QSDM_GPU_EDGE_WORKER_UNSUPPORTED_MESSAGE,
+  QSDM_MINING_UNSUPPORTED_MESSAGE,
+} from 'config/qsdmPlatformSupport';
+import {
   getQsdmEdgeWorkerResource,
   isQsdmEdgeWorkerSystemTaskId,
   isQsdmMinerSystemTaskId,
@@ -687,6 +692,9 @@ export const getQsdmSystemTaskMetadata = (
     return {
       author: 'QSDM',
       description:
+        (isQsdmMiningPlatform(process.platform)
+          ? ''
+          : `${QSDM_MINING_UNSUPPORTED_MESSAGE} `) +
         'Run the official QSDM CUDA protocol miner as an opt-in, permanent CELL task. NVIDIA proof solving and v2 attestation require Turing-or-newer hardware. Rewards come from accepted protocol proofs, not a separate Hive bounty. A zero-balance signer can build the bond from mining rewards. Sky Fang is a separate integration and is not required for mining.',
       repositoryUrl: QSDM_MINER_SOURCE_URL,
       createdAt: 0,
@@ -772,6 +780,9 @@ export const getQsdmSystemTaskMetadata = (
       },
       gpu: {
         description:
+          (isQsdmMiningPlatform(process.platform)
+            ? ''
+            : `${QSDM_GPU_EDGE_WORKER_UNSUPPORTED_MESSAGE} `) +
           'Share bounded NVIDIA CUDA capacity directly or through a laboratory Relay. GPU Edge Worker is shared compute, not QSDM protocol mining; the Relay GPU policy limits accepted work before Mother Hive submits funded-pool rewards.',
         requirementsTags: [
           {
@@ -2866,7 +2877,21 @@ export const getMinerExecutableCandidates = ({
   ].filter(Boolean) as string[];
 };
 
+/**
+ * The miner and its CUDA solver exist only for Windows and Linux (mining needs
+ * an NVIDIA GPU). Everything that would start or look for the miner calls this
+ * first, so on macOS it never searches, spawns or adopts a miner process.
+ */
+export const assertQsdmMiningPlatform = (
+  platform: NodeJS.Platform = process.platform
+) => {
+  if (!isQsdmMiningPlatform(platform)) {
+    throw new Error(QSDM_MINING_UNSUPPORTED_MESSAGE);
+  }
+};
+
 export const getMinerExecutablePath = () => {
+  assertQsdmMiningPlatform();
   const minerExecutable = getMinerExecutableCandidates().find((candidate) =>
     fs.existsSync(candidate)
   );
@@ -3548,6 +3573,7 @@ const startOrAdoptQsdmMinerSystemProcessUnlocked =
 
 export const startOrAdoptQsdmMinerSystemProcess =
   async (): Promise<QsdmManagedSystemProcess> => {
+    assertQsdmMiningPlatform();
     if (qsdmMinerStartSingleFlight.isRunning) {
       writeTaskLog(
         QSDM_MINER_SYSTEM_TASK_ID,
@@ -4046,6 +4072,9 @@ export const startQsdmEdgeWorkerSystemProcess = (
   if (!resource) {
     throw new Error(`Unsupported QSDM Edge Worker task ${taskId}`);
   }
+  if (resource === 'gpu' && !isQsdmMiningPlatform(process.platform)) {
+    throw new Error(QSDM_GPU_EDGE_WORKER_UNSUPPORTED_MESSAGE);
+  }
   const gpuHelperPath = getQsdmEdgeGPUHelperPath();
   if (resource === 'gpu' && !gpuHelperPath) {
     throw new Error(
@@ -4328,6 +4357,9 @@ export const startQsdmMinerSystemProcess = async (): Promise<{
   logPath: string;
   executablePath: string;
 }> => {
+  // No miner exists for this operating system (macOS): refuse before anything
+  // else, with the plain reason.
+  assertQsdmMiningPlatform();
   // Public mining rejects unsigned proofs. Refuse before touching miner.toml,
   // the network or the GPU when neither the Hive wallet nor a matching manual
   // miner.toml setup can sign.
