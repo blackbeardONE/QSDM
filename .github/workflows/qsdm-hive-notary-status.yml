@@ -1,0 +1,48 @@
+name: QSDM Hive notary status
+
+# Asks Apple's notary service about this team's recent notarization submissions (notarytool history): the date, the
+# status, the submitted file's name and the submission ID, nothing else. Run it by hand (Actions > QSDM Hive notary
+# status > Run workflow, on main) to see whether Apple has finished a slow submission, instead of keeping a release
+# runner waiting: a new Apple team's first notarizations can stay "In Progress" for many hours. It builds nothing,
+# changes nothing, and runs in its own concurrency group, so it never cancels a release build.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qsdm-hive-notary-status
+  cancel-in-progress: false
+
+jobs:
+  history:
+    name: Notarization submissions (status only)
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - name: Ask Apple for the submission history
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for s in APPLE_ID APPLE_ID_PASS APPLE_TEAM_ID; do
+            [ -n "${!s}" ] || { echo "::error::the repository secret $s is not set"; exit 1; }
+          done
+          xcrun notarytool history --apple-id "$APPLE_ID" --password "$APPLE_ID_PASS" --team-id "$APPLE_TEAM_ID" \
+            --output-format json > "$RUNNER_TEMP/history.json"
+          python3 - "$RUNNER_TEMP/history.json" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          subs = json.load(open(sys.argv[1])).get("history", [])
+          rows = [(s.get("createdDate", "?"), s.get("status", "?"), s.get("name", "?"), s.get("id", "?")) for s in subs[:20]]
+          print(f"{len(subs)} submissions; the newest {len(rows)}:")
+          for r in rows:
+              print("  %-26s %-12s %-44s %s" % r)
+          with open(sys.argv[2], "a", encoding="utf-8") as out:
+              out.write("### Notarization submissions (newest first)\n\n| Submitted (UTC) | Status | File | Submission ID |\n|---|---|---|---|\n")
+              for r in rows:
+                  out.write("| %s | %s | %s | `%s` |\n" % r)
+          PY
