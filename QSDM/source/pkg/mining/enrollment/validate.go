@@ -116,6 +116,19 @@ func ValidateEnrollAgainstState(
 	senderBalanceDust uint64,
 	state EnrollmentState,
 ) error {
+	return ValidateEnrollAgainstStateAt(p, senderBalanceDust, state, 0)
+}
+
+// ValidateEnrollAgainstStateAt is ValidateEnrollAgainstState for an enroll
+// applied at height (AtAdmission at the producer's admission): it adds the
+// height-gated rules, today the case-insensitive gpu_uuid comparison from
+// GPUUUIDFoldActivationHeight (gpu_uuid_fold.go).
+func ValidateEnrollAgainstStateAt(
+	p EnrollPayload,
+	senderBalanceDust uint64,
+	state EnrollmentState,
+	height uint64,
+) error {
 	if state == nil {
 		return fmt.Errorf("%w: enrollment state is nil", ErrPayloadInvalid)
 	}
@@ -147,6 +160,9 @@ func ValidateEnrollAgainstState(
 	}
 	if boundTo != "" {
 		return fmt.Errorf("%w: gpu_uuid bound to node_id %q", ErrGPUUUIDTaken, boundTo)
+	}
+	if err := checkGPUUUIDFold(p, state, height); err != nil {
+		return err
 	}
 
 	return nil

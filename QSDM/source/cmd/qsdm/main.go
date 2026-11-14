@@ -4477,8 +4477,10 @@ func hl1MiningServiceConfig(base miningsvc.Config, view legacymining.ChainView, 
 	cfg.ReadOnly = true
 	cfg.Store, cfg.Guard, cfg.Sink = nil, nil, nil
 	if c.enabled() && storeOpen {
+		// rc1112: one proof-of-work solution is accepted once, whoever
+		// submits it (legacymining/solution_dedup.go).
 		cfg.ReadOnly = false
-		cfg.Store = hl1CrashpointStore(c.store)
+		cfg.Store = hl1CrashpointStore(legacymining.NewSolutionDedupStore(c.store))
 		cfg.Guard = c.guard
 		cfg.Sink = c.ledger
 		// HL2 WP-E: the served and verified difficulty comes from the

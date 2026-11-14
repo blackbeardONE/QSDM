@@ -352,6 +352,9 @@ const (
 	EnrollmentEventUnenrollRejected  EnrollmentEventKind = "unenroll-rejected"
 	EnrollmentEventLegacyOwnerSunset EnrollmentEventKind = "legacy-owner-sunset"
 	EnrollmentEventSweep             EnrollmentEventKind = "sweep"
+	// EnrollmentEventDeferredPruned: a deferred-bond enrollment that earned
+	// nothing in a week was removed (rc1112).
+	EnrollmentEventDeferredPruned EnrollmentEventKind = "deferred-pruned"
 )
 
 // ChainEventPublisher is the consumer-facing surface. The
