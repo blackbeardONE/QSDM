@@ -112,7 +112,8 @@ func NewAuthManager() (*AuthManager, error) {
 }
 
 // SetJWTHMACFallbackSecret sets the HMAC key for JWT signing/verification when Dilithium is unavailable.
-// Empty leaves the built-in development default (not for production).
+// Empty changes nothing: with no key set, jwtHMACSecretBytes generates a random per-process key on first
+// use (there is no built-in default key). Set QSDM_JWT_HMAC_SECRET for tokens that survive a restart.
 //
 // Also records the wall-clock SET time for the rotation-monitoring
 // gauge (audit row rotation-05). The gauge emits a NEGATIVE age-in-

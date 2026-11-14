@@ -17,6 +17,20 @@ from 2026-04-22 on.
 
 ### Security
 
+- **2026-11-14: task claims add up their rounds in a fixed order, and the
+  public task-action list is always bounded.**
+  - A `claim` (and the claimable amount the node computes first) now walks the
+    task's rounds in ascending order (`QSDM/source/pkg/chain/task_claim_order.go`).
+    Before, it walked a Go map, whose order is random, and a floating-point sum
+    in another order can differ in its last bit, so two computations of the same
+    claim could disagree by one unit in the last place.
+  - `GET /api/v1/tasks/actions` treats a negative `limit` like no limit: the
+    default 100 entries, at most 500. Before, a negative limit returned the whole
+    action log in one response.
+  - The comment of `SetJWTHMACFallbackSecret` now says what the code does: with
+    no `QSDM_JWT_HMAC_SECRET`, the node generates a random per-process key; there
+    is no built-in default key.
+
 - **2026-11-14: the public source enforces the relay-only rule for paid edge
   tasks and the reserved built-in task IDs, which the live network has
   enforced since October 2026, and `/api/admin/*` requires the `admin` role by
