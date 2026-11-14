@@ -172,7 +172,9 @@ jobs:
         run: |
           set -euo pipefail
           v=$(node -p "require('../app/package.json').version")
-          sha256sum "qsdm-hive-$v-win-x64.exe" "qsdm-hive-$v-win-x64.exe.blockmap" > SHA256SUMS-win.txt
+          # the published format is "<hash>  <name>"; Git Bash's sha256sum marks binary mode with " *" instead
+          sha256sum "qsdm-hive-$v-win-x64.exe" "qsdm-hive-$v-win-x64.exe.blockmap" | sed 's/ [*]/  /' > SHA256SUMS-win.txt
+          grep -c -E '^[0-9a-f]{64}  qsdm-hive-' SHA256SUMS-win.txt | grep -qx 2
           cat SHA256SUMS-win.txt
           cp "$RUNNER_TEMP/natives-win.txt" "$RUNNER_TEMP/payload-diff-win.txt" "$RUNNER_TEMP/smoke-result-win.json" .
 
