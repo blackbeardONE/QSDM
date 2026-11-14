@@ -27,11 +27,53 @@ var (
 	ErrTaskManifestNotFound        = errors.New("chain: task manifest not found")
 	ErrTaskManifestManagerMismatch = errors.New("chain: task manifest manager mismatch")
 	ErrTaskManifestVersion         = errors.New("chain: invalid task manifest version")
+	ErrTaskCatalogReservedID       = errors.New("chain: task id is reserved for a built-in QSDM task")
 
 	taskCatalogIDPattern       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 	taskCapabilityPattern      = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
 	taskSemanticVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$`)
 )
+
+// TaskCatalogReservedManager is the only wallet that may send catalog actions
+// for a reserved built-in task ID (the QSDM task manager wallet).
+const TaskCatalogReservedManager = "13d786706accfbe77c5ddf6fc6757e1cca07bd01aff0cad3dcf9411d92cf11c9"
+
+// reservedTaskCatalogIDs are the task IDs QSDM Hive ships as built-in tasks.
+// Hive overlays a chain manifest for these IDs on its own task (name,
+// is_active, runtime), and the first catalog-register for an ID decides its
+// manager, so any other sender could otherwise publish, delist or redirect a
+// built-in task in every Hive. Exact match, as Hive matches.
+//
+// Not height-gated: on 2026-10-14 every manifest for these IDs on the public
+// network was registered by TaskCatalogReservedManager, and qsdm-system-miner /
+// qsdm-mother-hive had none, so no committed catalog action is refused on replay.
+var reservedTaskCatalogIDs = map[string]struct{}{
+	"qsdm-system-miner":        {},
+	"qsdm-mother-hive":         {},
+	"qsdm-edge-worker":         {},
+	"qsdm-edge-worker-gpu":     {},
+	"qsdm-edge-worker-ram":     {},
+	"qsdm-skyfang-wallet-link": {},
+	"qsdm-hive-local-task":     {},
+}
+
+// IsReservedTaskCatalogID reports whether taskID is a reserved built-in task ID.
+func IsReservedTaskCatalogID(taskID string) bool {
+	_, ok := reservedTaskCatalogIDs[taskID]
+	return ok
+}
+
+// checkReservedTaskCatalogAction refuses a catalog action for a reserved
+// built-in task ID from any sender other than TaskCatalogReservedManager.
+func checkReservedTaskCatalogAction(action TaskAction) error {
+	if !isTaskCatalogAction(action.Action) || !IsReservedTaskCatalogID(action.TaskID) {
+		return nil
+	}
+	if strings.ToLower(strings.TrimSpace(action.Sender)) != TaskCatalogReservedManager {
+		return fmt.Errorf("%w: %s", ErrTaskCatalogReservedID, action.TaskID)
+	}
+	return nil
+}
 
 // TaskRuntimeManifest describes executable compatibility without allowing a
 // catalog publisher to inject native JavaScript into Hive. capability runtimes
@@ -301,6 +343,9 @@ func (s *TaskStateStore) CatalogRoot() string {
 // holds TaskStateStore.mu. Registering is permissionless; subsequent changes
 // are restricted to the immutable manager wallet recorded in version 1.
 func (s *TaskStateStore) applyTaskCatalogActionLocked(action TaskAction) (*TaskState, error) {
+	if err := checkReservedTaskCatalogAction(action); err != nil {
+		return nil, err
+	}
 	switch action.Action {
 	case TaskActionCatalogRegister:
 		manifest, err := decodeTaskManifest(action)

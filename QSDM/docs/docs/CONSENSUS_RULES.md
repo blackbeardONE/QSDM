@@ -28,6 +28,12 @@ they were produced with.
 | Transaction ID uniqueness | 1,160,000 | Scheduled, about 2026-11-21 (the producer's API refuses a taken ID since 2026-11-13 18:41) | none (a code constant, `TxIDUniqueActivationHeight`) | A transaction whose ID is committed in the last 8,640 blocks or earlier in the same block, whatever its contract |
 | Task migrate authorization | 1,150,000 | Scheduled, about 2026-11-19 (the producer's API enforces it since 2026-11-12 21:25) | none (a code constant, `TaskMigrateAuthActivationHeight`) | A task `migrate` not sent by the task's catalog manager, or to a target that is not another registered, unpaused task of the same manager, or that would make a cycle |
 
+A node built from `QSDM/source` must use the same activation heights as the network it follows. The
+relay-only rule is the one set in the node configuration: `[consensus] edge_relay_only_activation_height = 833800`
+(or `QSDM_EDGE_RELAY_ONLY_ACTIVATION_HEIGHT=833800`) for the public pilot network; zero, the default, never
+activates it. The reserved built-in task IDs have no activation height: every catalog action for them on the
+public network was sent by the QSDM task manager wallet.
+
 Live values on the public node:
 
 ```json

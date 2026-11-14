@@ -279,3 +279,60 @@ func TestTaskCatalog_ApplyEconomicTxChargesOnlyFee(t *testing.T) {
 		t.Fatal("economic catalog transaction did not persist manifest")
 	}
 }
+
+func TestReservedTaskCatalogIDs(t *testing.T) {
+	const squatter = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	for taskID := range reservedTaskCatalogIDs {
+		store := NewTaskStateStore()
+		squat := testCatalogAction(t, "squat-"+taskID, TaskActionCatalogRegister, taskID, squatter, 1, 1)
+		if err := store.ApplyAction(squat); !errors.Is(err, ErrTaskCatalogReservedID) {
+			t.Fatalf("%s: squat register: %v, want ErrTaskCatalogReservedID", taskID, err)
+		}
+		if task, ok := store.GetTask(taskID); ok && task.Manifest != nil {
+			t.Fatalf("%s: squat left a manifest", taskID)
+		}
+		owner := testCatalogAction(t, "owner-"+taskID, TaskActionCatalogRegister, taskID, TaskCatalogReservedManager, 1, 1)
+		if err := store.ApplyAction(owner); err != nil {
+			t.Fatalf("%s: owner register: %v", taskID, err)
+		}
+		for _, action := range []string{TaskActionCatalogPause, TaskActionCatalogResume} {
+			a := TaskAction{ID: action + "-" + taskID, Sender: squatter, TaskID: taskID, Action: action, Timestamp: "2026-10-14T00:00:00Z"}
+			if err := store.ApplyAction(a); !errors.Is(err, ErrTaskCatalogReservedID) {
+				t.Fatalf("%s: squatter %s: %v", taskID, action, err)
+			}
+		}
+		for _, action := range []string{"stake", "fund"} {
+			a := TaskAction{ID: action + "-" + taskID, Sender: squatter, TaskID: taskID, Action: action, Amount: 1, Timestamp: "2026-10-14T00:00:00Z"}
+			if err := store.ApplyAction(a); err != nil {
+				t.Fatalf("%s: %s must stay open to everyone: %v", taskID, action, err)
+			}
+		}
+	}
+	other := testCatalogAction(t, "free-register", TaskActionCatalogRegister, "community-task", "dddd", 1, 1)
+	if err := NewTaskStateStore().ApplyAction(other); err != nil {
+		t.Fatalf("unreserved ID: %v", err)
+	}
+
+	bp := &BlockProducer{}
+	admit := bp.EdgeRelayOnlyAdmission(nil)
+	tx := func(id, sender, taskID, action, payload string) *mempool.Tx {
+		body, _ := json.Marshal(TaskAction{ID: id, Sender: sender, TaskID: taskID, Action: action, Payload: payload, Timestamp: "2026-10-14T00:00:00Z"})
+		return &mempool.Tx{ID: id, Sender: sender, ContractID: TaskContractID, Payload: body}
+	}
+	before := ReservedTaskCatalogAdmissionRejected()
+	if err := admit(tx("a1", squatter, "qsdm-system-miner", TaskActionCatalogRegister, "{}")); !errors.Is(err, ErrTaskCatalogReservedID) {
+		t.Fatalf("admission squat: %v", err)
+	}
+	if got := ReservedTaskCatalogAdmissionRejected() - before; got != 1 {
+		t.Fatalf("admission counter moved by %d, want 1", got)
+	}
+	for _, ok := range []*mempool.Tx{
+		tx("a2", strings.ToUpper(TaskCatalogReservedManager), "qsdm-system-miner", TaskActionCatalogRegister, "{}"),
+		tx("a3", squatter, "qsdm-system-miner", "stake", ""),
+		tx("a4", squatter, "community-task", TaskActionCatalogRegister, "{}"),
+	} {
+		if err := admit(ok); err != nil {
+			t.Fatalf("%s refused at admission: %v", ok.ID, err)
+		}
+	}
+}

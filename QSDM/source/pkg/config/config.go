@@ -209,6 +209,14 @@ type Config struct {
 	// Zero keeps them off. See chain.SetPoEActivationHeight.
 	PoEActivationHeight uint64
 
+	// EdgeRelayOnlyActivationHeight is the first height at which the three
+	// built-in resource tasks (qsdm-edge-worker, -gpu, -ram) accept a submit
+	// only as a pooled Relay settlement ([consensus]
+	// edge_relay_only_activation_height or
+	// QSDM_EDGE_RELAY_ONLY_ACTIVATION_HEIGHT). Zero keeps the rule off. See
+	// chain.SetEdgeRelayOnlyActivationHeight.
+	EdgeRelayOnlyActivationHeight uint64
+
 	// StreamEd25519RetirementHeight is the first height at which a CELL
 	// stream open (qsdm/streams/v1), which registers an Ed25519 session
 	// key, is refused ([consensus] stream_ed25519_retirement_height or
@@ -319,6 +327,9 @@ type Config struct {
 	JWTHMACSecretSecondary string
 
 	// AdminAPIRequireRole: when true, /api/admin/* requires JWT role "admin" (after AuthMiddleware).
+	// LoadConfig (applyEnvOverrides) turns it on unless QSDM_ADMIN_REQUIRE_ROLE is false, 0 or no:
+	// account registration always assigns the role "user", so with it off any account could read
+	// the admin plane. LoadConfigFile, which skips the environment, leaves it as the file sets it.
 	AdminAPIRequireRole bool
 	// AdminAPIRequireMTLS: when true, /api/admin/* requires a verified TLS client certificate.
 	AdminAPIRequireMTLS bool
@@ -516,6 +527,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.TxContentRootActivationHeight = tomlCfg.Consensus.TxContentRootActivationHeight
 		cfg.EnrollmentStateRootActivationHeight = tomlCfg.Consensus.EnrollmentStateRootActivationHeight
 		cfg.PoEActivationHeight = tomlCfg.Consensus.PoEActivationHeight
+		cfg.EdgeRelayOnlyActivationHeight = tomlCfg.Consensus.EdgeRelayOnlyActivationHeight
 		cfg.StreamEd25519RetirementHeight = tomlCfg.Consensus.StreamEd25519RetirementHeight
 		cfg.QSDM20ActivationHeight = tomlCfg.Consensus.QSDM20ActivationHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(tomlCfg.Consensus.SignerKeyPath)
@@ -637,6 +649,7 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.TxContentRootActivationHeight = yamlCfg.Consensus.TxContentRootActivationHeight
 		cfg.EnrollmentStateRootActivationHeight = yamlCfg.Consensus.EnrollmentStateRootActivationHeight
 		cfg.PoEActivationHeight = yamlCfg.Consensus.PoEActivationHeight
+		cfg.EdgeRelayOnlyActivationHeight = yamlCfg.Consensus.EdgeRelayOnlyActivationHeight
 		cfg.StreamEd25519RetirementHeight = yamlCfg.Consensus.StreamEd25519RetirementHeight
 		cfg.QSDM20ActivationHeight = yamlCfg.Consensus.QSDM20ActivationHeight
 		cfg.ConsensusSignerKeyPath = strings.TrimSpace(yamlCfg.Consensus.SignerKeyPath)
@@ -844,6 +857,11 @@ func applyEnvOverrides(cfg *Config) {
 			cfg.PoEActivationHeight = h
 		}
 	}
+	if v := strings.TrimSpace(getEnvString("QSDM_EDGE_RELAY_ONLY_ACTIVATION_HEIGHT", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.EdgeRelayOnlyActivationHeight = h
+		}
+	}
 	if v := strings.TrimSpace(getEnvString("QSDM_STREAM_ED25519_RETIREMENT_HEIGHT", "")); v != "" {
 		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
 			cfg.StreamEd25519RetirementHeight = h
@@ -921,8 +939,11 @@ func applyEnvOverrides(cfg *Config) {
 	if val := envPreferred("QSDM_DASHBOARD_STRICT_AUTH", "QSDM_DASHBOARD_STRICT_AUTH"); val != "" {
 		cfg.DashboardStrictAuth = val == "true" || val == "1" || strings.EqualFold(val, "yes")
 	}
-	if val := envPreferred("QSDM_ADMIN_REQUIRE_ROLE", "QSDM_ADMIN_REQUIRE_ROLE"); val != "" {
-		cfg.AdminAPIRequireRole = val == "true" || val == "1" || strings.EqualFold(val, "yes")
+	// Secure by default: /api/admin/* requires the JWT role "admin" unless an operator turns
+	// the check off explicitly (QSDM_ADMIN_REQUIRE_ROLE=false, 0 or no).
+	cfg.AdminAPIRequireRole = true
+	if val := strings.TrimSpace(envPreferred("QSDM_ADMIN_REQUIRE_ROLE", "QSDM_ADMIN_REQUIRE_ROLE")); val != "" {
+		cfg.AdminAPIRequireRole = !(val == "false" || val == "0" || strings.EqualFold(val, "no"))
 	}
 	if val := envPreferred("QSDM_ADMIN_REQUIRE_MTLS", "QSDM_ADMIN_REQUIRE_MTLS"); val != "" {
 		cfg.AdminAPIRequireMTLS = val == "true" || val == "1" || strings.EqualFold(val, "yes")

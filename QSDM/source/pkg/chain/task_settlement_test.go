@@ -69,7 +69,7 @@ func registerPooledTask(t *testing.T, store *TaskStateStore, taskID, relayID str
 		TaskID:             taskID,
 		Version:            1,
 		Name:               "Authorized pooled resource task",
-		Manager:            "manager",
+		Manager:            TaskCatalogReservedManager, // the built-in resource task IDs are reserved
 		Active:             true,
 		MinimumStakeAmount: 1,
 		RewardPerRound:     0.05,

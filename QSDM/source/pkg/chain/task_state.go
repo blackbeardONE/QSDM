@@ -927,6 +927,15 @@ func (s *TaskStateStore) validateTaskSubmissionPolicyLocked(task *TaskState, par
 	if !isResourceTask {
 		return nil, nil
 	}
+	// At or above the relay-only activation height a resource-task submit
+	// must be a pooled Relay settlement (edge_relay_only.go). Below it, and on
+	// the height-less ApplyAction projection (currentHeight 0), nothing
+	// changes.
+	if EdgeRelayOnlyActiveAt(currentHeight) {
+		if err := checkEdgeRelayOnlySubmit(action.TaskID, action.Payload); err != nil {
+			return nil, err
+		}
+	}
 	if taskAmountLessThan(policy.MaxRoundReward, payload.RewardAmount) {
 		return nil, fmt.Errorf("chain: %s worker reward %.8f exceeds consensus cap %.8f",
 			policy.Resource, payload.RewardAmount, policy.MaxRoundReward)
