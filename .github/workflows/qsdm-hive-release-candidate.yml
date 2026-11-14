@@ -144,15 +144,19 @@ jobs:
           }
           $old = Inventory (Resolve-Path (Join-Path $env:RUNNER_TEMP 'prev\app')).Path
           $new = Inventory (Resolve-Path 'apps/qsdm-hive/qsdm-hive-main/release/candidate/win-unpacked').Path
+          # Expected: the app, the Windows launcher (version resource) and the bundled browser-wallet extension, which
+          # follows apps/qsdm-hive-wallet-extension (its version is printed below). Nothing else should move.
           $expectedChanged = @('QSDM Hive.exe', 'resources/app.asar')
+          function IsExpected($k) { return ($expectedChanged -contains $k) -or $k.StartsWith('resources/wallet-extension/') }
           $lines = @(); $unexpected = 0
           foreach ($k in ($old.Keys + $new.Keys | Sort-Object -Unique)) {
-            if (-not $old.ContainsKey($k)) { $lines += "added      $k"; $unexpected++ ; continue }
-            if (-not $new.ContainsKey($k)) { $lines += "removed    $k"; $unexpected++ ; continue }
-            if ($old[$k] -ne $new[$k]) {
-              if ($expectedChanged -contains $k) { $lines += "changed    $k (expected)" } else { $lines += "changed    $k"; $unexpected++ }
-            }
+            $tag = if (IsExpected $k) { ' (expected)' } else { '' }
+            if (-not $old.ContainsKey($k)) { $lines += "added      $k$tag"; if (-not $tag) { $unexpected++ }; continue }
+            if (-not $new.ContainsKey($k)) { $lines += "removed    $k$tag"; if (-not $tag) { $unexpected++ }; continue }
+            if ($old[$k] -ne $new[$k]) { $lines += "changed    $k$tag"; if (-not $tag) { $unexpected++ } }
           }
+          $ev = { param($root) (Get-Content -Raw -LiteralPath (Join-Path $root 'resources/wallet-extension/manifest.json') | ConvertFrom-Json).version }
+          "bundled wallet extension: $(& $ev (Join-Path $env:RUNNER_TEMP 'prev\app')) -> $(& $ev 'apps/qsdm-hive/qsdm-hive-main/release/candidate/win-unpacked')"
           $report = Join-Path $env:RUNNER_TEMP 'payload-diff-win.txt'
           $lines | Set-Content -LiteralPath $report -Encoding utf8
           Get-Content -LiteralPath $report
@@ -267,14 +271,14 @@ jobs:
           import sys
           def load(p): return {l[66:].rstrip("\n"): l[:64] for l in open(p) if len(l) > 66}
           old, new = load(sys.argv[1]), load(sys.argv[2])
-          expected = {"resources/app.asar"}
+          # expected: the app and the bundled browser-wallet extension (it follows apps/qsdm-hive-wallet-extension)
+          def expected(k): return k == "resources/app.asar" or k.startswith("resources/wallet-extension/")
           out, unexpected = [], 0
           for k in sorted(set(old) | set(new)):
-              if k not in old: out.append(f"added      {k}"); unexpected += 1
-              elif k not in new: out.append(f"removed    {k}"); unexpected += 1
-              elif old[k] != new[k]:
-                  if k in expected: out.append(f"changed    {k} (expected)")
-                  else: out.append(f"changed    {k}"); unexpected += 1
+              tag = " (expected)" if expected(k) else ""
+              if k not in old: out.append(f"added      {k}{tag}"); unexpected += 0 if tag else 1
+              elif k not in new: out.append(f"removed    {k}{tag}"); unexpected += 0 if tag else 1
+              elif old[k] != new[k]: out.append(f"changed    {k}{tag}"); unexpected += 0 if tag else 1
           open(sys.argv[3], "w").write("\n".join(out) + "\n")
           print("\n".join(out)); print(f"files: previous {len(old)}, candidate {len(new)}; unexpected differences: {unexpected}")
           for n in ("resources/miner/qsdmminer-console", "resources/native/qsdmcli", "resources/edge/qsdm-edge-agent"):
