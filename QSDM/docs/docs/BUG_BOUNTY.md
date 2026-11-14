@@ -6,7 +6,8 @@
 > part of the open [community security review](COMMUNITY_REVIEW.md), which is
 > the project's current path in place of a paid audit firm (owner decision,
 > 17 October 2026). **No independent security audit of QSDM has been
-> completed**, and no bounty has been paid yet.
+> completed.** Rewards paid so far are listed under
+> [Acknowledgments](#9-acknowledgments).
 
 QSDM is a public pilot network (pre-mainnet) with a single block producer. See
 [Network status](NETWORK_STATUS.md) and [Security model](SECURITY_MODEL.md) for
@@ -181,17 +182,22 @@ are credited in the review log but carry no reward.
 | Medium | up to **1,000 CELL** |
 | Low | up to **100 CELL** |
 
-- **Source of rewards.** Rewards are paid from the owner's own mined CELL
-  holdings by an ordinary signed transfer. **No CELL is ever minted** for the
-  bounty; it does not change the supply, the emission schedule or the 90,000,000
-  CELL cap, and it uses no treasury (there is none; see
-  [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)).
+- **Source of rewards.** Rewards are paid by an ordinary signed transfer from
+  the program's own wallet,
+  [`4146b9a5cdb287c46c1ce67f6e377af7d5bc0c5f83cbef7403f0346b5433e301`](https://qsdm.tech/explorer.html?address=4146b9a5cdb287c46c1ce67f6e377af7d5bc0c5f83cbef7403f0346b5433e301)
+  (since 14 November 2026), which the owner funds from their own mined CELL;
+  every payout is public in the Explorer. The first reward, on 13 November 2026,
+  was paid from the owner's own wallet before this one existed. **No CELL is
+  ever minted** for the bounty; it does not change the supply, the emission
+  schedule or the 90,000,000 CELL cap, and it uses no treasury (there is none;
+  see [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md)).
 - **Amount within a tier.** Set by the demonstrated impact on the live
   configuration, the quality of the report and proof of concept, and whether a
   fix is suggested.
-- **Pool.** The total set aside for the program is **50,000 CELL**. If the
-  pool runs out, the program pauses with notice on this page; reports already
-  accepted keep their award.
+- **Pool.** The total set aside for the program is **50,000 CELL**. The
+  program wallet holds a working balance that the owner refills from mined CELL
+  within that total. If the pool runs out, the program pauses with notice on
+  this page; reports already accepted keep their award.
 - **Value.** CELL on the pilot network has no promised value, and the project
   does not sell or buy it. A reward is not an investment.
 - **Eligibility.** You must follow §2, be the first reporter (below), and not be
@@ -253,8 +259,9 @@ allowed, ask through the private channel first.
 2. We reproduce the issue and agree the severity with you. If we disagree, we
    explain why in writing; you may add evidence.
 3. We fix it, and you may check the fix before release.
-4. After the fix ships, the owner sends the reward as a signed CELL transfer to
-   the address you gave. The transaction ID is recorded in the
+4. After the fix ships, the owner sends the reward as a signed CELL transfer
+   from the program wallet (§5) to the address you gave. The transaction ID is
+   recorded in the
    [review log](COMMUNITY_REVIEW.md#7-review-log) with your consent.
 5. The advisory is published on the disclosure date (§6), with credit.
 

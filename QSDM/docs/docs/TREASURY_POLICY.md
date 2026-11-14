@@ -24,6 +24,7 @@ Status: funding and custody policy (pilot network)
 | 2C | Integration Payout Wallets | One wallet per integration | Keeps Sky Fang or future partner risk out of core treasury funds. |
 | 2D | Task Reward Pools | One funded pool per task | Pays verified task submissions under task-specific policy. |
 | 2E | Pooled Compute Ecosystem Reserve | Dedicated public wallet, governance-approved sweeps | Receives the 15% ecosystem share from settled Agent/Relay workloads. |
+| 2F | Bug Bounty Payout Wallet | Isolated signer held by the owner, working balance refilled from the owner's mined CELL | Pays [bug bounty](BUG_BOUNTY.md) rewards only. Public address `4146b9a5cdb287c46c1ce67f6e377af7d5bc0c5f83cbef7403f0346b5433e301`. |
 
 Use different keystores, passphrases, bearer tokens, operating-system users,
 ports, and refill transactions for Tier 2A and Tier 2B. Never point referral and
