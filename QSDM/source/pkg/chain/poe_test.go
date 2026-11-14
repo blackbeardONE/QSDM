@@ -477,7 +477,6 @@ func TestPoEProduction_DropsEachViolation(t *testing.T) {
 		{dupParent, poe.ErrDuplicateParent},
 		{selfParent, poe.ErrSelfParent},
 		{noParents, poe.ErrParentCount},
-		{reusedID, poe.ErrDuplicateTxID},
 	} {
 		if included(blk, c.tx.ID) {
 			t.Fatalf("%s included despite %v", c.tx.ID, c.want)
@@ -489,6 +488,19 @@ func TestPoEProduction_DropsEachViolation(t *testing.T) {
 		if acc.Nonce != 0 || acc.Balance != 1000 {
 			t.Fatalf("rejected %s touched account state: %+v", c.tx.ID, acc)
 		}
+	}
+	// The transfer that reuses heartbeat@1's ID is excluded too, but since
+	// rc1111 (txid_unique.go) it is dropped without a receipt: the committed
+	// heartbeat keeps its receipt instead of having it overwritten by the
+	// transfer's failure.
+	if included(blk, reusedID.ID) {
+		t.Fatalf("%s included despite reusing a committed ID", reusedID.ID)
+	}
+	if r, ok := prod.receipts.Get(reusedID.ID); !ok || r.Status != ReceiptSuccess || r.ContractID != "" || r.BlockHeight != 1 {
+		t.Fatalf("the committed heartbeat's receipt was replaced: %+v", r)
+	}
+	if acc, _ := prod.accounts.Get(reusedID.Sender); acc.Nonce != 0 || acc.Balance != 1000 {
+		t.Fatalf("the dropped transfer touched account state: %+v", acc)
 	}
 	// Followers agree with the producer's choices.
 	follower := newPoENode(w...)

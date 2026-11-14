@@ -18,7 +18,9 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| About 2026-11-21 (scheduled) | 1,160,000 | A transaction ID names one transaction, whatever its contract: a block that repeats a committed ID is invalid ([Consensus rules](CONSENSUS_RULES.md#transaction-id-uniqueness-from-block-1160000)) | **Yes**, full-node operators: run fullnode-rc1111 or newer before this height |
 | About 2026-11-19 (scheduled) | 1,150,000 | Only a task's catalog manager may migrate it: a block with any other `migrate` is invalid ([Consensus rules](CONSENSUS_RULES.md#task-migrate-authorization-from-block-1150000)) | **Yes**, full-node operators: run fullnode-rc1110 or newer before this height |
+| 2026-11-13 18:41 | node release | Release rc1111: a transaction ID names one transaction, whatever its contract. The API refuses a signed task action whose ID another transaction holds, the producer leaves such a transaction out of its blocks, and a committed receipt is final; blocks enforce the ID rule from 1,160,000. Mining paused 24 minutes. Full nodes: fullnode-rc1111 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | Full-node operators: upgrade before block 1,160,000 |
 | 2026-11-13 11:59 to 12:50 | 1,095,602 and 1,095,785 | The first live turn of block production: the project's full node in Japan made blocks 1,095,602 to 1,095,784 with its own key, then the producer again from 1,095,785 with a new key; the block-maker schedule is a version 2 table with four block makers; mining paused 65 minutes ([details](#2026-11-13-the-first-live-turn-of-block-production)) | **Yes**, full-node operators: take the new schedule from qsdm.tech/fullnode.html (`install-full-node.sh --update-schedule --from-website`); a node with the old schedule stops at block 1,095,601 |
 | 2026-11-12 21:25 | node release | Release rc1110: a security fix. The API refuses a task `migrate` from anyone but the task's catalog manager, to a target that is not another registered, unpaused task of the same manager, or into a cycle; blocks enforce the same rule from 1,150,000. Mining paused 6 minutes. Full nodes: fullnode-rc1110 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | Full-node operators: upgrade before block 1,150,000 |
 | 2026-11-12 07:46 | node release | Release rc1109: built with Go 1.26.11 (GO-2026-6859 in `net/http`) and golang.org/x/net v0.62.0, and a start reads the journal further ahead (no consensus change); mining paused 5 minutes. Full nodes: fullnode-rc1109 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | No (full-node operators can upgrade) |
@@ -69,6 +71,27 @@ upgrades harden that pilot network; they do not change its stage. See
   `bash install-full-node.sh --update-schedule --from-website`
   ([Run a full node](RUN_A_FULL_NODE.md#when-the-block-maker-changes)); a new
   install takes it by itself. Its digest is `fd23fbcae12315a4e6d4abce24bd908d0e738d6227b6d3203c03d772238c1345`.
+
+## 2026-11-13: release rc1111, and transaction IDs unique across contracts from block 1,160,000
+
+- **When:** node release `hardened-legacy-20261114-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1111`,
+  switched in 2026-11-13 18:41 UTC; mining reopened at 19:02 UTC. The same
+  rule becomes a consensus rule at block **1,160,000** (about 21 November 2026
+  at 10-second blocks).
+- **What changed:** a transaction ID names one transaction, whatever its
+  contract. Wallet transfers have been held to this since block 816,600; now
+  every contract is. `/api/v1/tasks/actions/submit-signed` refuses a signed
+  task action whose ID already belongs to another recorded or pending
+  transaction (409, `mempool_status` `id_taken`), block production leaves such
+  a transaction out without a receipt, and a committed receipt is final. From
+  block 1,160,000 a block that repeats an ID committed in the last 8,640 blocks
+  or earlier in the same block is invalid; blocks below that height replay as
+  they were produced. Same Go 1.26.11 and modules as rc1110.
+- **What you have to do:** nothing as a wallet holder, miner or task
+  publisher. Full-node operators: install `fullnode-rc1111` (the same `qsdm`)
+  before block 1,160,000. An older full node keeps following, because the
+  producer never puts such a transaction in a block, but only rc1111 or newer
+  checks the rule itself.
 
 ## 2026-11-12: release rc1110 (a security fix), and the migrate rule from block 1,150,000
 

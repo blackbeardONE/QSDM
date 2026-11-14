@@ -334,6 +334,18 @@ func (s *poeBlockScope) check(tx *mempool.Tx) error {
 		s.remaining[tx.ID]--
 	}
 	if tx.ContractID != WalletTransferContractID {
+		// From TxIDUniqueActivationHeight every contract follows rule 2 (its
+		// ID is not committed in the window or earlier in this block), not
+		// only wallet transfers (txid_unique.go).
+		if !TxIDUniqueActiveAt(s.height) || tx.ID == "" {
+			return nil
+		}
+		if s.histErr != nil {
+			return s.histErr
+		}
+		if _, ok := s.earlier[tx.ID]; ok || s.hist.committed(tx.ID) {
+			return fmt.Errorf("%w: %q", poe.ErrDuplicateTxID, tx.ID)
+		}
 		return nil
 	}
 	if s.histErr != nil {
@@ -383,6 +395,9 @@ func (bp *BlockProducer) verifyBlockPoE(blk *Block) error {
 		if err := s.check(tx); err != nil {
 			poeStats.recordReject(err)
 			poeStats.blocksRejected.Add(1)
+			if tx.ContractID != WalletTransferContractID {
+				txIDStats.blocksRefused.Add(1)
+			}
 			return fmt.Errorf("block %d tx %d (%s): %w", blk.Height, i, tx.ID, err)
 		}
 		s.include(tx)

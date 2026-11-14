@@ -34,6 +34,9 @@ func (rp *ReceiptProducer) ProduceBlockWithReceipts() (*Block, []*TxReceipt, err
 	defer rp.producer.mu.Unlock()
 
 	txs := rp.producer.pool.Drain(rp.producer.maxTxBlock)
+	// As in BlockProducer.ProduceBlock: an ID that already owns a receipt is
+	// not taken by a later transaction (txid_unique.go).
+	txs = dropReceiptCollisions(txs, rp.receipts)
 	if len(txs) == 0 {
 		return nil, nil, fmt.Errorf("no transactions to include")
 	}

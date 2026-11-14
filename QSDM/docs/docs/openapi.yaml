@@ -4460,7 +4460,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: The action ID is already in the log (`status` is `duplicate`).
+          description: |
+            The action ID is already in the log, or (node release rc1111) it
+            already belongs to another recorded or pending transaction:
+            `status` is `duplicate`, `mempool_status` is `id_taken`, and nothing
+            is written to the log.
           content:
             application/json:
               schema:

@@ -355,6 +355,22 @@ func (h *Handlers) QSDMTaskActionSubmitSignedHandler(w http.ResponseWriter, r *h
 	}
 
 	mempoolSubmitted, mempoolStatus, mempoolError := submitQSDMTaskActionToMempool(env)
+	if !mempoolSubmitted && mempoolStatus == "id_taken" {
+		// The ID already belongs to another transaction (a committed one, or
+		// another pending one): refused like a duplicate wallet transfer, and
+		// nothing is written to the action log (chain.ErrTxIDTaken).
+		writeJSONResponse(w, http.StatusConflict, QSDMTaskActionSubmitResponse{
+			ActionID:         env.ID,
+			Status:           "duplicate",
+			Sender:           env.Sender,
+			TaskID:           env.TaskID,
+			Action:           env.Action,
+			MempoolSubmitted: false,
+			MempoolStatus:    mempoolStatus,
+			MempoolError:     mempoolError,
+		})
+		return
+	}
 	if !mempoolSubmitted {
 		statusCode := http.StatusUnprocessableEntity
 		if mempoolStatus == "not_configured" {
@@ -415,6 +431,9 @@ func submitQSDMTaskActionToMempool(env QSDMTaskActionEnvelope) (bool, string, st
 		return false, "encode_failed", SanitizeString(err.Error(), 256)
 	}
 	if err := pool.Add(tx); err != nil {
+		if errors.Is(err, chain.ErrTxIDTaken) {
+			return false, "id_taken", SanitizeString(err.Error(), 256)
+		}
 		if errors.Is(err, mempool.ErrDuplicateTx) {
 			return true, "duplicate", ""
 		}

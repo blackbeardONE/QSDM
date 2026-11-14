@@ -1839,6 +1839,14 @@ func main() {
 	// Serialize wallet admission with block application so balance and nonce
 	// validation sees committed state, including while the pool is drained.
 	api.SetWalletTransferMempool(adminProducer.WalletTransferSubmitter())
+	// Signed task actions go through the producer too (rc1111): admitted under
+	// the block-lifecycle lock, and refused when their ID already belongs to
+	// another recorded or pending transaction (chain.ErrTxIDTaken): a
+	// transaction ID names one transaction, whatever its contract.
+	api.SetTaskActionMempool(adminProducer.TaskActionSubmitter())
+	if !api.TaskActionSubmissionReady() {
+		log.Fatal("signed task-action submission dependencies are not ready")
+	}
 	// Defense in depth: Config.Validate rejects this already. Keep the process
 	// entrypoint fail-closed too, so a future alternate config loader cannot arm
 	// an incomplete consensus transition and zero legacy balances at the fork.
