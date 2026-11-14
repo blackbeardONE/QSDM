@@ -212,6 +212,15 @@ type ConsensusConfigTOML struct {
 	// (GET /api/v1/chain/parents) before it is reached.
 	PoEActivationHeight uint64 `toml:"poe_activation_height" yaml:"poe_activation_height"`
 
+	// EdgeRelayOnlyActivationHeight is the first height at which a submit to
+	// the built-in resource tasks qsdm-edge-worker, qsdm-edge-worker-gpu and
+	// qsdm-edge-worker-ram is valid only as a pooled Relay settlement
+	// (source qsdm-edge-relay-v2 with every settlement check); unverified
+	// local resource proofs are refused. Zero, the default, never activates;
+	// blocks below the height replay exactly as before. Every validator must
+	// use the same value (the public pilot network: 833800).
+	EdgeRelayOnlyActivationHeight uint64 `toml:"edge_relay_only_activation_height" yaml:"edge_relay_only_activation_height"`
+
 	// StreamEd25519RetirementHeight is the first height at which a CELL
 	// stream open (qsdm/streams/v1) is refused, because every stream open
 	// registers an Ed25519 usage-receipt session key. Streams opened below

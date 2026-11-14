@@ -17,6 +17,36 @@ from 2026-04-22 on.
 
 ### Security
 
+- **2026-11-14: the public source enforces the relay-only rule for paid edge
+  tasks and the reserved built-in task IDs, which the live network has
+  enforced since October 2026, and `/api/admin/*` requires the `admin` role by
+  default.** A node built from `QSDM/source` now decides these like the live
+  nodes do.
+  - Relay-only paid edge tasks (`QSDM/source/pkg/chain/edge_relay_only.go`).
+    From `[consensus] edge_relay_only_activation_height`
+    (`QSDM_EDGE_RELAY_ONLY_ACTIVATION_HEIGHT`; the pilot network uses
+    `833800`, live since 2026-10-13), a `submit` to `qsdm-edge-worker`,
+    `qsdm-edge-worker-gpu` or `qsdm-edge-worker-ram` is valid only as a pooled
+    settlement through an authorized relay (source `qsdm-edge-relay-v2` with
+    every settlement check). Every other source, an empty one included, is
+    refused at mempool admission (from 360 blocks before the height), in
+    production, in validation and in replay. Zero, the default, never
+    activates, and blocks below the height replay as before. Status fields
+    `edge_relay_only_activation_height` and `edge_relay_only_active`; metrics
+    `qsdm_edge_relay_only_activation_height` and
+    `qsdm_edge_relay_only_admission_rejected_total`.
+  - Reserved built-in task IDs (`QSDM/source/pkg/chain/task_catalog.go`,
+    live since 2026-10-15). A catalog action for `qsdm-system-miner`,
+    `qsdm-mother-hive`, the three edge tasks, `qsdm-skyfang-wallet-link` or
+    `qsdm-hive-local-task` is valid only from the QSDM task manager wallet
+    (`TaskCatalogReservedManager`), in consensus and at admission (metric
+    `qsdm_task_catalog_reserved_admission_rejected_total`).
+  - `/api/admin/*` requires the JWT role `admin` unless `QSDM_ADMIN_REQUIRE_ROLE`
+    is `false`, `0` or `no`, and the node logs a warning when it is off. Before,
+    the check was off unless that variable was set, while account registration
+    always assigns the role `user`. The live network's nodes already require
+    the role and do not expose `/api/admin` publicly.
+
 - **2026-11-12: only a task's catalog manager may migrate it (node release
   rc1110; a consensus rule from block 1,150,000).** A `migrate` task action
   points a task at its newer version, and QSDM Hive offers that version as

@@ -1645,6 +1645,25 @@ func main() {
 			"config", "[consensus] poe_activation_height",
 			"env", "QSDM_POE_ACTIVATION_HEIGHT")
 	}
+	// From this height the three built-in resource tasks accept a submit only
+	// as a pooled Relay settlement; unverified local resource proofs are refused
+	// at admission (from chain.EdgeRelayOnlyAdmissionLeadBlocks before), in
+	// production, in validation and in replay. Zero, the default, changes nothing.
+	chain.SetEdgeRelayOnlyActivationHeight(cfg.EdgeRelayOnlyActivationHeight)
+	if cfg.EdgeRelayOnlyActivationHeight > 0 {
+		logger.Info("Edge resource tasks relay-only rule scheduled",
+			"from_height", cfg.EdgeRelayOnlyActivationHeight,
+			"tasks", "qsdm-edge-worker,qsdm-edge-worker-gpu,qsdm-edge-worker-ram",
+			"admission_lead_blocks", chain.EdgeRelayOnlyAdmissionLeadBlocks,
+			"warning", "every validator must use this exact value")
+	} else {
+		logger.Info("Edge resource tasks relay-only rule is not enforced (no activation height)",
+			"config", "[consensus] edge_relay_only_activation_height",
+			"env", "QSDM_EDGE_RELAY_ONLY_ACTIVATION_HEIGHT")
+	}
+	if !cfg.AdminAPIRequireRole {
+		logger.Warn("Admin API role check is OFF (QSDM_ADMIN_REQUIRE_ROLE is false): any authenticated account can read /api/admin/*")
+	}
 	// Post-quantum only: from this height a CELL stream open, which
 	// registers an Ed25519 usage-receipt session key, is refused in
 	// production, in validation and in replay. Streams opened below it can
@@ -1956,12 +1975,12 @@ func main() {
 	if localBlockProduction {
 		// A configured local producer owns extension decisions. The current
 		// one-validator set cannot satisfy the peer-driven BFT predicate.
-		v2wiring.ReinstallAdmissionGate(adminPool, adminProducer.WalletTransferPoEAdmission(nil))
+		v2wiring.ReinstallAdmissionGate(adminPool, adminProducer.WalletTransferPoEAdmission(adminProducer.EdgeRelayOnlyAdmission(nil)))
 		logger.Info("Local block producer admission gate ignores peer-driven BFT/POL predicates",
 			"role", productionRole,
 			"reason", "configured producer owns block extension")
 	} else {
-		v2wiring.ReinstallAdmissionGate(adminPool, adminProducer.WalletTransferPoEAdmission(baseAdmit))
+		v2wiring.ReinstallAdmissionGate(adminPool, adminProducer.WalletTransferPoEAdmission(adminProducer.EdgeRelayOnlyAdmission(baseAdmit)))
 	}
 	adminProducer.OnSealed = func() {
 		if blk, ok := adminProducer.LatestBlock(); ok {
@@ -2740,6 +2759,7 @@ func main() {
 	monitoring.GlobalScrapePrometheusExporter().RegisterCollector("hl1", hl1MetricsCollector(hl1Durable))
 	monitoring.GlobalScrapePrometheusExporter().RegisterCollector("poe", poeMetricsCollector(adminProducer))
 	monitoring.GlobalScrapePrometheusExporter().RegisterCollector("pq_only", pqOnlyMetricsCollector())
+	monitoring.GlobalScrapePrometheusExporter().RegisterCollector("edge_relay_only", edgeRelayOnlyMetricsCollector())
 
 	// HL1 (d): in the producer role a gossiped block is never appended
 	// (errHL1ExternalAppendDisabled). HL1 (c): catch-up responses never carry
