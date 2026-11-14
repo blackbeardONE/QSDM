@@ -204,6 +204,17 @@ exports.default = async function afterPack(context) {
     'VERSION'
   );
   const edgeVersion = fs.readFileSync(edgeVersionPath, 'utf8').trim();
+  // A release can carry the previous release's native programs byte for byte (Hive 1.4.22 shipped the 1.4.18 miner,
+  // and the release-candidate workflow builds 1.4.23 the same way). QSDM_PACKAGED_MINER_HIVE_VERSION then names the
+  // miner version that build must contain; the probe below still runs and still requires that exact version.
+  const minerHiveVersion = String(
+    process.env.QSDM_PACKAGED_MINER_HIVE_VERSION || appVersion
+  ).trim();
+  if (!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(minerHiveVersion)) {
+    throw new Error(
+      `QSDM_PACKAGED_MINER_HIVE_VERSION must be a version like 1.4.18, got "${minerHiveVersion}"`
+    );
+  }
   const versionProbes = [
     {
       executable: executables[0],
@@ -215,7 +226,7 @@ exports.default = async function afterPack(context) {
     },
     {
       executable: executables[5],
-      expectedPrefix: `qsdmminer-console hive-v${appVersion} (`,
+      expectedPrefix: `qsdmminer-console hive-v${minerHiveVersion} (`,
     },
   ];
 

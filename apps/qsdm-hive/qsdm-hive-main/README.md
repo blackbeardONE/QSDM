@@ -86,7 +86,7 @@ it updates itself to that version. It reads the signed release envelope from
 against the release key built into Hive; see
 [QSDM-native release signing](../../../QSDM/docs/docs/QSDM_NATIVE_RELEASE_SIGNING.md).
 
-From the first Hive release after 1.4.22, Hive keeps working when qsdm.tech is
+Since Hive 1.4.23, Hive keeps working when qsdm.tech is
 down or the computer is offline. After
 every successful check it saves the signed envelope in a
 `release-envelope-cache` folder in its application-data directory. When a later
@@ -105,7 +105,7 @@ newly signed envelope with a later `issued_at`.
 
 - Documentation: https://qsdm.tech/docs
 - Website and support: https://qsdm.tech
-- Problem reports: from the first Hive release after 1.4.22, open the menu of
+- Problem reports: since Hive 1.4.23, open the menu of
   the Hive tray icon, choose **Save a
   diagnostics report…** and attach the saved file. Hive keeps crash records on
   your computer and sends nothing; see the
