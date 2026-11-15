@@ -128,7 +128,7 @@ network see [Network status](NETWORK_STATUS.md).
 - Mining is open to every enrolled miner (since 19 October 2026) in 7-day
   (168-hour) windows that renew automatically, with caps per owner per 24-hour
   epoch and per-IP rate limits. Every proof must carry the enrollment owner's
-  signature; Hive 1.4.22 adds it automatically.
+  signature; Hive adds it automatically.
 
 ## Software and releases
 
@@ -136,7 +136,7 @@ network see [Network status](NETWORK_STATUS.md).
   Releases since Hive 1.4.21 use the **v2 release key**; the previous key was
   rotated. How to check a download by hand is in
   [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).
-- From the first Hive release after 1.4.22, Hive keeps working through a
+- Since Hive 1.4.23, Hive keeps working through a
   qsdm.tech outage with the last signed release envelope it verified, until
   that envelope's own expiry. It ignores an envelope issued before one it has
   already verified, so an old envelope cannot roll it back. See
