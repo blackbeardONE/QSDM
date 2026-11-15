@@ -266,6 +266,11 @@ The mode is opt-in. Prepaid enrollment remains available, deferred enrollments
 are still slashable for invalid proofs, and zero-balance enrollment requires
 one-time computational postage to limit persistent-state spam.
 
+From block 1,190,000 an active deferred enrollment whose withheld bond is still
+zero 60,480 blocks (7 days) after it was made is removed, and its node ID and
+GPU are free again; the miner can enroll again for free. An enrollment that has
+earned anything is kept ([Consensus rules](CONSENSUS_RULES.md#the-rc1112-rules-from-block-1190000)).
+
 The project does not sell Cell. Exchanges that choose to list Cell after
 launch operate independently; the QSDM project does not negotiate listing
 allocations and does not provide market-making inventory.

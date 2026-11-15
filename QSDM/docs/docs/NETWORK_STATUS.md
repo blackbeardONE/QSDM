@@ -26,7 +26,7 @@ examples from October 2026, and the live values are always in the status API.
 | Transfer parents (Proof-of-Entanglement) | **Enforced from block 816,600** (11 October 2026): every CELL transfer names committed parents. Send with Hive 1.4.22 or newer, the web wallet, or `qsdmcli --auto-parents`. See [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md). |
 | Mining | NVIDIA GPUs through QSDM Hive 1.4.21 or newer, **open to every enrolled miner** since 19 October 2026 (protocol v2; every proof carries the enrollment owner's operator signature), in 7-day windows that renew automatically. Mining was paused from 22 October to 1 November 2026 (see [What is running](#what-is-running)). See [Mining today](MINING_TODAY.md). |
 | Supply | Max supply **90,000,000 CELL**, all from mining. No genesis treasury and no premine ([Genesis Policy v1.1](GENESIS_POLICY_v1.1.md)). Transaction fees are burned (credited to no account). |
-| Release | `hardened-legacy-20261114-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1111`, live since 13 November 2026, 18:41 UTC (see [What is running](#what-is-running)) |
+| Release | `hardened-legacy-20261115-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1112`, live since 15 November 2026, 12:23 UTC (see [What is running](#what-is-running)) |
 | Independent audit | None completed. Security review is an open [community review](COMMUNITY_REVIEW.md) with a [bug bounty](BUG_BOUNTY.md) (rewards confirmed by the owner on 17 October 2026; 50,000 CELL pool); a professional audit remains welcome. The [internal security review](SECURITY_AUDIT.md) is a self-maintained checklist. |
 
 ## Check it yourself
@@ -103,8 +103,8 @@ The [explorer](https://qsdm.tech/explorer.html) and the
 
 ## What is running
 
-- **Core release** `hardened-legacy-20261114-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1111`
-  (live since 2026-11-13 18:41 UTC). It is rc1110 with one more rule: a transaction ID names one
+- **Core release** `hardened-legacy-20261115-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1112`
+  (live since 2026-11-15 12:23 UTC). It is rc1111 with the rc1112 rules: Relay settlements only on the built-in resource tasks and with one spelling of their IDs, no case look-alikes of reserved task IDs or of enrolled GPUs, no reward for an unverified custom-task submit, and a free enrollment that earned nothing in 7 days is removed. The producer's admission applies them at once, and every block from 1,190,000 ([Consensus rules](CONSENSUS_RULES.md#the-rc1112-rules-from-block-1190000)). The producer also accepts each proof-of-work solution once, whoever submits it. The restart paused mining 5 minutes. The full-node release `fullnode-rc1112` is the same `qsdm`. rc1111 (live from 2026-11-13 18:41 UTC) was rc1110 with one more rule: a transaction ID names one
   transaction, whatever its contract. The API refuses a signed task action whose ID another transaction
   holds, the producer leaves such a transaction out of its blocks, a committed receipt is final, and from
   block 1,160,000 a block that repeats a committed ID is invalid ([Consensus rules](CONSENSUS_RULES.md#transaction-id-uniqueness-from-block-1160000)).

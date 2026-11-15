@@ -980,3 +980,7 @@ Before activation, an existing holder can transfer the bond through Hive's
 signed CELL transfer flow. A private local-validator starter grant is available
 only when that validator has a separately funded onboarding treasury; the
 public gateway deliberately does not expose an unauthenticated faucet.
+
+From block 1,190,000 a "use mining earnings" enrollment that has earned
+nothing 7 days after it was made is removed; enroll again in Hive, and it
+stays free.

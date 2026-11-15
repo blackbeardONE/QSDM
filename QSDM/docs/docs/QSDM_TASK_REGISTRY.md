@@ -158,7 +158,7 @@ When `qsdm/tasks/v1` actions are included in a block, they consume the sender's 
 - `stake` debits CELL from the sender and locks it in task state.
 - `unstake` and `withdraw` release only already-locked task stake back to the sender; over-withdraw attempts are rejected without mutating account or task state.
 - `fund` debits CELL from the sender and locks it in the task reward pool.
-- `submit` records proof metadata. If the payload includes `reward_amount`, the sender must have task stake and the reward is reserved from the funded reward pool into the sender's pending reward balance.
+- `submit` records proof metadata. If the payload includes `reward_amount`, the sender must have task stake and the reward is reserved from the funded reward pool into the sender's pending reward balance. From block 1,190,000 only the built-in resource tasks pay, through verified Relay settlements: a submit to any other task with `reward_amount` above 0 is refused until a verified design exists, and reward reserved before that height stays claimable ([Consensus rules](CONSENSUS_RULES.md#the-rc1112-rules-from-block-1190000)).
 - `claim` pays claimable pending rewards back to the sender's AccountStore balance. Double-claims are rejected without mutating account or task state.
 - A `qsdm-edge-relay-v2` resource submission is settled in the `submit` transaction itself. Core requires an authorized Relay ID, rejects proof or receipt reuse globally, and atomically pays 70% to the bound contributor owner, 15% to Mother Hive, and 15% to the fixed ecosystem reserve. There is no second `claim` action for that batch.
 

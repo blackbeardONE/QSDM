@@ -134,7 +134,7 @@ Canonical serialization for hashing is: field-order exactly as above, no whitesp
 proof_id := sha256( canonical_json(proof_without("attestation")) )
 ```
 
-The attestation is excluded from `proof_id` so a single solved share can be re-submitted with different attestation evidence (e.g. if the miner's NGC bundle rotates mid-flight). The validator-side dedup set is keyed on `proof_id`.
+The attestation is excluded from `proof_id` so a single solved share can be re-submitted with different attestation evidence (e.g. if the miner's NGC bundle rotates mid-flight). The validator-side dedup set is keyed on `proof_id`. The producer also accepts each solution once (node release rc1112): a proof whose work height, `header_hash` and nonce are already stored under another `proof_id` is refused as a duplicate, because the work hash does not cover `miner_addr`: the solution, not the `proof_id`, names the work.
 
 ### 4.3 Batch Merkle tree
 
