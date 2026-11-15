@@ -67,6 +67,11 @@ func TestHL2PublicModeWiring(t *testing.T) {
 	if mcfg.ReadOnly || mcfg.Sink != legacymining.Sink(parts.ledger) {
 		t.Fatalf("mining config %+v", mcfg)
 	}
+	// rc1112: submissions reach the proof store through the one-solution
+	// index (legacymining/solution_dedup.go).
+	if _, ok := mcfg.Store.(*legacymining.SolutionDedupStore); !ok && !hl1CrashpointsEnabled {
+		t.Fatalf("mining store %T, want the solution index in front of the proof store", mcfg.Store)
+	}
 	if want := new(big.Int).Lsh(big.NewInt(1), uint(cfg.DifficultyBits)); mcfg.Difficulty.Cmp(want) != 0 {
 		t.Fatalf("mining difficulty %v, want 2^%d", mcfg.Difficulty, cfg.DifficultyBits)
 	}

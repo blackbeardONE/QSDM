@@ -18,8 +18,11 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| 2026-11-15 | Hive release | QSDM Hive 1.4.23 | No (Hive 1.4.21 and newer update themselves; 1.4.20 / 1.4.17 install by hand) |
+| About 2026-11-24 (scheduled) | 1,190,000 | The rc1112 rules: Relay settlements only on the built-in resource tasks and with one spelling of their IDs, no case look-alikes of reserved task IDs or of enrolled GPUs, no reward for an unverified custom-task submit, and a free enrollment that earned nothing in 7 days is removed ([Consensus rules](CONSENSUS_RULES.md#the-rc1112-rules-from-block-1190000)) | **Yes**, full-node operators: run fullnode-rc1112 or newer before this height; an older node stops there |
 | About 2026-11-21 (scheduled) | 1,160,000 | A transaction ID names one transaction, whatever its contract: a block that repeats a committed ID is invalid ([Consensus rules](CONSENSUS_RULES.md#transaction-id-uniqueness-from-block-1160000)) | **Yes**, full-node operators: run fullnode-rc1111 or newer before this height |
 | About 2026-11-19 (scheduled) | 1,150,000 | Only a task's catalog manager may migrate it: a block with any other `migrate` is invalid ([Consensus rules](CONSENSUS_RULES.md#task-migrate-authorization-from-block-1150000)) | **Yes**, full-node operators: run fullnode-rc1110 or newer before this height |
+| 2026-11-15 12:23 | node release | Release rc1112: the producer's admission applies the rc1112 rules at once and accepts each proof-of-work solution once, whoever submits it; blocks enforce the rules from 1,190,000. Mining paused 5 minutes. Full nodes: fullnode-rc1112 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | Full-node operators: upgrade before block 1,190,000 |
 | 2026-11-13 18:41 | node release | Release rc1111: a transaction ID names one transaction, whatever its contract. The API refuses a signed task action whose ID another transaction holds, the producer leaves such a transaction out of its blocks, and a committed receipt is final; blocks enforce the ID rule from 1,160,000. Mining paused 24 minutes. Full nodes: fullnode-rc1111 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | Full-node operators: upgrade before block 1,160,000 |
 | 2026-11-13 11:59 to 12:50 | 1,095,602 and 1,095,785 | The first live turn of block production: the project's full node in Japan made blocks 1,095,602 to 1,095,784 with its own key, then the producer again from 1,095,785 with a new key; the block-maker schedule is a version 2 table with four block makers; mining paused 65 minutes ([details](#2026-11-13-the-first-live-turn-of-block-production)) | **Yes**, full-node operators: take the new schedule from qsdm.tech/fullnode.html (`install-full-node.sh --update-schedule --from-website`); a node with the old schedule stops at block 1,095,601 |
 | 2026-11-12 21:25 | node release | Release rc1110: a security fix. The API refuses a task `migrate` from anyone but the task's catalog manager, to a target that is not another registered, unpaused task of the same manager, or into a cycle; blocks enforce the same rule from 1,150,000. Mining paused 6 minutes. Full nodes: fullnode-rc1110 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | Full-node operators: upgrade before block 1,150,000 |
@@ -49,6 +52,21 @@ upgrades harden that pilot network; they do not change its stage. See
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
 
+## 2026-11-15: QSDM Hive 1.4.23
+
+- **What changed:** Hive 1.4.23 for Windows x64 and Linux x86-64 is the current
+  release. It reuses a GPU's existing miner enrollment instead of failing with
+  `gpu_uuid already bound`, keeps working through a qsdm.tech outage with the
+  last signed release it verified (until that release's `expires_at`), follows
+  a task's newer version only within the same task manager, and keeps crash
+  records on your computer with **Save a diagnostics report…** in the tray menu.
+  The miner, `qsdmcli`, the wallet host and Edge Control 1.3.7 are the same
+  files as in Hive 1.4.22.
+- **What you must do:** nothing on Hive 1.4.21 or 1.4.22: the update arrives in
+  Hive. Hive 1.4.20 (Windows) and 1.4.17 (Linux) cannot update themselves:
+  install 1.4.23 by hand. Check the download first:
+  [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).
+
 ## 2026-11-13: the first live turn of block production
 
 - **When:** mining closed at 11:53:37 UTC and the producer stopped at block
@@ -71,6 +89,28 @@ upgrades harden that pilot network; they do not change its stage. See
   `bash install-full-node.sh --update-schedule --from-website`
   ([Run a full node](RUN_A_FULL_NODE.md#when-the-block-maker-changes)); a new
   install takes it by itself. Its digest is `fd23fbcae12315a4e6d4abce24bd908d0e738d6227b6d3203c03d772238c1345`.
+
+## 2026-11-15: release rc1112, and the rc1112 rules from block 1,190,000
+
+- **When:** node release `hardened-legacy-20261115-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1112`,
+  switched in 2026-11-15 12:23 UTC; mining reopened at 12:28 UTC. The rules
+  become consensus rules at block **1,190,000** (about 24 November 2026 at
+  10-second blocks).
+- **What changed** ([Consensus rules](CONSENSUS_RULES.md#the-rc1112-rules-from-block-1190000)): a Relay settlement is valid
+  only on the three built-in resource tasks, a consumed settlement proof or
+  receipt stays consumed on every task, and settlement IDs have one spelling;
+  no catalog task may imitate a reserved built-in task ID by letter case;
+  enrollment compares GPU UUIDs without case; a task other than the built-in
+  resource tasks pays nothing for an unverified submit until a verified design
+  exists; and a free ("use mining earnings") enrollment that has earned nothing
+  7 days after it was made is removed. The producer also accepts each
+  proof-of-work solution once, whoever submits it (no consensus change). Same
+  Go 1.26.11 and modules as rc1111.
+- **What you have to do:** nothing as a wallet holder or task publisher. A
+  miner whose free enrollment was removed enrolls again in Hive; it stays
+  free. Full-node operators: install `fullnode-rc1112` (the same `qsdm`)
+  before block 1,190,000. An older full node stops at that block, because only
+  rc1112 or newer removes those enrollments.
 
 ## 2026-11-13: release rc1111, and transaction IDs unique across contracts from block 1,160,000
 
@@ -302,7 +342,7 @@ The same day a new 7-day mining window started for enrolled Hive miners; see
 
 ## 2026-10-10: QSDM Hive 1.4.22
 
-- **What changed:** Hive 1.4.22 for Windows x64 and Linux x86-64 is the
+- **What changed:** Hive 1.4.22 for Windows x64 and Linux x86-64 became the
   current release. It adds Proof-of-Entanglement parents to every transfer.
   Edge Control ships with Hive.
 - **What you must do:** Hive 1.4.21 users get the update in Hive. Hive 1.4.20

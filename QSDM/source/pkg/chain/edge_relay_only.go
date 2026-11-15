@@ -143,6 +143,28 @@ func (bp *BlockProducer) CheckEdgeRelayOnlyAdmission(tx *mempool.Tx) error {
 		reservedTaskCatalogAdmissionRejected.Add(1)
 		return err
 	}
+	// A Relay settlement envelope for a task that is not a built-in resource
+	// task is refused at once (relay_settlement_scope.go).
+	if err := checkRelaySettlementScopeAdmission(action); err != nil {
+		return err
+	}
+	// rc1112 (custom_task_pay.go): a submit that asks a task other than the
+	// built-in resource tasks for a reward is refused at once.
+	if err := checkCustomTaskPayAdmission(action); err != nil {
+		return err
+	}
+	// rc1112 (task_id_canonical.go): no catalog look-alike of a reserved
+	// built-in task ID, and a settlement's proof and receipt ids in their one
+	// canonical spelling; refused at once.
+	if relaySettlementScopeFrom.Load() != 0 {
+		if err := checkReservedTaskCatalogLookalike(action); err != nil {
+			reservedTaskCatalogAdmissionRejected.Add(1)
+			return err
+		}
+	}
+	if err := checkSettlementIDsCanonicalAdmission(action); err != nil {
+		return err
+	}
 	if EdgeRelayOnlyActivationHeight() == 0 || action.Action != "submit" || !IsSystemResourceTask(action.TaskID) {
 		return nil
 	}

@@ -232,6 +232,13 @@ func (s *TaskStateStore) applyAction(action TaskAction, allowLegacyResourceProof
 		return nil, ErrTaskActionNonceReplay
 	}
 	if isTaskCatalogAction(action.Action) {
+		// From the rc1112 height no catalog entry may imitate a reserved
+		// built-in task ID by letter case (task_id_canonical.go).
+		if RelaySettlementScopeActiveAt(currentHeight) {
+			if err := checkReservedTaskCatalogLookalike(action); err != nil {
+				return nil, err
+			}
+		}
 		task, err := s.applyTaskCatalogActionLocked(action)
 		if err != nil {
 			return nil, err
@@ -925,6 +932,21 @@ func (s *TaskStateStore) validateTaskSubmissionPolicyLocked(task *TaskState, par
 
 	policy, isResourceTask := systemResourceTaskPolicies[action.TaskID]
 	if !isResourceTask {
+		// From RelaySettlementScopeActivationHeight a Relay settlement is
+		// valid only on a built-in resource task, and a consumed settlement
+		// proof or receipt stays consumed here too (relay_settlement_scope.go).
+		if RelaySettlementScopeActiveAt(currentHeight) {
+			if err := s.checkRelaySettlementScopeLocked(action.TaskID, action.Payload); err != nil {
+				return nil, err
+			}
+		}
+		// From CustomTaskPayActivationHeight such a task pays nothing on an
+		// unverified submit (custom_task_pay.go).
+		if CustomTaskPayActiveAt(currentHeight) {
+			if err := checkCustomTaskPaySubmit(action.TaskID, payload.RewardAmount); err != nil {
+				return nil, err
+			}
+		}
 		return nil, nil
 	}
 	// At or above the relay-only activation height a resource-task submit
@@ -980,6 +1002,14 @@ func (s *TaskStateStore) validateTaskSubmissionPolicyLocked(task *TaskState, par
 		}
 		if err := edgepool.VerifySettlementPoolProof(proof); err != nil {
 			return nil, fmt.Errorf("chain: verify Relay settlement proof: %w", err)
+		}
+		// From the rc1112 height the proof and receipt ids have one spelling,
+		// the one the global replay maps below are keyed by
+		// (task_id_canonical.go).
+		if RelaySettlementScopeActiveAt(currentHeight) {
+			if err := checkSettlementIDsCanonical(proof); err != nil {
+				return nil, err
+			}
 		}
 		if string(proof.Resource) != policy.Resource {
 			return nil, fmt.Errorf("chain: Relay settlement resource %q does not match task resource %q", proof.Resource, policy.Resource)
