@@ -1112,10 +1112,11 @@ func (s *TaskStateStore) applyClaimLocked(task *TaskState, participant *TaskPart
 	reward := 0.0
 	claimAll := payload.Round == 0
 	roundFilter := strconv.FormatUint(payload.Round, 10)
-	for round, bySender := range task.Submissions {
+	for _, round := range claimRoundKeys(task.Submissions) {
 		if !claimAll && round != roundFilter {
 			continue
 		}
+		bySender := task.Submissions[round]
 		submission, ok := bySender[action.Sender]
 		if !ok || submission.Claimed || submission.RewardAmount <= 0 {
 			continue
@@ -1144,11 +1145,11 @@ func claimableRewardLocked(task *TaskState, sender string, payload taskActionPay
 	reward := 0.0
 	claimAll := payload.Round == 0
 	roundFilter := strconv.FormatUint(payload.Round, 10)
-	for round, bySender := range task.Submissions {
+	for _, round := range claimRoundKeys(task.Submissions) {
 		if !claimAll && round != roundFilter {
 			continue
 		}
-		submission, ok := bySender[sender]
+		submission, ok := task.Submissions[round][sender]
 		if !ok || submission.Claimed || submission.RewardAmount <= 0 {
 			continue
 		}

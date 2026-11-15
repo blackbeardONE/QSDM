@@ -509,6 +509,11 @@ func (h *Handlers) QSDMTaskActionsListHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit < 0 {
+		// readQSDMTaskActions reads the whole log for a negative limit (an
+		// internal mode); the public route never does: its default, at most 500.
+		limit = 0
+	}
 	actions, err := readQSDMTaskActions(
 		path,
 		strings.TrimSpace(r.URL.Query().Get("task_id")),
