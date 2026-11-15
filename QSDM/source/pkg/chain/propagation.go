@@ -3,6 +3,7 @@ package chain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -19,6 +20,37 @@ const defaultBlockResponseLimit = 64
 // comes round again is verified again and handed to the handler, which
 // refuses a block it already has.
 const blockSeenCap = 100_000
+
+// Out-of-order blocks. A block is recorded as seen only after the handler
+// accepted it. It used to be recorded as soon as it verified, so a genuine
+// block that arrived before its parent (2 before 1) was refused once and then
+// skipped for the life of the process, every later copy included, catch-up
+// block_response copies too: a P2P-only follower stayed at the parent's height
+// until a restart.
+//
+// A verified block is now in one of four states:
+//   - in flight: the handler is working on it;
+//   - seen: the handler accepted it;
+//   - waiting: the handler found it ahead of the tip (ErrExternalBlockAhead).
+//     It waits in a bounded queue and is tried again as soon as its parent is
+//     accepted, or on RetryPending when the tip moved some other way;
+//   - held back: the handler refused it for another reason. Copies are
+//     dropped until the next catch-up round (RetryPending) or at most
+//     blockRetryAfter; then a copy is verified and tried again.
+//
+// Copies of a block in any of the four states cost a map lookup. No state is
+// entered before the block verifies, so a forged copy cannot take a genuine
+// block's place. A genuine block that keeps failing costs one verification
+// and one handler call per round, not one per copy.
+//
+// The queue takes blocks at most one catch-up window (maxResponseBlocks, 64 by
+// default) above the tip, and at most that many blocks; when it is full, the
+// blocks nearest the tip stay. A block that does not fit is held back and comes
+// again with the catch-up window that covers it.
+
+// blockRetryAfter is the longest a held-back block is held. It is the
+// catch-up interval in cmd/qsdm, whose rounds normally lift the hold sooner.
+const blockRetryAfter = 10 * time.Second
 
 const (
 	BlockMessageNewBlock = "new_block"
@@ -70,12 +102,84 @@ type BlockPropagator struct {
 	provider          BlockProvider
 	maxResponseBlocks int
 	budget            *responseBudget      // nil: created on first block_request
-	seen              map[string]time.Time // block hash -> first seen time
+	seen              map[string]time.Time // accepted block hash -> time accepted
 	seenOrder         []string             // seen hashes, oldest first
 	seenCap           int                  // 0: blockSeenCap
+	inflight          map[string]struct{}  // verified, with the handler now
+	waiting           map[string]*Block    // verified, ahead of the tip (bounded)
+	held              blockHolds           // verified, refused: held back for a round
+	now               func() time.Time     // nil: time.Now (tests use a fake clock)
+	stats             BlockPropagationStats
 	mu                sync.Mutex
 	ctx               context.Context
 	cancel            context.CancelFunc
+}
+
+// BlockPropagationStats counts what happened to the blocks received from
+// peers, and the current size of each state.
+type BlockPropagationStats struct {
+	Duplicates uint64 // copies dropped by a lookup: seen, in flight, waiting or held back
+	Invalid    uint64 // failed verification
+	Accepted   uint64 // accepted by the handler (a block already on the chain included)
+	FromQueue  uint64 // of those, accepted after waiting for the parent
+	Queued     uint64 // ahead of the tip, put in the queue
+	NotQueued  uint64 // ahead of the tip, but outside the window or pushed out of a full queue
+	HeldBack   uint64 // refused by the handler, held back for a round
+
+	Seen     int // current sizes
+	InFlight int
+	Waiting  int
+	Held     int
+}
+
+// blockHolds is the held-back set. A hold lasts at most blockRetryAfter, or
+// until clear. Two generations give O(1) work per block and at most limit
+// entries: under a flood the holds get shorter, never the set larger.
+type blockHolds struct {
+	cur, prev map[string]time.Time // hash -> when the hold started
+	since     time.Time            // when cur was started
+}
+
+func (h *blockHolds) rotate(now time.Time) {
+	if h.cur != nil && !now.Before(h.since) && now.Sub(h.since) < blockRetryAfter {
+		return
+	}
+	if h.cur != nil && now.Before(h.since) {
+		h.cur = nil // the clock went back: start over
+	}
+	// Every hold in prev started before since, so it has expired by now.
+	h.prev = h.cur
+	h.cur = make(map[string]time.Time)
+	h.since = now
+}
+
+func (h *blockHolds) has(hash string, now time.Time) bool {
+	h.rotate(now)
+	if at, ok := h.cur[hash]; ok && now.Sub(at) < blockRetryAfter {
+		return true
+	}
+	if at, ok := h.prev[hash]; ok && now.Sub(at) < blockRetryAfter {
+		return true
+	}
+	return false
+}
+
+func (h *blockHolds) add(hash string, now time.Time, limit int) {
+	h.rotate(now)
+	if half := limit / 2; len(h.cur) >= half || half == 0 {
+		h.prev = h.cur
+		h.cur = make(map[string]time.Time)
+		h.since = now
+	}
+	h.cur[hash] = now
+}
+
+func (h *blockHolds) clear() {
+	h.cur, h.prev = nil, nil
+}
+
+func (h *blockHolds) size() int {
+	return len(h.cur) + len(h.prev)
 }
 
 // NewBlockPropagator joins the block topic and starts listening.
@@ -169,27 +273,269 @@ func (bp *BlockPropagator) handleBlock(block *Block, originNode string) {
 	// Dedupe before verifying (QSDM/docs/docs/P2P_LIMITS.md, risk 3): a re-signed
 	// copy of a block already handled costs a map lookup, not a hash
 	// recompute and a signature check. The claimed hash is only a lookup key
-	// here. A block is recorded as seen only after it verifies, so a forged
-	// block cannot take the place of a genuine one.
-	bp.mu.Lock()
-	_, already := bp.seen[block.Hash]
-	bp.mu.Unlock()
-	if already {
+	// here. A block enters a state (in flight, seen, waiting, held back) only
+	// after it verifies, so a forged block cannot take the place of a genuine
+	// one.
+	if bp.known(block.Hash) {
 		return
 	}
 	if !bp.validateBlock(block) {
+		bp.mu.Lock()
+		bp.stats.Invalid++
+		bp.mu.Unlock()
 		log.Printf("[block-prop] rejected invalid block %d from %s", block.Height, originNode)
 		return
 	}
-	if !bp.markSeen(block.Hash) {
+	if !bp.claim(block.Hash) {
 		return
 	}
-
-	if bp.handler != nil {
-		if err := bp.handler(block); err != nil {
-			log.Printf("[block-prop] handler error for block %d: %v", block.Height, err)
-		}
+	if bp.process(block, false) == blockAccepted {
+		bp.drainAfter(block.Height)
 	}
+}
+
+type blockOutcome int
+
+const (
+	blockAccepted blockOutcome = iota // the handler accepted it: seen
+	blockWaiting                      // ahead of the tip: in the queue
+	blockRefused                      // held back for a round
+)
+
+func (bp *BlockPropagator) clock() time.Time {
+	if bp.now != nil {
+		return bp.now()
+	}
+	return time.Now()
+}
+
+func (bp *BlockPropagator) seenLimitLocked() int {
+	if bp.seenCap > 0 {
+		return bp.seenCap
+	}
+	return blockSeenCap
+}
+
+// knownLocked reports whether hash is seen, in flight, waiting or held back.
+func (bp *BlockPropagator) knownLocked(hash string) bool {
+	if _, ok := bp.seen[hash]; ok {
+		return true
+	}
+	if _, ok := bp.inflight[hash]; ok {
+		return true
+	}
+	if _, ok := bp.waiting[hash]; ok {
+		return true
+	}
+	return bp.held.has(hash, bp.clock())
+}
+
+// known is the cheap pre-check: a lookup, before any verification.
+func (bp *BlockPropagator) known(hash string) bool {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	if bp.knownLocked(hash) {
+		bp.stats.Duplicates++
+		return true
+	}
+	return false
+}
+
+// claim puts a verified block in flight, unless another copy got there first.
+func (bp *BlockPropagator) claim(hash string) bool {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	if bp.knownLocked(hash) {
+		bp.stats.Duplicates++
+		return false
+	}
+	if bp.inflight == nil {
+		bp.inflight = make(map[string]struct{})
+	}
+	bp.inflight[hash] = struct{}{}
+	return true
+}
+
+// process hands a claimed (in flight) block to the handler and moves it to
+// the state the result calls for.
+func (bp *BlockPropagator) process(block *Block, fromQueue bool) blockOutcome {
+	var err error
+	if bp.handler != nil {
+		err = bp.handler(block)
+	}
+	var ahead *ExternalBlockAheadError
+	isAhead := err != nil && errors.As(err, &ahead) && ahead != nil
+
+	bp.mu.Lock()
+	delete(bp.inflight, block.Hash)
+	outcome := blockRefused
+	switch {
+	case err == nil:
+		bp.markSeenLocked(block.Hash)
+		bp.stats.Accepted++
+		if fromQueue {
+			bp.stats.FromQueue++
+		}
+		outcome = blockAccepted
+	case isAhead && bp.enqueueLocked(block, ahead.Tip):
+		if !fromQueue {
+			bp.stats.Queued++
+		}
+		outcome = blockWaiting
+	default:
+		if isAhead {
+			bp.stats.NotQueued++
+		}
+		bp.held.add(block.Hash, bp.clock(), bp.seenLimitLocked())
+		bp.stats.HeldBack++
+	}
+	bp.mu.Unlock()
+
+	switch {
+	case outcome == blockWaiting && !fromQueue:
+		log.Printf("[block-prop] block %d is ahead of tip %d; it waits for its parent", block.Height, ahead.Tip)
+	case outcome == blockRefused:
+		log.Printf("[block-prop] handler error for block %d: %v", block.Height, err)
+	}
+	return outcome
+}
+
+// queueWindowLocked is how far above the tip a block may wait, and how many
+// blocks may wait: one catch-up window.
+func (bp *BlockPropagator) queueWindowLocked() uint64 {
+	if bp.maxResponseBlocks > 0 {
+		return uint64(bp.maxResponseBlocks)
+	}
+	return defaultBlockResponseLimit
+}
+
+// enqueueLocked puts a block that is ahead of tip in the queue, if it is
+// within the window and fits. In a full queue the blocks nearest the tip stay;
+// a block pushed out is held back and comes again with a later catch-up window.
+func (bp *BlockPropagator) enqueueLocked(block *Block, tip uint64) bool {
+	window := bp.queueWindowLocked()
+	if block.Height <= tip || block.Height-tip > window {
+		return false
+	}
+	if bp.waiting == nil {
+		bp.waiting = make(map[string]*Block)
+	}
+	if uint64(len(bp.waiting)) >= window {
+		var farthest *Block
+		for _, w := range bp.waiting {
+			if farthest == nil || w.Height > farthest.Height {
+				farthest = w
+			}
+		}
+		if farthest == nil || block.Height >= farthest.Height {
+			return false
+		}
+		delete(bp.waiting, farthest.Hash)
+		bp.held.add(farthest.Hash, bp.clock(), bp.seenLimitLocked())
+		bp.stats.NotQueued++
+	}
+	bp.waiting[block.Hash] = block
+	return true
+}
+
+// takeWaiting moves the waiting blocks at height into flight.
+func (bp *BlockPropagator) takeWaiting(height uint64) []*Block {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	var batch []*Block
+	for hash, w := range bp.waiting {
+		if w.Height != height {
+			continue
+		}
+		delete(bp.waiting, hash)
+		if bp.inflight == nil {
+			bp.inflight = make(map[string]struct{})
+		}
+		bp.inflight[hash] = struct{}{}
+		batch = append(batch, w)
+	}
+	return batch
+}
+
+// drainAfter tries the waiting blocks above an accepted height, in order,
+// for as long as each height is accepted.
+func (bp *BlockPropagator) drainAfter(height uint64) {
+	for height < ^uint64(0) {
+		next := height + 1
+		batch := bp.takeWaiting(next)
+		if len(batch) == 0 {
+			return
+		}
+		accepted := false
+		for _, w := range batch {
+			if bp.process(w, true) == blockAccepted {
+				accepted = true
+			}
+		}
+		if !accepted {
+			return
+		}
+		height = next
+	}
+}
+
+// RetryPending lifts every hold, so the next copy of a held-back block is
+// verified and tried again, and tries the waiting blocks from the lowest
+// height. cmd/qsdm calls it once per catch-up round, just before it asks peers
+// for the next window. It also covers a tip that moved by another path (HTTP
+// chain sync), which the propagator does not see.
+func (bp *BlockPropagator) RetryPending() {
+	bp.mu.Lock()
+	bp.held.clear()
+	bp.mu.Unlock()
+	for {
+		bp.mu.Lock()
+		var lowest uint64
+		found := false
+		for _, w := range bp.waiting {
+			if !found || w.Height < lowest {
+				lowest, found = w.Height, true
+			}
+		}
+		bp.mu.Unlock()
+		if !found {
+			return
+		}
+		batch := bp.takeWaiting(lowest)
+		if len(batch) == 0 {
+			return
+		}
+		accepted, stillAhead := false, false
+		for _, w := range batch {
+			switch bp.process(w, true) {
+			case blockAccepted:
+				accepted = true
+			case blockWaiting:
+				stillAhead = true
+			}
+		}
+		if accepted {
+			bp.drainAfter(lowest)
+			continue
+		}
+		if stillAhead {
+			// Every other waiting block is higher, so it is ahead too.
+			return
+		}
+		// The lowest were refused (held back); try the next height.
+	}
+}
+
+// Stats returns the counters and the current size of each state.
+func (bp *BlockPropagator) Stats() BlockPropagationStats {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+	s := bp.stats
+	s.Seen = len(bp.seen)
+	s.InFlight = len(bp.inflight)
+	s.Waiting = len(bp.waiting)
+	s.Held = bp.held.size()
+	return s
 }
 
 func (bp *BlockPropagator) handleBlockRequest(msg BlockP2PMessage, author string) {
@@ -252,18 +598,19 @@ func (bp *BlockPropagator) BroadcastBlock(block *Block) error {
 func (bp *BlockPropagator) markSeen(hash string) bool {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
+	return bp.markSeenLocked(hash)
+}
+
+func (bp *BlockPropagator) markSeenLocked(hash string) bool {
 	if _, already := bp.seen[hash]; already {
 		return false
 	}
 	if bp.seen == nil {
 		bp.seen = make(map[string]time.Time)
 	}
-	bp.seen[hash] = time.Now()
+	bp.seen[hash] = bp.clock()
 	bp.seenOrder = append(bp.seenOrder, hash)
-	limit := bp.seenCap
-	if limit <= 0 {
-		limit = blockSeenCap
-	}
+	limit := bp.seenLimitLocked()
 	for len(bp.seen) > limit && len(bp.seenOrder) > 0 {
 		delete(bp.seen, bp.seenOrder[0])
 		bp.seenOrder = bp.seenOrder[1:]

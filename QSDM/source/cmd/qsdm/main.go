@@ -2777,7 +2777,13 @@ func main() {
 
 		go func() {
 			requestNextWindow := func() {
-				if blockPropagator == nil || net == nil || net.PeerCount() == 0 {
+				if blockPropagator == nil {
+					return
+				}
+				// Each round, blocks that arrived before their parent and
+				// blocks held back after a failed append are tried again.
+				blockPropagator.RetryPending()
+				if net == nil || net.PeerCount() == 0 {
 					return
 				}
 				from := uint64(0)
