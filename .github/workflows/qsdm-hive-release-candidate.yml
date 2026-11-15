@@ -1,0 +1,312 @@
+name: QSDM Hive release candidate
+
+# Builds the unsigned Windows and Linux release candidates of the Hive version in release/app/package.json the way
+# Hive 1.4.22 was built: the app from this commit, and the seven native programs (qsdmcli, the wallet host, the miner,
+# its CUDA solver and the three Edge programs) carried over byte for byte from the published, signed previous release.
+# They are fetched from qsdm.tech; the installer or archive must have its pinned SHA-256 (the hash the signed v2 release
+# envelope names), and every Windows native file its pin. The miner stays the one every Hive since 1.4.18 runs
+# (QSDM_PACKAGED_MINER_HIVE_VERSION tells afterPack.js which version to require). Each package is smoke-tested, compared
+# file by file with the previous release, hashed and kept as an artifact for the owner's signing and publishing on
+# their own computer. Nothing is signed or published here.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/qsdm-hive-release-candidate.yml"
+      - "apps/qsdm-hive/qsdm-hive-main/.erb/scripts/afterPack.js"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qsdm-hive-release-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PREV_VERSION: "1.4.22"
+  PREV_WIN_INSTALLER_SHA256: d2f604b6b3b8f70913510072c525544e22a4c0a10ef4c9540b36ab2a3667bfaa
+  PREV_LINUX_TGZ_SHA256: abefcd1d7f69712cb306237c269e195e43948b9cdc3812ac709b5cc3690def0f
+  QSDM_PACKAGED_MINER_HIVE_VERSION: "1.4.18"
+  QSDM_EXPECTED_RELEASE_KEY_ID: 4081bf2c4755f4c5c1565b4fac75e14a7e0b52042ac3d34bf8a7f525866c64a9
+  PUPPETEER_SKIP_DOWNLOAD: "true"
+  PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+jobs:
+  windows:
+    name: Windows candidate (previous natives, new app)
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.12.0"
+
+      - name: Carry over the previous release's native programs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $prev = Join-Path $env:RUNNER_TEMP 'prev'
+          New-Item -ItemType Directory -Force -Path $prev | Out-Null
+          $installer = Join-Path $prev "qsdm-hive-$env:PREV_VERSION-win-x64.exe"
+          Invoke-WebRequest -UseBasicParsing -Uri "https://qsdm.tech/downloads/hive-v2/qsdm-hive-$env:PREV_VERSION-win-x64.exe" -OutFile $installer
+          $got = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash.ToLowerInvariant()
+          if ($got -ne $env:PREV_WIN_INSTALLER_SHA256) { throw "previous installer SHA-256 $got is not the pinned $env:PREV_WIN_INSTALLER_SHA256" }
+          & 7z x -y "-o$prev\nsis" $installer | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw '7z could not open the previous installer' }
+          $app7z = Get-ChildItem -LiteralPath $prev\nsis -Recurse -Filter 'app-64.7z' | Select-Object -First 1
+          if (-not $app7z) { throw 'no app-64.7z in the previous installer' }
+          & 7z x -y "-o$prev\app" $app7z.FullName | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw '7z could not open app-64.7z' }
+          # The pins: the files every Hive 1.4.22 install carries (the miner is hive-v1.4.18, d7ffcd4).
+          $pins = [ordered]@{
+            'resources/edge/qsdm-edge-agent.exe'        = '143aee04a3da1cde72f2674e679c9c7c8cd710e5f85003405e249b75bbfbe308'
+            'resources/edge/qsdm-edge-control.exe'      = 'baca07fedc0835af730dd9ab1a8db0ae45738aadf88466af8eeb25bc82e2d593'
+            'resources/edge/qsdm-edge-gpu-helper.exe'   = '7391353c2b26ceffe4e8b81d3a05fa293516ad1a41fc2b17e7a28b58cc39bf06'
+            'resources/miner/qsdm-miner-cuda-solver.exe' = '199f37d0dc4577b6beb04604debc24f0ad1477981b0d48646c5d22ce789d004d'
+            'resources/miner/qsdmminer-console.exe'     = 'a897631c1b9230b4c259f3456df089516a3465411fade99bad8320f2a5be5da0'
+            'resources/native/qsdm-hive-wallet-host.exe' = 'b5f92f7231e2027b5e497a8eda3108b8e391d99ca76c9c8c38b45f8ab08d7c2f'
+            'resources/native/qsdmcli.exe'              = '40a213f50bb8db0098d33ae145eec4f8a2951e591b323ba575935bbd1746d25b'
+          }
+          $dest = 'apps/qsdm-hive/qsdm-hive-main/native/windows/x64'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          foreach ($rel in $pins.Keys) {
+            $src = Join-Path "$prev\app" $rel
+            $h = (Get-FileHash -Algorithm SHA256 -LiteralPath $src).Hash.ToLowerInvariant()
+            if ($h -ne $pins[$rel]) { throw "$rel is $h, not the pinned $($pins[$rel])" }
+            Copy-Item -LiteralPath $src -Destination (Join-Path $dest (Split-Path $rel -Leaf)) -Force
+            "$h  $rel" | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'natives-win.txt') -Append
+          }
+
+      - name: Install Hive dependencies
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          npm ci --ignore-scripts
+          npm --prefix release/app ci --ignore-scripts
+          npm exec electron-builder -- install-app-deps
+
+      - name: Build Hive (runtime and trust-key guards run inside)
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .erb/scripts/verify-runtime-dependencies.cjs
+          node .erb/scripts/verify-release-trust-key.cjs
+          rm -rf release/app/dist
+          npm run build 2>&1 | tee "$RUNNER_TEMP/build-win.log"
+          grep -F "QSDM Hive release trust key_id $QSDM_EXPECTED_RELEASE_KEY_ID" "$RUNNER_TEMP/build-win.log"
+
+      - name: Package the NSIS installer
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: npx electron-builder build --win nsis --x64 --publish never --config.directories.output=release/candidate
+
+      - name: Verify the updater configuration
+        shell: pwsh
+        run: |
+          $path = 'apps/qsdm-hive/qsdm-hive-main/release/candidate/win-unpacked/resources/app-update.yml'
+          $expected = @('provider: generic', 'url: https://qsdm.tech/downloads/hive-v2', 'updaterCacheDirName: qsdm-hive-runtime-updater', '') -join "`n"
+          $actual = (Get-Content -Raw -LiteralPath $path).Replace("`r`n", "`n")
+          if ($actual -cne $expected) { throw "Packaged updater configuration is invalid: $path" }
+
+      - name: Smoke test the packaged app
+        shell: pwsh
+        run: |
+          $smokeRoot = Join-Path $env:RUNNER_TEMP 'qsdm-hive-candidate-smoke'
+          New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
+          $env:QSDM_HIVE_APPDATA_ROOT = $smokeRoot
+          $env:QSDM_HIVE_SMOKE_TEST = '1'
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          $process = Start-Process -FilePath 'apps/qsdm-hive/qsdm-hive-main/release/candidate/win-unpacked/QSDM Hive.exe' -PassThru -WindowStyle Hidden
+          if (-not $process.WaitForExit(45000)) { $process.Kill($true); throw 'Smoke test timed out.' }
+          if ($process.ExitCode -ne 0) { throw "Smoke test exited with code $($process.ExitCode)." }
+          $resultPath = Join-Path $smokeRoot 'qsdm-hive/logs/smoke-result.json'
+          $result = Get-Content -Raw -LiteralPath $resultPath | ConvertFrom-Json
+          if ($result.status -ne 'ok' -or -not $result.renderer.hasRoot -or $result.renderer.rootChildren -lt 1 -or
+              -not $result.renderer.hasMainBridge -or -not $result.renderer.hasCoreStatusApi -or -not $result.renderer.hasBrandingFolderPathApi) {
+            throw "Smoke check failed: $($result | ConvertTo-Json -Depth 8 -Compress)"
+          }
+          Copy-Item -LiteralPath $resultPath -Destination (Join-Path $env:RUNNER_TEMP 'smoke-result-win.json')
+          $result | ConvertTo-Json -Depth 8
+
+      - name: Compare with the previous release, file by file
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Inventory($root) {
+            $map = @{}
+            Get-ChildItem -LiteralPath $root -Recurse -File | ForEach-Object {
+              $rel = $_.FullName.Substring($root.Length + 1).Replace('\', '/')
+              $map[$rel] = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            }
+            return $map
+          }
+          $old = Inventory (Resolve-Path (Join-Path $env:RUNNER_TEMP 'prev\app')).Path
+          $new = Inventory (Resolve-Path 'apps/qsdm-hive/qsdm-hive-main/release/candidate/win-unpacked').Path
+          # Expected: the app, the Windows launcher (version resource) and the bundled browser-wallet extension, which
+          # follows apps/qsdm-hive-wallet-extension (its version is printed below). Nothing else should move.
+          $expectedChanged = @('QSDM Hive.exe', 'resources/app.asar')
+          function IsExpected($k) { return ($expectedChanged -contains $k) -or $k.StartsWith('resources/wallet-extension/') }
+          $lines = @(); $unexpected = 0
+          foreach ($k in ($old.Keys + $new.Keys | Sort-Object -Unique)) {
+            $tag = if (IsExpected $k) { ' (expected)' } else { '' }
+            if (-not $old.ContainsKey($k)) { $lines += "added      $k$tag"; if (-not $tag) { $unexpected++ }; continue }
+            if (-not $new.ContainsKey($k)) { $lines += "removed    $k$tag"; if (-not $tag) { $unexpected++ }; continue }
+            if ($old[$k] -ne $new[$k]) { $lines += "changed    $k$tag"; if (-not $tag) { $unexpected++ } }
+          }
+          $ev = { param($root) (Get-Content -Raw -LiteralPath (Join-Path $root 'resources/wallet-extension/manifest.json') | ConvertFrom-Json).version }
+          "bundled wallet extension: $(& $ev (Join-Path $env:RUNNER_TEMP 'prev\app')) -> $(& $ev 'apps/qsdm-hive/qsdm-hive-main/release/candidate/win-unpacked')"
+          $report = Join-Path $env:RUNNER_TEMP 'payload-diff-win.txt'
+          $lines | Set-Content -LiteralPath $report -Encoding utf8
+          Get-Content -LiteralPath $report
+          "files: previous $($old.Count), candidate $($new.Count); unexpected differences: $unexpected"
+          foreach ($n in @('resources/miner/qsdmminer-console.exe', 'resources/native/qsdmcli.exe', 'resources/edge/qsdm-edge-agent.exe')) {
+            if ($old[$n] -ne $new[$n]) { throw "native $n differs from the previous release" }
+          }
+          if ($unexpected -gt 0) { "::warning::$unexpected unexpected payload differences against Hive $env:PREV_VERSION (see payload-diff-win.txt)" }
+
+      - name: Checksums
+        working-directory: apps/qsdm-hive/qsdm-hive-main/release/candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          v=$(node -p "require('../app/package.json').version")
+          # the published format is "<hash>  <name>"; Git Bash's sha256sum marks binary mode with " *" instead
+          sha256sum "qsdm-hive-$v-win-x64.exe" "qsdm-hive-$v-win-x64.exe.blockmap" | sed 's/ [*]/  /' > SHA256SUMS-win.txt
+          grep -c -E '^[0-9a-f]{64}  qsdm-hive-' SHA256SUMS-win.txt | grep -qx 2
+          cat SHA256SUMS-win.txt
+          cp "$RUNNER_TEMP/natives-win.txt" "$RUNNER_TEMP/payload-diff-win.txt" "$RUNNER_TEMP/smoke-result-win.json" .
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qsdm-hive-release-candidate-windows-${{ github.sha }}
+          path: |
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/*.exe
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/*.blockmap
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/latest.yml
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/SHA256SUMS-win.txt
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/natives-win.txt
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/payload-diff-win.txt
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/smoke-result-win.json
+          if-no-files-found: error
+          retention-days: 30
+
+  linux:
+    name: Linux candidate (previous natives, new app)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.12.0"
+
+      - name: Carry over the previous release's native programs
+        shell: bash
+        run: |
+          set -euo pipefail
+          prev="$RUNNER_TEMP/prev"; mkdir -p "$prev/tree"
+          tgz="$prev/qsdm-hive-$PREV_VERSION-linux-x64.tar.gz"
+          curl -fsSL --retry 3 -o "$tgz" "https://qsdm.tech/downloads/hive-v2/qsdm-hive-$PREV_VERSION-linux-x64.tar.gz"
+          got=$(sha256sum "$tgz" | cut -c1-64)
+          [ "$got" = "$PREV_LINUX_TGZ_SHA256" ] || { echo "previous tar.gz SHA-256 $got is not the pinned $PREV_LINUX_TGZ_SHA256"; exit 1; }
+          tar -xzf "$tgz" -C "$prev/tree"
+          root=$(dirname "$(dirname "$(find "$prev/tree" -path '*/resources/miner/qsdmminer-console' -type f | head -n 1)")")
+          root=$(dirname "$root"); test -d "$root/resources"
+          echo "$root" > "$prev/root.txt"
+          dest=apps/qsdm-hive/qsdm-hive-main/native/linux/x64; mkdir -p "$dest"
+          for rel in native/qsdmcli native/qsdm-hive-wallet-host edge/qsdm-edge-agent edge/qsdm-edge-control \
+                     edge/qsdm-edge-gpu-helper miner/qsdmminer-console miner/qsdm-miner-cuda-solver; do
+            install -m 0755 "$root/resources/$rel" "$dest/$(basename "$rel")"
+            echo "$(sha256sum "$root/resources/$rel" | cut -c1-64)  resources/$rel" | tee -a "$RUNNER_TEMP/natives-linux.txt"
+          done
+          "$dest/qsdmminer-console" --version | grep -F "qsdmminer-console hive-v$QSDM_PACKAGED_MINER_HIVE_VERSION ("
+
+      - name: Install the smoke-test display
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb
+
+      - name: Install Hive dependencies
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          npm ci --ignore-scripts
+          npm --prefix release/app ci --ignore-scripts
+          npm exec electron-builder -- install-app-deps
+
+      - name: Build Hive (runtime and trust-key guards run inside)
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          set -euo pipefail
+          node .erb/scripts/verify-runtime-dependencies.cjs
+          node .erb/scripts/verify-release-trust-key.cjs
+          rm -rf release/app/dist
+          npm run build 2>&1 | tee "$RUNNER_TEMP/build-linux.log"
+          grep -F "QSDM Hive release trust key_id $QSDM_EXPECTED_RELEASE_KEY_ID" "$RUNNER_TEMP/build-linux.log"
+
+      - name: Package the AppImage and the tarball
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: npx electron-builder build --linux AppImage tar.gz --x64 --publish never --config.directories.output=release/candidate
+
+      - name: Smoke test the packaged app
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          set -euo pipefail
+          smoke_root="$RUNNER_TEMP/qsdm-hive-candidate-smoke"; mkdir -p "$smoke_root"
+          export QSDM_HIVE_APPDATA_ROOT="$smoke_root" QSDM_HIVE_SMOKE_TEST=1
+          unset ELECTRON_RUN_AS_NODE
+          sandbox_helper=release/candidate/linux-unpacked/chrome-sandbox
+          sudo chown root:root "$sandbox_helper"; sudo chmod 4755 "$sandbox_helper"
+          timeout --preserve-status 45s xvfb-run -a release/candidate/linux-unpacked/qsdm-hive
+          result="$smoke_root/qsdm-hive/logs/smoke-result.json"
+          node -e "const fs=require('fs');const r=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const ok=r.status==='ok'&&r.renderer?.hasRoot&&r.renderer.rootChildren>0&&r.renderer.hasMainBridge&&r.renderer.hasCoreStatusApi&&r.renderer.hasBrandingFolderPathApi;if(!ok)throw new Error(JSON.stringify(r));console.log(JSON.stringify(r,null,2));" "$result"
+          cp "$result" "$RUNNER_TEMP/smoke-result-linux.json"
+
+      - name: Compare with the previous release, file by file
+        working-directory: apps/qsdm-hive/qsdm-hive-main
+        run: |
+          set -euo pipefail
+          old=$(cat "$RUNNER_TEMP/prev/root.txt"); new=release/candidate/linux-unpacked
+          inv() { (cd "$1" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sed 's#  \./#  #'); }
+          inv "$old" > "$RUNNER_TEMP/old.txt"; inv "$new" > "$RUNNER_TEMP/new.txt"
+          python3 - "$RUNNER_TEMP/old.txt" "$RUNNER_TEMP/new.txt" "$RUNNER_TEMP/payload-diff-linux.txt" <<'PY'
+          import sys
+          def load(p): return {l[66:].rstrip("\n"): l[:64] for l in open(p) if len(l) > 66}
+          old, new = load(sys.argv[1]), load(sys.argv[2])
+          # expected: the app and the bundled browser-wallet extension (it follows apps/qsdm-hive-wallet-extension)
+          def expected(k): return k == "resources/app.asar" or k.startswith("resources/wallet-extension/")
+          out, unexpected = [], 0
+          for k in sorted(set(old) | set(new)):
+              tag = " (expected)" if expected(k) else ""
+              if k not in old: out.append(f"added      {k}{tag}"); unexpected += 0 if tag else 1
+              elif k not in new: out.append(f"removed    {k}{tag}"); unexpected += 0 if tag else 1
+              elif old[k] != new[k]: out.append(f"changed    {k}{tag}"); unexpected += 0 if tag else 1
+          open(sys.argv[3], "w").write("\n".join(out) + "\n")
+          print("\n".join(out)); print(f"files: previous {len(old)}, candidate {len(new)}; unexpected differences: {unexpected}")
+          for n in ("resources/miner/qsdmminer-console", "resources/native/qsdmcli", "resources/edge/qsdm-edge-agent"):
+              assert old[n] == new[n], f"native {n} differs from the previous release"
+          if unexpected: print(f"::warning::{unexpected} unexpected payload differences against the previous release (see payload-diff-linux.txt)")
+          PY
+
+      - name: Checksums
+        working-directory: apps/qsdm-hive/qsdm-hive-main/release/candidate
+        run: |
+          set -euo pipefail
+          v=$(node -p "require('../app/package.json').version")
+          sha256sum "qsdm-hive-$v-linux-x86_64.AppImage" "qsdm-hive-$v-linux-x64.tar.gz" > "qsdm-hive-$v-linux-SHA256SUMS.txt"
+          cat "qsdm-hive-$v-linux-SHA256SUMS.txt"
+          cp "$RUNNER_TEMP/natives-linux.txt" "$RUNNER_TEMP/payload-diff-linux.txt" "$RUNNER_TEMP/smoke-result-linux.json" .
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: qsdm-hive-release-candidate-linux-${{ github.sha }}
+          path: |
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/*.AppImage
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/*.tar.gz
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/latest-linux.yml
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/*-linux-SHA256SUMS.txt
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/natives-linux.txt
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/payload-diff-linux.txt
+            apps/qsdm-hive/qsdm-hive-main/release/candidate/smoke-result-linux.json
+          if-no-files-found: error
+          retention-days: 30

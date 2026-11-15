@@ -79,13 +79,13 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   owner-signed (ML-DSA-87 `operator_sig`) proofs; each window's configuration
   decides whether the signature is required, and since 2026-10-19 it is
   required for every proof.
-- **Hive:** 1.4.22 for Windows and Linux, from
+- **Hive:** 1.4.23 for Windows and Linux, from
   [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/). Hive
   1.4.21 and newer sign mining proofs with the unlocked Hive wallet
   automatically, and 1.4.22 adds Proof-of-Entanglement parents to every
   transfer. Moving from 1.4.20 (Windows) or 1.4.17 (Linux) is a one-time
   manual install from the [download page](https://qsdm.tech/download.html).
-  Merged here but not in 1.4.22, and waiting for the next Hive release: crash
+  New in 1.4.23: crash
   records and **Save a diagnostics report…**, working through a qsdm.tech
   outage with the last signed release envelope Hive verified, and reusing a
   GPU's existing miner enrollment instead of enrolling it twice (for the error

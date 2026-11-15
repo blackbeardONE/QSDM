@@ -292,7 +292,7 @@ installation. See [QSDM-native release signing](QSDM_NATIVE_RELEASE_SIGNING.md)
 for key custody, failure behavior, and incident response.
 
 Each new envelope must have a later `issued_at` than every envelope published
-before it for that platform. From the first Hive release after 1.4.22, Hive
+before it for that platform. Since Hive 1.4.23, Hive
 ignores an older one, and it keeps working through a website outage with the
 last envelope it verified, but only until that envelope's `expires_at`, so
 renew the envelopes before they expire.
@@ -416,8 +416,8 @@ exact version as current.
 - Roll back the server or latest pointer only with release-owner approval and a
   documented compatibility check for ledger, wallet, task, and federation
   state.
-- Roll Hive back by signing a new envelope for the older version. From the
-  first Hive release after 1.4.22, Hive ignores an envelope issued before one
+- Roll Hive back by signing a new envelope for the older version. Since Hive
+  1.4.23, Hive ignores an envelope issued before one
   it has already verified, so putting an older envelope file back on the
   website does not roll Hive back.
 - Rotate credentials and wallet material immediately if evidence collection,
