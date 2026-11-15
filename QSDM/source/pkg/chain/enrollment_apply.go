@@ -52,6 +52,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sync/atomic"
 
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 	"github.com/blackbeardONE/QSDM/pkg/mining"
@@ -95,7 +96,19 @@ type EnrollmentStateMutator interface {
 	// RevokeLegacyOwners retires active enrollment aliases that cannot sign
 	// v2 wallet actions once the fixed consensus sunset height is reached.
 	RevokeLegacyOwners(currentHeight uint64) []enrollment.LegacyOwnerRevocation
+
+	// PruneUnfundedDeferred removes, from enrollment.DeferredPruneActivationHeight,
+	// the deferred-bond enrollments that earned nothing in
+	// enrollment.DeferredPruneAfterBlocks (rc1112, deferred_prune.go).
+	PruneUnfundedDeferred(currentHeight uint64) []enrollment.DeferredPrune
 }
+
+// deferredEnrollmentsPruned counts the records PruneUnfundedDeferred removed
+// in this process (a metric only; the chain is the record).
+var deferredEnrollmentsPruned atomic.Uint64
+
+// DeferredEnrollmentsPruned reports that counter.
+func DeferredEnrollmentsPruned() uint64 { return deferredEnrollmentsPruned.Load() }
 
 // EnrollmentApplier is the chain-side adapter that bridges a
 // raw *mempool.Tx carrying an enrollment payload into the
@@ -281,7 +294,7 @@ func (a *EnrollmentApplier) applyEnroll(tx *mempool.Tx, height uint64) error {
 		senderBalanceDust = balanceToDust(senderAcc.Balance)
 	}
 
-	if err := enrollment.ValidateEnrollAgainstState(payload, senderBalanceDust, a.State); err != nil {
+	if err := enrollment.ValidateEnrollAgainstStateAt(payload, senderBalanceDust, a.State, height); err != nil {
 		// Stateful failures map to specific reasons.
 		reason := EnrollRejectReasonOther
 		switch {
@@ -470,6 +483,18 @@ func (a *EnrollmentApplier) SweepMaturedEnrollments(height uint64) ([]enrollment
 			NodeID:    revoked.NodeID,
 			Owner:     revoked.Owner,
 			StakeDust: revoked.StakeDust,
+		})
+	}
+	// rc1112: a deferred-bond enrollment that earned nothing in a week is
+	// removed (deferred_prune.go). Nothing is credited: its fill is zero.
+	for _, pruned := range a.State.PruneUnfundedDeferred(height) {
+		deferredEnrollmentsPruned.Add(1)
+		a.publisher().PublishEnrollment(EnrollmentEvent{
+			Kind:   EnrollmentEventDeferredPruned,
+			Height: height,
+			Sender: "protocol/deferred-prune",
+			NodeID: pruned.NodeID,
+			Owner:  pruned.Owner,
 		})
 	}
 	released := a.State.SweepMaturedUnbonds(height)

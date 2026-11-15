@@ -315,6 +315,46 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-15: the rc1112 rules (node release rc1112; consensus rules from block
+  1,190,000).** The producer has run release rc1112 since 2026-11-15 12:23 UTC;
+  its admission applies the transaction rules at once, and from block
+  1,190,000 every node checks them. Blocks below that height replay as they
+  were produced.
+  - Relay settlements (`QSDM/source/pkg/chain/relay_settlement_scope.go`,
+    `task_id_canonical.go`): a Relay settlement is valid only on the three
+    built-in resource tasks, a settlement proof or receipt that was consumed
+    stays consumed on every task, and a settlement's proof ID and receipt IDs
+    are 64 lowercase hexadecimal characters.
+  - Task IDs (`task_id_canonical.go`): no catalog action may use a task ID that
+    differs from a reserved built-in task ID only in letter case or surrounding
+    whitespace.
+  - GPUs (`QSDM/source/pkg/mining/enrollment/gpu_uuid_fold.go`): enrollment
+    compares `gpu_uuid` without case, as the attestation verifier does.
+  - Custom tasks (`QSDM/source/pkg/chain/custom_task_pay.go`): a task other than
+    the built-in resource tasks pays nothing for an unverified submit until a
+    verified design exists, so a submit there may not ask for a reward. A
+    zero-reward submit, `fund`, `stake`, `withdraw` and the catalog actions are
+    unchanged, and reward booked before the height stays claimable.
+  - Free enrollments (`QSDM/source/pkg/mining/enrollment/deferred_prune.go`): a
+    free ("use mining earnings") enrollment that has earned nothing 60,480
+    blocks (7 days) after it was made is removed, and its node ID and GPU are
+    free again; the miner can enroll again for free in Hive.
+  - Producer admission only, no consensus change
+    (`QSDM/source/internal/legacymining/solution_dedup.go`): one proof-of-work
+    solution (work height, `header_hash`, nonce) is accepted once, whoever
+    submits it ([Mining protocol](QSDM/docs/docs/MINING_PROTOCOL.md#42-proof-identifier)).
+  - Metrics: `qsdm_relay_settlement_scope_activation_height`,
+    `qsdm_relay_settlement_scope_admission_rejected_total`,
+    `qsdm_custom_task_pay_activation_height`,
+    `qsdm_custom_task_pay_admission_rejected_total`,
+    `qsdm_enrollment_deferred_prune_activation_height`,
+    `qsdm_enrollment_deferred_pruned_total`.
+  - Tests: 23 new, beside the files above. Docs:
+    [Consensus rules](QSDM/docs/docs/CONSENSUS_RULES.md),
+    [Network upgrades](QSDM/docs/docs/NETWORK_UPGRADES.md).
+  - Full-node operators: install `fullnode-rc1112` before block 1,190,000; an
+    older full node stops at that block.
+
 - **2026-11-13: a transaction ID names one transaction, whatever its contract
   (node release rc1111; a consensus rule from block 1,160,000).** Wallet
   transfers have been held to this since block 816,600; rc1111 extends it to
