@@ -26,8 +26,8 @@ To check a download yourself, see
    before allowing installation.
 
 Any missing, expired, malformed, mismatched, or incorrectly signed input is
-rejected. Hive then falls back only to the last envelope it verified (from the
-first Hive release after 1.4.22; see [Website outages](#website-outages));
+rejected. Hive then falls back only to the last envelope it verified (since Hive
+1.4.23; see [Website outages](#website-outages));
 without one it fails closed. Older
 clients and unapproved higher-version clients remain blocked by the
 exact-version policy.
@@ -38,7 +38,7 @@ beyond normal clock skew, or valid for more than 120 days.
 
 ## Website outages
 
-From the first Hive release after 1.4.22 (Hive 1.4.22 needs a fresh envelope
+Since Hive 1.4.23 (Hive 1.4.22 needs a fresh envelope
 from qsdm.tech), Hive keeps working while qsdm.tech is down or the computer is
 offline, until the signed envelope's own `expires_at`. After every successful check, Hive saves
 the exact envelope bytes it verified, one file per platform and release
@@ -55,7 +55,7 @@ outage locks every Hive that cannot reach the website.
 
 ## `issued_at` must always increase
 
-From the first Hive release after 1.4.22, Hive never goes back to an older
+Since Hive 1.4.23, Hive never goes back to an older
 envelope. An envelope that verifies but was
 issued before the envelope a Hive already saved is ignored, and that Hive keeps
 using the saved one. A renewal (the same version signed again) and a new
@@ -91,7 +91,7 @@ pins the v2 key.
 
 Because Hive 1.4.20 (Windows) and 1.4.17 (Linux) trust only the previous key,
 they cannot verify 1.4.21 or newer on their own. Updating to the current
-release (Hive 1.4.22) is a one-time manual
+release (Hive 1.4.23) is a one-time manual
 install from the [download page](https://qsdm.tech/download.html); wallet and
 settings are kept. The previous `/downloads/` channel stays online, so Hive
 1.4.20 keeps working until 19 December 2026. Hive 1.4.17 stopped working

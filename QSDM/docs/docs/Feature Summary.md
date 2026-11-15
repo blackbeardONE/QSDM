@@ -1,6 +1,6 @@
 # Feature Summary — QSDM
 
-**Last Updated:** November 2026 · Running release **hardened-legacy-20261112-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1109** · Hive **1.4.22** · Edge Control **1.3.7**
+**Last Updated:** November 2026 · Running release **hardened-legacy-20261112-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1109** · Hive **1.4.23** · Edge Control **1.3.7**
 
 QSDM (Quantum-Secure Dynamic Mesh) is a mesh ledger with post-quantum (ML-DSA-87) wallet signatures whose native coin is **Cell (CELL)**. It currently runs as a public pilot network (pre-mainnet) with Proof-of-Entanglement transfers and one block producer run by the project. Instead of a set of independent validators, the plan since 19 October 2026 is for miners to produce blocks, in stages (designed, not built yet); miners mint CELL via NVIDIA-attested Proof-of-Work. Hive is the public desktop client for wallets, signed tasks, integrations, NVIDIA mining, and Mother Hive edge pools. Optional home-gateway, agent, relay, and attestation tools support operators without becoming separate consumer clients.
 
@@ -46,7 +46,7 @@ it is not the CELL network gateway or another Hive client.
 - NVIDIA-locked proofs (`nvidia-cc-v1`, `nvidia-hmac-v1`); Turing-or-newer GPU required for protocol mining.
 - Public mining API: work, challenge, submit, enrollment, emission, blocks, slash.
 - On-chain enrollment with **10 CELL** slashable bond; Hashcash anti-spam.
-- Consumer path: **QSDM Hive** Miner task (CUDA solver bundled). Miners can start from zero liquid CELL by choosing deferred bond from accepted mining earnings. Hive 1.4.22 signs miner operator actions automatically and is published on the hive-v2 channel, signed by the v2 release key. See [Mining today](MINING_TODAY.md).
+- Consumer path: **QSDM Hive** Miner task (CUDA solver bundled). Miners can start from zero liquid CELL by choosing deferred bond from accepted mining earnings. Hive 1.4.23 signs miner operator actions automatically and is published on the hive-v2 channel, signed by the v2 release key. See [Mining today](MINING_TODAY.md).
 - Operator path: `qsdmminer-console`.
 
 ## Wallet & self-custody
@@ -77,7 +77,7 @@ it is not the CELL network gateway or another Hive client.
 - Browser extension 0.6.0 was sent to the Chrome Web Store on 6 November 2026 and is still in review; no store listing is published.
 - Application Compute Gateway on `127.0.0.1:7742` for bounded local jobs.
 - Sky Fang MMORPG wallet-link task (earn-only CELL; no pay-to-win power). The task is not currently published in the on-chain catalog while the pilot network recovers.
-- From the first Hive release after 1.4.22 (merged, not in 1.4.22): crash records and "Save a diagnostics report…"; Hive keeps working through a qsdm.tech outage with the last signed release envelope it verified, until that envelope's `expires_at`, and ignores an envelope older than one it has already verified; and it reuses a GPU's existing miner enrollment.
+- Since Hive 1.4.23: crash records and "Save a diagnostics report…"; Hive keeps working through a qsdm.tech outage with the last signed release envelope it verified, until that envelope's `expires_at`, and ignores an envelope older than one it has already verified; and it reuses a GPU's existing miner enrollment.
 
 ## Edge compute pool
 

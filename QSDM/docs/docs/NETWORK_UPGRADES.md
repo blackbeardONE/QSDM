@@ -18,6 +18,7 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| 2026-11-15 | Hive release | QSDM Hive 1.4.23 | No (Hive 1.4.21 and newer update themselves; 1.4.20 / 1.4.17 install by hand) |
 | About 2026-11-21 (scheduled) | 1,160,000 | A transaction ID names one transaction, whatever its contract: a block that repeats a committed ID is invalid ([Consensus rules](CONSENSUS_RULES.md#transaction-id-uniqueness-from-block-1160000)) | **Yes**, full-node operators: run fullnode-rc1111 or newer before this height |
 | About 2026-11-19 (scheduled) | 1,150,000 | Only a task's catalog manager may migrate it: a block with any other `migrate` is invalid ([Consensus rules](CONSENSUS_RULES.md#task-migrate-authorization-from-block-1150000)) | **Yes**, full-node operators: run fullnode-rc1110 or newer before this height |
 | 2026-11-13 18:41 | node release | Release rc1111: a transaction ID names one transaction, whatever its contract. The API refuses a signed task action whose ID another transaction holds, the producer leaves such a transaction out of its blocks, and a committed receipt is final; blocks enforce the ID rule from 1,160,000. Mining paused 24 minutes. Full nodes: fullnode-rc1111 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | Full-node operators: upgrade before block 1,160,000 |
@@ -48,6 +49,21 @@ upgrades harden that pilot network; they do not change its stage. See
 | 2026-10-11 13:18 | 816,600 | Proof-of-Entanglement enforced | **Yes**, if you send CELL with old software |
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
+
+## 2026-11-15: QSDM Hive 1.4.23
+
+- **What changed:** Hive 1.4.23 for Windows x64 and Linux x86-64 is the current
+  release. It reuses a GPU's existing miner enrollment instead of failing with
+  `gpu_uuid already bound`, keeps working through a qsdm.tech outage with the
+  last signed release it verified (until that release's `expires_at`), follows
+  a task's newer version only within the same task manager, and keeps crash
+  records on your computer with **Save a diagnostics report…** in the tray menu.
+  The miner, `qsdmcli`, the wallet host and Edge Control 1.3.7 are the same
+  files as in Hive 1.4.22.
+- **What you must do:** nothing on Hive 1.4.21 or 1.4.22: the update arrives in
+  Hive. Hive 1.4.20 (Windows) and 1.4.17 (Linux) cannot update themselves:
+  install 1.4.23 by hand. Check the download first:
+  [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).
 
 ## 2026-11-13: the first live turn of block production
 
@@ -302,7 +318,7 @@ The same day a new 7-day mining window started for enrolled Hive miners; see
 
 ## 2026-10-10: QSDM Hive 1.4.22
 
-- **What changed:** Hive 1.4.22 for Windows x64 and Linux x86-64 is the
+- **What changed:** Hive 1.4.22 for Windows x64 and Linux x86-64 became the
   current release. It adds Proof-of-Entanglement parents to every transfer.
   Edge Control ships with Hive.
 - **What you must do:** Hive 1.4.21 users get the update in Hive. Hive 1.4.20

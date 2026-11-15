@@ -11,8 +11,8 @@ policy.
 
 Hive stores account profiles, encrypted QSDM keystore files, settings, task
 state, logs, miner enrollment state, and optional Relay credentials in the
-operating system's application-data directories. From the first Hive release
-after 1.4.22, Hive also keeps a copy of the last signed release envelope it
+operating system's application-data directories. Since Hive
+1.4.23, Hive also keeps a copy of the last signed release envelope it
 verified from `qsdm.tech` in a `release-envelope-cache` folder there, so that
 it keeps working when the website cannot be
 reached. That file is public release data and holds nothing about you. Wallet
@@ -26,7 +26,7 @@ events. Hive contains no advertising tracker.
 
 ## Crash records and diagnostics reports
 
-From the first Hive release after 1.4.22, Hive keeps crash records on your
+Since Hive 1.4.23, Hive keeps crash records on your
 computer and can save a diagnostics report. When part of Hive crashes, Hive
 writes a short record of it to a `diagnostics` folder in its application-data
 directory. Before it writes, Hive removes the secrets it can find: recovery
