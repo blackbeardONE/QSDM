@@ -1111,19 +1111,20 @@ func TestLedgerReplayFunder(t *testing.T) {
 	}
 }
 
-// I7 (§6.4) in every mode: only funder heartbeats, funder rewards and signed
-// wallet transfers may appear in a local block.
+// I7 (§6.4) in every mode: only funder heartbeats, funder rewards, signed
+// wallet transfers and signed task actions may appear in a local
+// block.
 func TestLedgerAuditTxFamilies(t *testing.T) {
 	ok := []*mempool.Tx{
 		{ID: "hb", Sender: ltFunder, Recipient: ltFunder, Nonce: 3},
 		{ID: "rw", Sender: ltFunder, Recipient: ltMinerA, Amount: 1, ContractID: chain.MiningRewardContractID},
 		{ID: "wt", Sender: ltMinerA, Recipient: ltMinerB, Amount: 1, ContractID: chain.WalletTransferContractID},
+		{ID: "task", Sender: ltMinerA, ContractID: chain.TaskContractID}, // the public task route seals these
 	}
 	bad := []*mempool.Tx{
 		{ID: "stream", Sender: ltMinerA, Recipient: ltMinerB, ContractID: chain.StreamContractID},
 		{ID: "enroll", Sender: ltMinerA, ContractID: enrollment.ContractID},
 		{ID: "enroll2", Sender: ltMinerA, ContractID: enrollment.SignedContractID},
-		{ID: "task", Sender: ltMinerA, ContractID: chain.TaskContractID},
 		{ID: "plain", Sender: ltMinerA, Recipient: ltMinerB, Amount: 1},
 		{ID: "to-funder", Sender: ltMinerA, Recipient: ltFunder},
 		{ID: "funder-out", Sender: ltFunder, Recipient: ltMinerA},
