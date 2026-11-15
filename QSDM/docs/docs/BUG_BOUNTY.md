@@ -275,6 +275,12 @@ Reporters who agree to be named are listed in the
   release rc1110; advisory
   [GHSA-ppp3-xm6g-w5wc](https://github.com/blackbeardONE/QSDM/security/advisories/GHSA-ppp3-xm6g-w5wc)
   (13 November 2026). Reward: 1,000 CELL, paid on 13 November 2026.
+- **tokenist / swaplaner**: the second report (R2, 13 November 2026, Medium):
+  a signed task action could carry another transaction's ID and replace that
+  transaction's receipt. Fixed in release rc1111; advisory
+  [GHSA-324j-w3cm-g7h4](https://github.com/blackbeardONE/QSDM/security/advisories/GHSA-324j-w3cm-g7h4)
+  (14 November 2026). Reward: 1,000 CELL, paid on 15 November 2026 from the
+  program wallet (§5).
 
 ## 10. Changes to this policy
 
