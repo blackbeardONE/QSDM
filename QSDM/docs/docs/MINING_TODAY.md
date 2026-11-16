@@ -102,6 +102,14 @@ Accepted proofs earn CELL, paid to your Hive wallet. Check your balance in Hive,
 in the [web wallet](https://qsdm.tech/wallet.html), or on the
 [explorer](https://qsdm.tech/explorer.html).
 
+### Mine in the QSDM pool
+
+From block 1,210,000 (about 26-27 November 2026) you can mine in the QSDM
+pool instead of alone: you are paid every block for your share of the pool's
+work, and nobody holds your CELL (rewards wait in an escrow account that has
+no key; the network itself pays you). The pool fee is 1 %, capped by the
+network at 3 %. See [PULSE](PULSE.md) and [qsdm.tech/pool](https://qsdm.tech/pool).
+
 ## Attestation in one paragraph
 
 Each proof says which NVIDIA attestation it carries:

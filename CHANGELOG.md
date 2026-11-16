@@ -315,6 +315,13 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-16: release rc1114 (the PULSE rule from block 1,210,000).** The producer has
+  run release rc1114 since 2026-11-16 10:13 UTC (mining paused 6 minutes). From block
+  1,210,000 mining pools settle on chain without holding CELL: members' rewards
+  collect in keyless escrow accounts and an authorized pool's ML-DSA-87 signed
+  batch pays every member directly, the fee capped at 3 % network-wide
+  ([PULSE](QSDM/docs/docs/PULSE.md), [Consensus rules](QSDM/docs/docs/CONSENSUS_RULES.md#the-pulse-rule-from-block-1210000)).
+  - Full-node operators: install `fullnode-rc1114` before block 1,210,000.
 - **2026-11-16: release rc1113 (the rc1113 rule from block 1,230,000).** The producer has
   run release rc1113 since 2026-11-16 04:29 UTC (mining paused 6 minutes). Block
   propagation keeps a block that arrives before its parent and applies it when
