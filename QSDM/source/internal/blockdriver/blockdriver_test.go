@@ -298,7 +298,7 @@ func (l *fakeLedger) preSealCheckLocked(rewardCell float64, txs []*mempool.Tx) e
 				return fmt.Errorf("ID %x not in flight or repeated", id[:8])
 			}
 			seen[id] = true
-			if addr != tx.Recipient {
+			if addr != chain.PulseOwnerOf(tx.Recipient) { // as the real ledger (PULSE escrow names its member)
 				return fmt.Errorf("recipient %s != miner %s", tx.Recipient, addr)
 			}
 		}

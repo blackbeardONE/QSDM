@@ -128,6 +128,10 @@ func hl1ReplayConsensusSettings(cfg *config.Config) {
 	chain.SetTxContentRootActivationHeight(cfg.TxContentRootActivationHeight)
 	chain.SetEnrollmentStateRootActivationHeight(cfg.EnrollmentStateRootActivationHeight)
 	chain.SetRC1113RulesHeight(cfg.RC1113RulesActivationHeight)
+	if err := applyPulseParams(cfg); err != nil {
+		fmt.Fprintln(os.Stderr, "hl1 replay: invalid [consensus] pulse_* settings:", err)
+		os.Exit(78)
+	}
 	chain.SetPoEActivationHeight(cfg.PoEActivationHeight)
 	chain.SetEdgeRelayOnlyActivationHeight(cfg.EdgeRelayOnlyActivationHeight)
 	chain.SetStreamEd25519RetirementHeight(cfg.StreamEd25519RetirementHeight)
@@ -480,6 +484,9 @@ func (s *hl1ReplayStack) restore(blocks []*chain.Block, verified *chain.Verified
 	}
 	if err := s.v2.QSDM20State.RestoreFromChainReplay(restored.qsdm20State); err != nil {
 		return fmt.Errorf("install replayed QSDM-20 token state: %w", err)
+	}
+	if err := s.v2.PulseState.RestoreFromChainReplay(restored.pulseState); err != nil {
+		return fmt.Errorf("install replayed PULSE state: %w", err)
 	}
 	if s.transition != nil {
 		s.v2.Aware.SetStateRootHeight(transitionStateRootHeight(s.transition, tip))

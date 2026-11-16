@@ -74,6 +74,14 @@ func DefaultRewardCell(height uint64) float64 {
 // hex(sha256(ML-DSA key)), never "qsdm-system-funder"); one that did would still
 // fail I5 ("unknown accounting") and FREEZE. Streams, enrollment and every other
 // family stay excluded.
+//
+// PULSE txs (chain.PulseContractID: join, leave, settle, reclaim) are admitted
+// too: the applier refuses every one of them unless the PULSE rule is active,
+// each bumps its signed sender's nonce, a failed one restores the account and
+// PULSE snapshots, and their balance moves are between keyless escrow
+// accounts, the pool's carry account and members, never the funder. Without
+// this case a node's own PULSE settlement would FREEZE mining, as a task action
+// did before task actions were admitted.
 func AuditTxFamilies(blk *chain.Block) []FamilyViolation {
 	if blk == nil {
 		return nil
@@ -88,6 +96,7 @@ func AuditTxFamilies(blk *chain.Block) []FamilyViolation {
 		case tx.ContractID == chain.MiningRewardContractID && tx.Sender == funder:
 		case tx.ContractID == chain.WalletTransferContractID:
 		case tx.ContractID == chain.TaskContractID:
+		case tx.ContractID == chain.PulseContractID:
 		default:
 			out = append(out, FamilyViolation{TxID: tx.ID, ContractID: tx.ContractID})
 		}
@@ -526,7 +535,9 @@ func (l *PayoutLedger) preSealLocked(height uint64, rewardCell float64, txs []*m
 				bad = "is not in flight"
 			case inPayload[id]:
 				bad = "is in more than one payload"
-			case e.minerAddr != tx.Recipient:
+			case e.minerAddr != chain.PulseOwnerOf(tx.Recipient):
+				// PULSE: a member's reward goes to its keyless escrow account,
+				// which names the member; any other recipient is the miner.
 				bad = fmt.Sprintf("belongs to %s, not the recipient", e.minerAddr)
 			}
 			if bad != "" {
@@ -648,12 +659,12 @@ func (l *PayoutLedger) OnDurableBlock(blk *chain.Block, local bool) error {
 					delete(l.ownerCount, e.minerAddr)
 				}
 				touched[e.minerAddr] = true
-				pays = append(pays, Payment{ProofID: id, MinerAddr: r.tx.Recipient, Height: blk.Height, TxID: r.tx.ID})
+				pays = append(pays, Payment{ProofID: id, MinerAddr: chain.PulseOwnerOf(r.tx.Recipient), Height: blk.Height, TxID: r.tx.ID})
 			}
 		}
 		l.totals.Emitted += r.tx.Amount
 		if l.v2 {
-			l.epochCell[r.tx.Recipient] += r.tx.Amount
+			l.epochCell[chain.PulseOwnerOf(r.tx.Recipient)] += r.tx.Amount
 		}
 	}
 	for owner := range touched {
@@ -734,7 +745,7 @@ func (l *PayoutLedger) checkRewardsLocked(blk *chain.Block, rewards []ledgerRewa
 			// enrollment is not consulted, so an unenroll between accept and
 			// seal cannot trip this.
 			for _, id := range r.ids {
-				if e := l.entries[id]; e != nil && e.minerAddr != tx.Recipient {
+				if e := l.entries[id]; e != nil && e.minerAddr != chain.PulseOwnerOf(tx.Recipient) {
 					add(6, "ID %x in tx %s belongs to %s, not the recipient %s", id, tx.ID, e.minerAddr, tx.Recipient)
 				}
 			}

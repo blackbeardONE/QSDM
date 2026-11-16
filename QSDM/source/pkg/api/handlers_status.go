@@ -99,6 +99,11 @@ type ConsensusAuthInfo struct {
 	// next block.
 	EdgeRelayOnlyActivationHeight uint64 `json:"edge_relay_only_activation_height"`
 	EdgeRelayOnlyActive           bool   `json:"edge_relay_only_active"`
+	// PulseActivationHeight is the first height of the PULSE pool settlement
+	// rule (0 = not scheduled). PulseActive reports whether it governs the
+	// next block; the PULSE pool server waits for it before it settles.
+	PulseActivationHeight uint64 `json:"pulse_activation_height"`
+	PulseActive           bool   `json:"pulse_active"`
 	// Ed25519TxAccepted reports whether the generic SignedTx dispatcher
 	// accepts Ed25519 signatures. It is always false: Ed25519 transaction
 	// signatures are retired and ML-DSA-87 is the only accepted algorithm.
@@ -393,6 +398,8 @@ func (h *Handlers) buildConsensusAuthInfo(chainTip uint64) ConsensusAuthInfo {
 		PoEActive:                           chain.PoEActiveAt(chainTip + 1),
 		EdgeRelayOnlyActivationHeight:       chain.EdgeRelayOnlyActivationHeight(),
 		EdgeRelayOnlyActive:                 chain.EdgeRelayOnlyActiveAt(chainTip + 1),
+		PulseActivationHeight:               chain.PulseActivationHeight(),
+		PulseActive:                         chain.PulseActiveAt(chainTip + 1),
 		Ed25519TxAccepted:                   false,
 		StreamEd25519RetirementHeight:       chain.StreamEd25519RetirementHeight(),
 		StreamEd25519SessionKeysRetired:     chain.StreamEd25519SessionKeysRetiredAt(chainTip + 1),

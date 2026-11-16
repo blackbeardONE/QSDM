@@ -84,6 +84,7 @@ type EnrollmentAwareApplier struct {
 	streams    *StreamStateStore
 	recovery   *RecoveryCapsuleStateStore
 	tokens     *QSDM20StateStore
+	pulse      *PulseStateStore
 
 	mu         sync.RWMutex
 	heightFn   func() uint64
@@ -177,7 +178,39 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		if a.enrollment == nil {
 			return ErrEnrollmentNotWired
 		}
+		// PULSE: a reward to a member's keyless escrow account is valid only
+		// under the active rule, for an authorized pool and a current member,
+		// with proof IDs never escrowed or settled before. Any other
+		// recipient takes the unchanged path.
+		if _, _, escrow := ParsePulseEscrow(tx.Recipient); escrow {
+			ps := a.PulseStateStore()
+			if ps == nil {
+				return ErrPulseInactive
+			}
+			h, ok := a.currentHeight()
+			if !ok {
+				return ErrEnrollmentHeightUnset
+			}
+			if err := ps.CheckEscrowReward(tx, h); err != nil {
+				return err
+			}
+			if err := a.enrollment.ApplyMiningRewardTx(tx); err != nil {
+				return err
+			}
+			return ps.RecordEscrow(tx, h)
+		}
 		return a.enrollment.ApplyMiningRewardTx(tx)
+	}
+	if tx.ContractID == PulseContractID {
+		ps := a.PulseStateStore()
+		if ps == nil {
+			return ErrPulseInactive
+		}
+		h, ok := a.currentHeight()
+		if !ok {
+			return ErrEnrollmentHeightUnset
+		}
+		return ps.ApplyEconomicTx(tx, a.accounts, h)
 	}
 	if tx.ContractID == slashing.ContractID {
 		if a.slasher == nil {
@@ -292,6 +325,27 @@ func (a *EnrollmentAwareApplier) ApplyTx(tx *mempool.Tx) error {
 		return ApplyWalletTransferTx(a.accounts, tx)
 	}
 	return a.accounts.ApplyTx(tx)
+}
+
+// SetPulseStateStore installs (or clears) the PULSE state store. PULSE
+// transactions and escrow rewards are refused until it is attached.
+func (a *EnrollmentAwareApplier) SetPulseStateStore(ps *PulseStateStore) {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.pulse = ps
+}
+
+// PulseStateStore returns the PULSE state store, or nil.
+func (a *EnrollmentAwareApplier) PulseStateStore() *PulseStateStore {
+	if a == nil {
+		return nil
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.pulse
 }
 
 // SetTaskStateStore installs (or clears) the QSDM task-action
@@ -524,6 +578,16 @@ func (a *EnrollmentAwareApplier) StateRoot() string {
 		h.Write([]byte(tokens.StateRoot()))
 		root = hex.EncodeToString(h.Sum(nil))
 	}
+	// PULSE joins the root once its state holds anything (after QSDM-20, so a
+	// chain without tokens folds in the same order as the producer's build).
+	if ps := a.PulseStateStore(); ps != nil && ps.Count() > 0 {
+		h := sha256.New()
+		h.Write([]byte("state:"))
+		h.Write([]byte(root))
+		h.Write([]byte("\npulse:"))
+		h.Write([]byte(ps.StateRoot()))
+		root = hex.EncodeToString(h.Sum(nil))
+	}
 	if enrollmentStateRootActiveAt(a.rootHeight.Load()) {
 		if enrollmentRoot := a.enrollmentStateRoot(); enrollmentRoot != "" {
 			h := sha256.New()
@@ -739,6 +803,7 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 	liveStreams := a.streams
 	liveRecovery := a.recovery
 	liveTokens := a.tokens
+	livePulse := a.pulse
 	clone.heightFn = a.heightFn
 	a.mu.RUnlock()
 	if liveTasks != nil {
@@ -752,6 +817,9 @@ func (a *EnrollmentAwareApplier) ChainReplayClone() ChainReplayApplier {
 	}
 	if liveTokens != nil {
 		clone.tokens = liveTokens.ChainReplayClone().(*QSDM20StateStore)
+	}
+	if livePulse != nil {
+		clone.pulse = livePulse.ChainReplayClone().(*PulseStateStore)
 	}
 	if liveSlasher != nil {
 		sm, ok := sharedMutator.(SlasherStateMutator)
@@ -857,6 +925,16 @@ func (a *EnrollmentAwareApplier) RestoreFromChainReplay(from ChainReplayApplier)
 	}
 	if liveTokens != nil {
 		if err := liveTokens.RestoreFromChainReplay(otherTokens); err != nil {
+			return err
+		}
+	}
+	livePulse := a.PulseStateStore()
+	otherPulse := other.PulseStateStore()
+	if (livePulse == nil) != (otherPulse == nil) {
+		return errors.New("chain: RestoreFromChainReplay PULSE state presence mismatch")
+	}
+	if livePulse != nil {
+		if err := livePulse.RestoreFromChainReplay(otherPulse); err != nil {
 			return err
 		}
 	}

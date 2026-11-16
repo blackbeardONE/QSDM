@@ -162,6 +162,8 @@ type persistedStateRestore struct {
 	recoveryActions int
 	qsdm20State     *chain.QSDM20StateStore
 	qsdm20Actions   int
+	pulseState      *chain.PulseStateStore
+	pulseActions    int
 	stateRoot       string
 	backupPath      string
 	discardedTail   int
@@ -196,6 +198,11 @@ func evaluatePersistedStateWithEnrollment(accounts *chain.AccountStore, blocks [
 	if err != nil {
 		return persistedStateRestore{}, err
 	}
+	pulseState := chain.NewPulseStateStore()
+	pulseActions, err := replayPulseStateFromBlocks(pulseState, blocks)
+	if err != nil {
+		return persistedStateRestore{}, err
+	}
 	var enrollApplier *chain.EnrollmentApplier
 	if enrollmentState != nil {
 		enrollApplier = chain.NewEnrollmentApplier(accounts, enrollmentState)
@@ -206,6 +213,7 @@ func evaluatePersistedStateWithEnrollment(accounts *chain.AccountStore, blocks [
 	aware.SetStreamStateStore(streams)
 	aware.SetRecoveryCapsuleStateStore(recovery)
 	aware.SetQSDM20StateStore(qsdm20)
+	aware.SetPulseStateStore(pulseState)
 	return persistedStateRestore{
 		blocks:          blocks,
 		taskState:       tasks,
@@ -216,6 +224,8 @@ func evaluatePersistedStateWithEnrollment(accounts *chain.AccountStore, blocks [
 		recoveryActions: recoveryActions,
 		qsdm20State:     qsdm20,
 		qsdm20Actions:   qsdm20Actions,
+		pulseState:      pulseState,
+		pulseActions:    pulseActions,
 		stateRoot:       aware.StateRoot(),
 	}, nil
 }
@@ -279,11 +289,13 @@ func findPersistedSnapshotBlock(
 	streams := chain.NewStreamStateStore()
 	recovery := chain.NewRecoveryCapsuleStateStore()
 	qsdm20 := chain.NewQSDM20StateStore()
+	pulseState := chain.NewPulseStateStore()
 	aware := chain.NewEnrollmentAwareApplier(accounts, nil)
 	aware.SetTaskStateStore(tasks)
 	aware.SetStreamStateStore(streams)
 	aware.SetRecoveryCapsuleStateStore(recovery)
 	aware.SetQSDM20StateStore(qsdm20)
+	aware.SetPulseStateStore(pulseState)
 
 	match := -1
 	for index, blk := range blocks {
@@ -301,6 +313,9 @@ func findPersistedSnapshotBlock(
 		}
 		if _, err := replayQSDM20StateFromBlocks(qsdm20, []*chain.Block{blk}); err != nil {
 			return -1, fmt.Errorf("replay QSDM-20 token state at height %d: %w", blk.Height, err)
+		}
+		if _, err := replayPulseStateFromBlocks(pulseState, []*chain.Block{blk}); err != nil {
+			return -1, fmt.Errorf("replay PULSE state at height %d: %w", blk.Height, err)
 		}
 		if aware.StateRoot() == blk.StateRoot {
 			match = index
@@ -1609,6 +1624,14 @@ func main() {
 			"note", "enabling this is a coordinated fork; every node must agree on the height")
 	}
 	chain.SetRC1113RulesHeight(cfg.RC1113RulesActivationHeight)
+	if err := applyPulseParams(cfg); err != nil {
+		logger.Error("PULSE: invalid [consensus] pulse_* settings; refusing to start", "error", err.Error())
+		os.Exit(78)
+	}
+	if chain.PulseActivationHeight() > 0 {
+		logger.Info("PULSE: settlement rule scheduled", "params", chain.PulseParamsFingerprint(),
+			"warning", "every node must use these exact values")
+	}
 	if cfg.RC1113RulesActivationHeight > 0 {
 		logger.Info("rc1113 rules: activation height set", "from_height", cfg.RC1113RulesActivationHeight,
 			"warning", "every node must use this exact value")
@@ -2248,6 +2271,7 @@ func main() {
 			blockdriverCfg.Ledger = hl1Mining.ledger
 			blockdriverCfg.Guard = hl1Mining.guard
 		}
+		blockdriverCfg.PulsePayee = pulsePayee(v2Wired.PulseState, v2Wired.EnrollmentState)
 		if productionRole == blockProductionRoleNetworkProducer {
 			blockdriverCfg.ProducerID = "qsdm-network-producer"
 		}
@@ -2452,6 +2476,9 @@ func main() {
 		}
 		if err := v2Wired.QSDM20State.RestoreFromChainReplay(restoredState.qsdm20State); err != nil {
 			fatalRestore("chain restore: install replayed QSDM-20 token state from %s: %v", chainStatePath, err)
+		}
+		if err := v2Wired.PulseState.RestoreFromChainReplay(restoredState.pulseState); err != nil {
+			fatalRestore("chain restore: install replayed PULSE state from %s: %v", chainStatePath, err)
 		}
 		loadedTaskActions := restoredState.taskActions
 		loadedStreamActions := restoredState.streamActions

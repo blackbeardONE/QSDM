@@ -202,6 +202,12 @@ type Config struct {
 	// unminted). See pkg/mining/telemetrycheck/penalty.go
 	// for the full design rationale.
 	RewardPenalty RewardPenalty
+
+	// PulsePayee, when non-nil, maps a claim's owner to the account its
+	// reward is paid to at a height: a PULSE pool member's keyless escrow
+	// account under the active rule, otherwise the owner itself. nil (the
+	// default) pays every owner directly, exactly as before PULSE.
+	PulsePayee func(owner string, height uint64) string
 }
 
 // RewardPenalty is the narrow contract Driver consumes.
@@ -635,7 +641,7 @@ func (d *Driver) planTxs(height uint64, rewardCell float64, startNonce uint64) (
 	if len(claims) == 0 {
 		return heartbeat()
 	}
-	txs, err := d.buildTxs(claims, rewardCell, startNonce)
+	txs, err := d.buildTxsAt(height, claims, rewardCell, startNonce)
 	if err == nil {
 		// A share <= 0 is passed through; PreSeal rejects it.
 		err = d.cfg.Ledger.PreSeal(height, rewardCell, txs)
@@ -957,6 +963,21 @@ func (d *Driver) heartbeatTx(nonce uint64) *mempool.Tx {
 // monotonically respected and makes the tokenomic effect of
 // Tier-3 strictly subtractive.
 func (d *Driver) buildTxs(claims []legacymining.Claim, rewardCell float64, startNonce uint64) ([]*mempool.Tx, error) {
+	return d.buildTxsAt(0, claims, rewardCell, startNonce)
+}
+
+// payee is the account a claim's reward is paid to (see Config.PulsePayee).
+func (d *Driver) payee(owner string, height uint64) string {
+	if d.cfg.PulsePayee == nil {
+		return owner
+	}
+	if p := d.cfg.PulsePayee(owner, height); p != "" {
+		return p
+	}
+	return owner
+}
+
+func (d *Driver) buildTxsAt(height uint64, claims []legacymining.Claim, rewardCell float64, startNonce uint64) ([]*mempool.Tx, error) {
 	if len(claims) == 0 {
 		return []*mempool.Tx{d.heartbeatTx(startNonce)}, nil
 	}
@@ -983,10 +1004,10 @@ func (d *Driver) buildTxs(claims []legacymining.Claim, rewardCell float64, start
 	nextNonce := startNonce
 	out := make([]*mempool.Tx, 0, len(claims))
 	for i, c := range claims {
-		addr := c.MinerAddr
+		addr := d.payee(c.MinerAddr, height)
 		count := len(c.IDs)
 		baseShare := rewardCell * float64(count) / float64(total)
-		mult := d.rewardPenalty.MultiplierFor(addr)
+		mult := d.rewardPenalty.MultiplierFor(c.MinerAddr)
 		// Defensive clamp: if a buggy MismatchPenalty
 		// returns NaN / Inf / negative / >1 we round it
 		// to a safe band rather than mint anything weird.

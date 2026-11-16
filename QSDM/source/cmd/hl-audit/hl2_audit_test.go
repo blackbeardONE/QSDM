@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/blackbeardONE/QSDM/internal/legacymining"
+	"github.com/blackbeardONE/QSDM/pkg/chain"
 )
 
 const minerC = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
@@ -75,6 +76,39 @@ func TestV2CanaryRecipients(t *testing.T) {
 		if r.DB == nil || r.DB.Rows != 7 || r.DB.Paid != 6 {
 			t.Fatalf("db %+v", r.DB)
 		}
+	})
+	// PULSE: minerA's reward paid to minerA's escrow account is minerA's.
+	pulseEscrow := func(f *fixture, owner string) {
+		const pool = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+		blk := f.at(10)
+		for i, tx := range blk.Transactions {
+			if tx.Recipient != minerA {
+				continue
+			}
+			ids, err := legacymining.DecodePayload(tx.Payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			esc := rewardTx(tx.Nonce, chain.PulseEscrowAddress(pool, owner), tx.Amount, ids...)
+			blk.Transactions[i] = esc
+			for j := range f.payments {
+				if f.payments[j].TxID == tx.ID {
+					f.payments[j].TxID = esc.ID
+				}
+			}
+		}
+	}
+	t.Run("PULSE escrow of the row's miner: clean", func(t *testing.T) {
+		f := v2Fixture(t)
+		pulseEscrow(f, minerA)
+		f.writeV2()
+		wantPass(t, f.audit(func(o *Options) { o.CanaryConfig = f.cfg }))
+	})
+	t.Run("PULSE escrow of another member fails", func(t *testing.T) {
+		f := v2Fixture(t)
+		pulseEscrow(f, minerC)
+		f.writeV2()
+		wantFail(t, f.audit(func(o *Options) { o.CanaryConfig = f.cfg }), CodeRecipientMismatch)
 	})
 	t.Run("a recipient that is not the row's miner fails", func(t *testing.T) {
 		f := v2Fixture(t)

@@ -209,6 +209,15 @@ type Config struct {
 	// the release like rc1112's 1,190,000, so no node's settings need a change; a non-zero key or env value overrides it.
 	RC1113RulesActivationHeight uint64
 
+	// PULSE, the non-custodial mining pool rule (chain.SetPulseParams; [consensus] pulse_* or QSDM_PULSE_*). They
+	// change what blocks are valid, so every node must use the same values. PulseActivationHeight 0 (the default)
+	// means never, and the node then refuses every PULSE transaction and escrow reward.
+	PulseActivationHeight   uint64
+	PulseMaxFeeBPS          uint16   // network fee ceiling; 0 = the default 300 bps (3 %)
+	PulsePools              []string // authorized pools: "<pool id>:<ML-DSA-87 public key hex>[:<max fee bps>]"
+	PulsePayeeEpochCapCell  float64  // PULSE payouts per payee per 8,640-block epoch
+	PulseReclaimAfterBlocks uint64   // an unsettled escrowed reward is reclaimable by its owner after this
+
 	// PoEActivationHeight is the first height at which signed wallet
 	// transfers must satisfy the Proof-of-Entanglement parent rules
 	// ([consensus] poe_activation_height or QSDM_POE_ACTIVATION_HEIGHT).
@@ -533,6 +542,11 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.TxContentRootActivationHeight = tomlCfg.Consensus.TxContentRootActivationHeight
 		cfg.EnrollmentStateRootActivationHeight = tomlCfg.Consensus.EnrollmentStateRootActivationHeight
 		cfg.RC1113RulesActivationHeight = tomlCfg.Consensus.RC1113RulesActivationHeight
+		cfg.PulseActivationHeight = tomlCfg.Consensus.PulseActivationHeight
+		cfg.PulseMaxFeeBPS = tomlCfg.Consensus.PulseMaxFeeBPS
+		cfg.PulsePools = append([]string(nil), tomlCfg.Consensus.PulsePools...)
+		cfg.PulsePayeeEpochCapCell = tomlCfg.Consensus.PulsePayeeEpochCapCell
+		cfg.PulseReclaimAfterBlocks = tomlCfg.Consensus.PulseReclaimAfterBlocks
 		cfg.PoEActivationHeight = tomlCfg.Consensus.PoEActivationHeight
 		cfg.EdgeRelayOnlyActivationHeight = tomlCfg.Consensus.EdgeRelayOnlyActivationHeight
 		cfg.StreamEd25519RetirementHeight = tomlCfg.Consensus.StreamEd25519RetirementHeight
@@ -656,6 +670,11 @@ func loadConfigFile(path string, cfg *Config) error {
 		cfg.TxContentRootActivationHeight = yamlCfg.Consensus.TxContentRootActivationHeight
 		cfg.EnrollmentStateRootActivationHeight = yamlCfg.Consensus.EnrollmentStateRootActivationHeight
 		cfg.RC1113RulesActivationHeight = yamlCfg.Consensus.RC1113RulesActivationHeight
+		cfg.PulseActivationHeight = yamlCfg.Consensus.PulseActivationHeight
+		cfg.PulseMaxFeeBPS = yamlCfg.Consensus.PulseMaxFeeBPS
+		cfg.PulsePools = append([]string(nil), yamlCfg.Consensus.PulsePools...)
+		cfg.PulsePayeeEpochCapCell = yamlCfg.Consensus.PulsePayeeEpochCapCell
+		cfg.PulseReclaimAfterBlocks = yamlCfg.Consensus.PulseReclaimAfterBlocks
 		cfg.PoEActivationHeight = yamlCfg.Consensus.PoEActivationHeight
 		cfg.EdgeRelayOnlyActivationHeight = yamlCfg.Consensus.EdgeRelayOnlyActivationHeight
 		cfg.StreamEd25519RetirementHeight = yamlCfg.Consensus.StreamEd25519RetirementHeight
@@ -865,6 +884,34 @@ func applyEnvOverrides(cfg *Config) {
 	if v := strings.TrimSpace(getEnvString("QSDM_ENROLLMENT_STATE_ROOT_ACTIVATION_HEIGHT", "")); v != "" {
 		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
 			cfg.EnrollmentStateRootActivationHeight = h
+		}
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_PULSE_ACTIVATION_HEIGHT", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.PulseActivationHeight = h
+		}
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_PULSE_MAX_FEE_BPS", "")); v != "" {
+		if b, err := strconv.ParseUint(v, 10, 16); err == nil {
+			cfg.PulseMaxFeeBPS = uint16(b)
+		}
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_PULSE_POOLS", "")); v != "" {
+		cfg.PulsePools = nil
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				cfg.PulsePools = append(cfg.PulsePools, p)
+			}
+		}
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_PULSE_PAYEE_EPOCH_CAP_CELL", "")); v != "" {
+		if c, err := strconv.ParseFloat(v, 64); err == nil {
+			cfg.PulsePayeeEpochCapCell = c
+		}
+	}
+	if v := strings.TrimSpace(getEnvString("QSDM_PULSE_RECLAIM_AFTER_BLOCKS", "")); v != "" {
+		if h, err := strconv.ParseUint(v, 10, 64); err == nil {
+			cfg.PulseReclaimAfterBlocks = h
 		}
 	}
 	if v := strings.TrimSpace(getEnvString("QSDM_RC1113_RULES_ACTIVATION_HEIGHT", "")); v != "" {
