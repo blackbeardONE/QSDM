@@ -241,6 +241,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/tasks/state", handlers.QSDMTaskStatesHandler)
 	mux.HandleFunc("/api/v1/tasks/actions", handlers.QSDMTaskActionsListHandler)
 	mux.HandleFunc("/api/v1/tasks/actions/submit-signed", handlers.QSDMTaskActionSubmitSignedHandler)
+	mux.HandleFunc("/api/v1/pulse/submit-signed", handlers.QSDMPulseSubmitSignedHandler)
+	mux.HandleFunc("/api/v1/pulse/state", handlers.QSDMPulseStateHandler)
+	mux.HandleFunc("/api/v1/pulse/member", handlers.QSDMPulseMemberHandler)
 	mux.HandleFunc("/api/v1/tasks/actions/", handlers.QSDMTaskActionRouteHandler)
 	mux.HandleFunc("/api/v1/tasks/", handlers.QSDMTaskRouteHandler)
 

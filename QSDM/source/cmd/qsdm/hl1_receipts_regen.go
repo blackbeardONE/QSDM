@@ -436,6 +436,7 @@ func hl1S4rReplay(o hl1RepairOptions, fsys hl1FS, blocks []*chain.Block, blkW, b
 	x.SetStreamStateStore(restored.streamState)
 	x.SetRecoveryCapsuleStateStore(restored.recoveryState)
 	x.SetQSDM20StateStore(restored.qsdm20State)
+	x.SetPulseStateStore(restored.pulseState)
 	x.SetStateRootHeight(transitionStateRootHeight(o.Transition, blkW))
 	pre, ok := o.Live.ChainReplayClone().(*chain.EnrollmentAwareApplier)
 	if !ok || pre == nil {

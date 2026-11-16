@@ -4503,6 +4503,168 @@ paths:
                   - $ref: '#/components/schemas/Error'
                   - $ref: '#/components/schemas/TaskActionSubmitResponse'
 
+  /pulse/state:
+    get:
+      tags:
+        - Mining
+      summary: PULSE pool settlement rule and a pool's chain state
+      description: |
+        The PULSE rule's parameters (activation height, the network fee cap
+        in basis points, the per-payee epoch cap in dust, the reclaim timeout
+        in blocks and the authorized pools) and, when the node has a chain
+        tip, whether the rule is active for the next block. With `pool` set
+        to an authorized pool ID it also returns that pool's last settlement
+        sequence number, the proofs whose rewards wait in its escrow, their
+        total and what the pool owes. Public ledger data. Answers 503 until
+        the PULSE state is wired.
+      operationId: getPulseState
+      x-qsdm-access: public
+      parameters:
+        - name: pool
+          in: query
+          required: false
+          description: A pool ID (64 lowercase hex characters).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The rule and, with `pool`, that pool's state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PulseState'
+        '400':
+          description: '`pool` is not a valid address.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: The method is not GET.
+          headers:
+            Allow:
+              description: The allowed method, GET.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pulse/member:
+    get:
+      tags:
+        - Mining
+      summary: Whether an owner is a PULSE pool member
+      description: |
+        Looks up an enrollment owner's PULSE membership: `member` is true and
+        `pool` names the pool while the owner has joined one. Public ledger
+        data. Answers 503 until the PULSE state is wired.
+      operationId: getPulseMember
+      x-qsdm-access: public
+      parameters:
+        - name: owner
+          in: query
+          required: true
+          description: The owner address (64 lowercase hex characters).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The membership.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PulseMember'
+        '400':
+          description: '`owner` is missing or not a valid address.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: The method is not GET.
+          headers:
+            Allow:
+              description: The allowed method, GET.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: The PULSE state is not wired on this node.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pulse/submit-signed:
+    post:
+      tags:
+        - Mining
+      summary: Submit a signed PULSE transaction
+      description: |
+        Submits a wallet-signed PULSE transaction (join, leave, a pool's
+        settlement or a member's reclaim; see PULSE.md). The ML-DSA-87
+        signature in the body authorizes it (`sender` must be
+        hex(sha256(public_key))); the node decodes it and the mempool checks
+        it before admission, including the fee cap of the pool and the reclaim
+        timeout. Unknown JSON fields are refused. Answers 409 while the rule is
+        not active yet and 503 until PULSE submission is wired. A read-only
+        follower node (QSDM_API_READ_ONLY=1) answers 503.
+      operationId: submitPulseTransaction
+      x-qsdm-access: public
+      x-qsdm-follower: refused
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PulseEnvelope'
+      responses:
+        '200':
+          description: |
+            Admitted to the mempool (`mempool_status` is `submitted`) or already
+            pending there (`duplicate`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PulseSubmitResponse'
+        '400':
+          description: The body does not decode as an envelope within 256 KiB, or it has unknown fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          description: The method is not POST.
+          headers:
+            Allow:
+              description: The allowed method, POST.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The PULSE rule is not active yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: The transaction does not decode as a PULSE transaction, or the mempool refused it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: PULSE submission is not wired on this node, or the node is a read-only follower.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /tasks/actions/{action_id}:
     get:
       tags:
@@ -10725,6 +10887,147 @@ components:
           type: number
           format: double
 
+    PulseEnvelope:
+      type: object
+      description: A wallet-signed PULSE transaction (contract qsdm/pulse/v1).
+      additionalProperties: false
+      required:
+        - sender
+        - nonce
+        - payload
+        - public_key
+        - signature
+      properties:
+        sender:
+          type: string
+          description: hex(sha256(public_key)).
+        nonce:
+          type: integer
+          format: int64
+        fee:
+          type: number
+        payload:
+          type: object
+          description: The PULSE action (join, leave, settle or reclaim) and its fields, as PULSE.md describes.
+        public_key:
+          type: string
+          description: The sender's ML-DSA-87 public key, hex.
+        signature:
+          type: string
+          description: The ML-DSA-87 signature, hex.
+    PulseSubmitResponse:
+      type: object
+      description: Outcome of POST /pulse/submit-signed.
+      required:
+        - tx_id
+        - status
+        - mempool_status
+      properties:
+        tx_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - accepted
+        mempool_status:
+          type: string
+          enum:
+            - submitted
+            - duplicate
+    PulseState:
+      type: object
+      description: The PULSE rule and, with `pool`, one pool's chain state.
+      required:
+        - activation_height
+        - max_fee_bps
+        - payee_epoch_cap_dust
+        - reclaim_after_blocks
+        - pools
+      properties:
+        activation_height:
+          type: integer
+          format: int64
+          description: 0 means never.
+        max_fee_bps:
+          type: integer
+        payee_epoch_cap_dust:
+          type: integer
+          format: int64
+        reclaim_after_blocks:
+          type: integer
+          format: int64
+        pools:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              max_fee_bps:
+                type: integer
+        active:
+          type: boolean
+          description: Whether the rule applies to the next block. Absent without a chain tip.
+        tip:
+          type: integer
+          format: int64
+        pool:
+          type: object
+          description: Present when `pool` was given.
+          properties:
+            id:
+              type: string
+            last_seq:
+              type: integer
+              format: int64
+            escrowed:
+              type: array
+              items:
+                type: object
+                properties:
+                  proof_id:
+                    type: string
+                  owner:
+                    type: string
+                  dust:
+                    type: integer
+                    format: int64
+                  height:
+                    type: integer
+                    format: int64
+            escrowed_dust:
+              type: integer
+              format: int64
+            owed:
+              type: object
+              description: Dust the pool owes, by member address.
+              additionalProperties:
+                type: integer
+                format: int64
+            account_nonce:
+              type: integer
+              format: int64
+              description: The pool account's current nonce (it signs its settlements from that account).
+            account_present:
+              type: boolean
+        stats:
+          type: object
+          description: Totals of the PULSE state (members, escrow, settlements).
+          additionalProperties: true
+    PulseMember:
+      type: object
+      required:
+        - owner
+        - member
+        - pool
+      properties:
+        owner:
+          type: string
+        member:
+          type: boolean
+        pool:
+          type: string
+          description: The pool ID, empty when `member` is false.
     TaskActionEnvelope:
       type: object
       description: |

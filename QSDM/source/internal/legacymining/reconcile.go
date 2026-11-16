@@ -483,13 +483,13 @@ func (r *reconciler) scan(h0 uint64) ([]Payment, *reconcileFailure) {
 			}
 			rewards++
 			sum += tx.Amount
-			r.rewards = append(r.rewards, reconcileReward{height: b.Height, amount: tx.Amount, recipient: tx.Recipient})
+			r.rewards = append(r.rewards, reconcileReward{height: b.Height, amount: tx.Amount, recipient: chain.PulseOwnerOf(tx.Recipient)})
 			for _, id := range ids {
 				if p, dup := first[id]; dup {
 					r.note("height %d tx %q: proof %x is paid again (first paid at height %d by tx %q)", b.Height, tx.ID, id[:], p.Height, p.TxID)
 					continue
 				}
-				p := Payment{ProofID: id, MinerAddr: tx.Recipient, Height: b.Height, TxID: tx.ID}
+				p := Payment{ProofID: id, MinerAddr: chain.PulseOwnerOf(tx.Recipient), Height: b.Height, TxID: tx.ID}
 				first[id] = p
 				pays = append(pays, p)
 			}

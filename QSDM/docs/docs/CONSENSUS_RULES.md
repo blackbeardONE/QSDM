@@ -25,6 +25,7 @@ they were produced with.
 | Proof-of-Entanglement | 816,600 | 2026-10-11 13:18 | `consensus_auth.poe_activation_height`, `poe_active` | A transfer that does not name 2 to 10 valid committed parents |
 | Signed consensus | 827,000 | 2026-10-12 18:11 | `consensus_auth.require_signed_votes`, `signed_message_activation_height`, `signed_consensus_active`, `unsigned_consensus_traffic_accepted` | Any BFT vote or consensus message without a valid ML-DSA signature |
 | Relay-only paid edge tasks | 833,800 | 2026-10-13 13:21 | `consensus_auth.edge_relay_only_activation_height`, `edge_relay_only_active` | A paid edge task settlement that does not come through an authorized settlement relay |
+| The PULSE rule | 1,210,000 | Scheduled, about 2026-11-26 | none (the release default `pulse_activation_height`; every node on rc1114 uses 1,210,000) | PULSE pool transactions (join, leave, settle, reclaim) and member rewards to keyless escrow accounts ([details](#the-pulse-rule-from-block-1210000)) |
 | The rc1113 rule | 1,230,000 | Scheduled, about 2026-11-29 | none (the release default `rc1113_rules_activation_height`; every node on rc1113 uses 1,230,000) | A `catalog-register` for a task ID that already holds stake or a pool ([details](#the-rc1113-rule-from-block-1230000)) |
 | The rc1112 rules | 1,190,000 | Scheduled, about 2026-11-24 (the producer's admission applies them since 2026-11-15 12:23) | none (code constants: `RelaySettlementScopeActivationHeight`, `GPUUUIDFoldActivationHeight`, `CustomTaskPayActivationHeight`, `DeferredPruneActivationHeight`) | A Relay settlement on a task that is not a built-in resource task, one that reuses a consumed settlement proof or receipt, or one whose proof or receipt IDs are not 64 lowercase hex characters; a catalog action for a case variant of a reserved task ID; an enrollment of a GPU UUID that an active enrollment holds in another case; a submit that asks a task other than the built-in resource tasks for a reward. The block sweep also removes free enrollments that earned nothing in 60,480 blocks ([details](#the-rc1112-rules-from-block-1190000)) |
 | Transaction ID uniqueness | 1,160,000 | Scheduled, about 2026-11-21 (the producer's API refuses a taken ID since 2026-11-13 18:41) | none (a code constant, `TxIDUniqueActivationHeight`) | A transaction whose ID is committed in the last 8,640 blocks or earlier in the same block, whatever its contract |
@@ -157,6 +158,27 @@ rc1111 (2026-11-13 18:41 UTC): 409, `status` `duplicate`, `mempool_status`
 nodes on older releases keep following until they upgrade. Code:
 `QSDM/source/pkg/chain/txid_unique.go`. Details:
 [Network upgrades](NETWORK_UPGRADES.md).
+
+### The PULSE rule (from block 1,210,000)
+
+From block 1,210,000 blocks MAY carry `qsdm/pulse/v1` transactions: `join`
+and `leave` (a member), `settle` (an authorized pool's ML-DSA-87 signed
+settlement batch) and `reclaim` (a member, after 8,640 blocks). A mining
+reward for a pool member is paid to that member's keyless escrow account
+`qsdm-pulse-escrow-<pool>:<member>`, which only a `settle` or a `reclaim`
+empties. A `settle` MUST name an authorized pool and its key, a higher
+sequence than the pool's last, and only escrowed, unsettled proofs; its fee
+is at most 300 basis points and each payee at most 2,000 CELL per
+8,640-block epoch (the rest carries forward). A settlement, a pooled proof
+and a sequence number are accepted once. Below 1,210,000 every such
+transaction is refused. The PULSE state folds into the block state root
+once it holds anything (after the QSDM-20 segment).
+
+The height and the authorized pool are release defaults of node release
+rc1114 (`[consensus] pulse_*` and `QSDM_PULSE_*` override them; every node
+must use the same values, so leave them unset). Code:
+`QSDM/source/internal/pulse/`, `QSDM/source/pkg/chain/pulse_*.go`. How the
+pool works: [PULSE](PULSE.md).
 
 ### The rc1113 rule (from block 1,230,000)
 

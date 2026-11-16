@@ -208,6 +208,14 @@ type ConsensusConfigTOML struct {
 	// what blocks are valid, so every node must use the same value; the rc1113 release sets it.
 	RC1113RulesActivationHeight uint64 `toml:"rc1113_rules_activation_height" yaml:"rc1113_rules_activation_height"`
 
+	// PULSE (chain.SetPulseParams). Consensus values: every node must use the same ones. pulse_activation_height 0
+	// (the default) means never.
+	PulseActivationHeight   uint64   `toml:"pulse_activation_height" yaml:"pulse_activation_height"`
+	PulseMaxFeeBPS          uint16   `toml:"pulse_max_fee_bps" yaml:"pulse_max_fee_bps"`
+	PulsePools              []string `toml:"pulse_pools" yaml:"pulse_pools"`
+	PulsePayeeEpochCapCell  float64  `toml:"pulse_payee_epoch_cap_cell" yaml:"pulse_payee_epoch_cap_cell"`
+	PulseReclaimAfterBlocks uint64   `toml:"pulse_reclaim_after_blocks" yaml:"pulse_reclaim_after_blocks"`
+
 	// PoEActivationHeight is the first height at which signed wallet
 	// transfers must satisfy the Proof-of-Entanglement parent rules (at
 	// least two distinct parents, each a transaction committed in the last

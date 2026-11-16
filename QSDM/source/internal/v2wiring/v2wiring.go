@@ -365,6 +365,9 @@ type Wired struct {
 	// QSDM20State is the QSDM-20 token state (qsdm/token/v1). It stays
 	// empty while no activation height is set.
 	QSDM20State *chain.QSDM20StateStore
+	// PulseState is the PULSE pool settlement state; it stays empty until the
+	// PULSE rule is active (pulse_activation_height).
+	PulseState *chain.PulseStateStore
 
 	// RecentRejections is the bounded ring of §4.6 attestation
 	// rejections (arch-spoof / hashrate-band / cc-cert-subject).
@@ -414,6 +417,8 @@ func Wire(cfg Config) (*Wired, error) {
 	aware.SetRecoveryCapsuleStateStore(recoveryState)
 	qsdm20State := chain.NewQSDM20StateStore()
 	aware.SetQSDM20StateStore(qsdm20State)
+	pulseState := chain.NewPulseStateStore()
+	aware.SetPulseStateStore(pulseState)
 	// The QSDM-20 admission layer judges the activation height at the next
 	// block, read from this applier's height source once AttachToProducer
 	// installs it. ReinstallAdmissionGate receives only the pool, so the
@@ -644,6 +649,7 @@ func Wire(cfg Config) (*Wired, error) {
 	//   - slashing.AdmissionChecker  (slash txs)
 	//   - enrollment.AdmissionChecker (enroll/unenroll txs)
 	//   - chain.StreamAdmissionChecker (CELL stream signatures)
+	//   - chain.PulseAdmissionChecker (PULSE join/leave/settle/reclaim)
 	//   - chain.RecoveryCapsuleAdmissionChecker (legacy-wallet recovery)
 	//   - chain.QSDM20AdmissionChecker  (QSDM-20 tokens: activation height,
 	//                                    shape and signature)
@@ -660,8 +666,9 @@ func Wire(cfg Config) (*Wired, error) {
 			slashing.AdmissionChecker(
 				enrollment.AdmissionChecker(
 					chain.StreamAdmissionChecker(
-						chain.RecoveryCapsuleAdmissionChecker(
-							chain.QSDM20AdmissionChecker(aware.NextBlockHeight, cfg.BaseAdmit)))))))
+						chain.PulseAdmissionChecker(
+							chain.RecoveryCapsuleAdmissionChecker(
+								chain.QSDM20AdmissionChecker(aware.NextBlockHeight, cfg.BaseAdmit))))))))
 
 	// HTTP handler hookup. All four mining endpoints
 	//
@@ -687,6 +694,7 @@ func Wire(cfg Config) (*Wired, error) {
 	api.SetRecoveryCapsuleMempool(cfg.Pool)
 	api.SetRecoveryCapsuleStateProvider(recoveryState)
 	api.SetQSDM20Mempool(cfg.Pool)
+	api.SetPulseMempool(cfg.Pool)
 	api.SetQSDM20StateProvider(qsdm20State)
 	api.SetQSDM20TxChecker(aware)
 	api.SetEnrollmentRegistry(state)
@@ -780,6 +788,7 @@ func Wire(cfg Config) (*Wired, error) {
 		StreamState:      streamState,
 		RecoveryState:    recoveryState,
 		QSDM20State:      qsdm20State,
+		PulseState:       pulseState,
 		RecentRejections: rejectionStore,
 		SealedBlockHook:  hook,
 	}, nil
@@ -1062,8 +1071,9 @@ func ReinstallAdmissionGate(pool *mempool.Mempool, prev func(*mempool.Tx) error)
 			slashing.AdmissionChecker(
 				enrollment.AdmissionChecker(
 					chain.StreamAdmissionChecker(
-						chain.RecoveryCapsuleAdmissionChecker(
-							chain.QSDM20AdmissionChecker(qsdm20Height, prev)))))))
+						chain.PulseAdmissionChecker(
+							chain.RecoveryCapsuleAdmissionChecker(
+								chain.QSDM20AdmissionChecker(qsdm20Height, prev))))))))
 }
 
 // qsdm20AdmissionHeights maps each pool Wire configured to the next-block
@@ -1095,4 +1105,8 @@ func (w *Wired) AttachToProducer(bp *chain.BlockProducer) {
 	}
 	w.Aware.SetHeightFn(func() uint64 { return bp.TipHeight() + 1 })
 	bp.OnSealedBlock = w.SealedBlockHook
+	if w.PulseState != nil {
+		api.SetPulseStateProvider(w.PulseState, bp.TipHeight)
+		chain.SetPulseAdmissionState(w.PulseState, func() uint64 { return bp.TipHeight() + 1 })
+	}
 }

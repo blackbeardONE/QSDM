@@ -700,7 +700,9 @@ func (a *auditor) scanBlock(b *chain.Block) {
 		}
 		rewards++
 		sum += tx.Amount
-		a.rewards = append(a.rewards, reward{height: b.Height, amount: tx.Amount, recipient: tx.Recipient})
+		// PULSE: a reward to a member's keyless escrow account counts for the
+		// member it names, as in the ledger (chain.PulseOwnerOf).
+		a.rewards = append(a.rewards, reward{height: b.Height, amount: tx.Amount, recipient: chain.PulseOwnerOf(tx.Recipient)})
 		a.rep.Payments.RewardTxs++
 		a.rep.Payments.Emitted += tx.Amount
 	}
@@ -748,7 +750,7 @@ func (a *auditor) record(height uint64, tx *mempool.Tx, ids []legacymining.Proof
 				id[:], tx.ID, first.height, first.txID)
 			continue
 		}
-		a.paid[id] = payment{height: height, txID: tx.ID, recipient: tx.Recipient}
+		a.paid[id] = payment{height: height, txID: tx.ID, recipient: chain.PulseOwnerOf(tx.Recipient)}
 		if pay.FirstPaidHeight == 0 || height < pay.FirstPaidHeight {
 			pay.FirstPaidHeight = height
 		}

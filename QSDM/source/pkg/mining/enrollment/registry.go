@@ -434,6 +434,24 @@ func (s *InMemoryState) ApplyEnroll(rec EnrollmentRecord) error {
 // node IDs are filled in lexical order so every validator reaches the same
 // result independent of Go map iteration order. The return value is the dust
 // withheld from the wallet's liquid reward.
+// OwesDeferredBond reports whether owner has an active enrollment whose
+// deferred (mining-rewards) bond is not yet filled. PULSE pools only owners
+// without one, so a pooled reward never fills a bond.
+func (s *InMemoryState) OwesDeferredBond(owner string) bool {
+	if s == nil || owner == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, rec := range s.byNodeID {
+		if rec != nil && rec.Active() && rec.Owner == owner &&
+			rec.NormalizedBondMode() == BondModeMiningRewards && !rec.FullyBonded() {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *InMemoryState) AccrueBondFromReward(owner string, rewardDust uint64) uint64 {
 	if s == nil || owner == "" || rewardDust == 0 {
 		return 0

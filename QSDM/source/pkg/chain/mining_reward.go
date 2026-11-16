@@ -38,10 +38,23 @@ func (a *EnrollmentApplier) ApplyMiningRewardTx(tx *mempool.Tx) error {
 	}
 	before := cloneable.Clone()
 	rewardDust := balanceToDust(tx.Amount)
-	lockedDust := a.State.AccrueBondFromReward(tx.Recipient, rewardDust)
+	// A PULSE escrow reward belongs to its member: any deferred bond is the
+	// member's, and a pooled reward must never fill one (the escrow account
+	// would then hold less than the proofs it records), so the producer pools
+	// only members without an outstanding bond and this refuses otherwise.
+	bondOwner := tx.Recipient
+	_, member, escrow := ParsePulseEscrow(tx.Recipient)
+	if escrow {
+		bondOwner = member
+	}
+	lockedDust := a.State.AccrueBondFromReward(bondOwner, rewardDust)
 	if lockedDust > rewardDust {
 		_ = cloneable.Restore(before)
 		return errors.New("chain: enrollment locked more than the protocol reward")
+	}
+	if escrow && lockedDust > 0 {
+		_ = cloneable.Restore(before)
+		return ErrPulseBondLocked
 	}
 	liquidAmount := tx.Amount - dustToBalance(lockedDust)
 	if liquidAmount < 0 {
