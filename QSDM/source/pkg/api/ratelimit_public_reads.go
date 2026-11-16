@@ -29,6 +29,11 @@ func isHighFrequencyPublicReadPath(path, method string) bool {
 	if path == "/api/v1/tasks" || path == "/api/v1/tasks/state" || path == "/api/v1/tasks/actions" {
 		return true
 	}
+	// PULSE: the hosted pool polls /pulse/state every few seconds and Hive
+	// members poll both; same public-ledger posture as /tasks/state.
+	if path == "/api/v1/pulse/state" || path == "/api/v1/pulse/member" {
+		return true
+	}
 	return strings.HasPrefix(path, "/api/v1/tasks/")
 }
 

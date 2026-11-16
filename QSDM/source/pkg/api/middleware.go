@@ -328,6 +328,14 @@ func isPublicEndpoint(path string) bool {
 		// in the body, verified before mempool admission.
 		"/api/v1/qsdm20/tokens",
 		"/api/v1/qsdm20/submit",
+		// PULSE (pool settlement): the rule's parameters, a pool's escrow and
+		// a member lookup are public ledger data that miners and pools read
+		// without a session; a join, leave, settlement or reclaim is
+		// authorized by the ML-DSA signature in the body (sender =
+		// hex(sha256(public_key))), verified before mempool admission.
+		"/api/v1/pulse/state",
+		"/api/v1/pulse/member",
+		"/api/v1/pulse/submit-signed",
 		"/api/v1/monitoring/ngc-proof",
 		"/api/v1/monitoring/ngc-challenge",
 		"/api/v1/monitoring/ngc-proofs",

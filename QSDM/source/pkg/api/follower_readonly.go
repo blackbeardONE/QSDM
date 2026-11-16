@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/envcompat"
 )
 
@@ -90,7 +91,8 @@ func (policy followerWriteAdmission) middleware(next http.Handler) http.Handler 
 		}
 		allowed := !policy.readOnly || followerReadOnlyAllows(r.Method, r.URL.Path)
 		if policy.recoverySignedTransfers {
-			allowed = recoverySignedTransfersAllows(r)
+			allowed = recoverySignedTransfersAllows(r) ||
+				(isPulseSubmitRequest(r) && pulseSubmitConfigured())
 		}
 		if allowed {
 			next.ServeHTTP(w, r)
@@ -165,4 +167,27 @@ func followerReadOnlyAllows(method, path string) bool {
 		return true
 	}
 	return path == "/api/v1/monitoring/ngc-proof"
+}
+
+// pulseSubmitPath is the PULSE pool settlement submit route. Under the
+// signed-transfers-only recovery policy it is admitted, exactly like
+// /wallet/submit-signed, as soon as the PULSE rule is configured (a non-zero
+// activation height, a release default since rc1114): every request is
+// authorized by the ML-DSA signature in its body, and the handler and the
+// mempool refuse it before the activation height, over a pool's fee cap, early
+// reclaims and replays. rc1114 left it closed, so the hosted pool's
+// settlements (posted to the producer's loopback API) and members' joins would
+// all have been refused with 503. A read-only follower still refuses it.
+const pulseSubmitPath = "/api/v1/pulse/submit-signed"
+
+// isPulseSubmitRequest applies the checks of isRecoverySignedTransferRequest to
+// the PULSE submit route: POST, the exact canonical path, no alias.
+func isPulseSubmitRequest(r *http.Request) bool {
+	return r.Method == http.MethodPost && r.URL.Path == pulseSubmitPath &&
+		(r.URL.RawPath == "" || r.URL.RawPath == pulseSubmitPath) &&
+		r.URL.EscapedPath() == pulseSubmitPath
+}
+
+func pulseSubmitConfigured() bool {
+	return chain.PulseParamsSnapshot().ActivationHeight > 0
 }
