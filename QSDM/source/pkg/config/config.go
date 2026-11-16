@@ -204,8 +204,9 @@ type Config struct {
 	EnrollmentStateRootActivationHeight uint64
 
 	// RC1113RulesActivationHeight is the first height of the rc1113 security rules (chain.SetRC1113RulesHeight;
-	// [consensus] rc1113_rules_activation_height or QSDM_RC1113_RULES_ACTIVATION_HEIGHT). Zero = never. It changes
-	// what blocks are valid, so every node must use the same value; the rc1113 release sets it.
+	// [consensus] rc1113_rules_activation_height or QSDM_RC1113_RULES_ACTIVATION_HEIGHT). It changes what blocks are
+	// valid, so every node must use the same value. Unset (or 0) means RC1113RulesDefaultActivationHeight, compiled into
+	// the release like rc1112's 1,190,000, so no node's settings need a change; a non-zero key or env value overrides it.
 	RC1113RulesActivationHeight uint64
 
 	// PoEActivationHeight is the first height at which signed wallet
@@ -692,7 +693,14 @@ func loadConfigFile(path string, cfg *Config) error {
 }
 
 // applyDefaults sets default values for unset configuration fields
+// RC1113RulesDefaultActivationHeight is the rc1113 rules height of the rc1113 release (owner, 2026-11-15: block
+// 1,230,000, about 29 November 2026). Every node on this release uses it unless its config names another value.
+const RC1113RulesDefaultActivationHeight uint64 = 1_230_000
+
 func applyDefaults(cfg *Config) {
+	if cfg.RC1113RulesActivationHeight == 0 {
+		cfg.RC1113RulesActivationHeight = RC1113RulesDefaultActivationHeight
+	}
 	if cfg.NodeRole == "" {
 		cfg.NodeRole = NodeRoleValidator
 	}

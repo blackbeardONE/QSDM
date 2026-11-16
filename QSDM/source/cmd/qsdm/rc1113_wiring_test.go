@@ -29,30 +29,30 @@ func rc1113LoadCfg(t *testing.T, toml string) *config.Config {
 	return cfg
 }
 
-// The replay applies the configured height to the chain, and an unset key leaves the rules off (0 = never).
+// The replay applies the configured height to the chain; an unset key gives the release default 1,230,000.
 func TestRC1113RulesHeightReachesChainThroughReplaySettings(t *testing.T) {
 	base := rc1113LoadCfg(t, "[consensus]\n")
 	t.Cleanup(func() { hl1ReplayConsensusSettings(base); chain.SetRC1113RulesHeight(0) })
 
-	cfg := rc1113LoadCfg(t, "[consensus]\nrc1113_rules_activation_height = 1230000\n")
+	cfg := rc1113LoadCfg(t, "[consensus]\nrc1113_rules_activation_height = 1235000\n")
 	hl1ReplayConsensusSettings(cfg)
-	if got := chain.RC1113RulesHeight(); got != 1230000 {
-		t.Fatalf("config key: chain height %d, want 1230000", got)
+	if got := chain.RC1113RulesHeight(); got != 1235000 {
+		t.Fatalf("config key: chain height %d, want 1235000", got)
 	}
 
-	t.Setenv("QSDM_RC1113_RULES_ACTIVATION_HEIGHT", "1230000")
+	t.Setenv("QSDM_RC1113_RULES_ACTIVATION_HEIGHT", "1240000")
 	cfg = rc1113LoadCfg(t, "[consensus]\n")
 	chain.SetRC1113RulesHeight(0)
 	hl1ReplayConsensusSettings(cfg)
-	if got := chain.RC1113RulesHeight(); got != 1230000 {
-		t.Fatalf("env: chain height %d, want 1230000", got)
+	if got := chain.RC1113RulesHeight(); got != 1240000 {
+		t.Fatalf("env: chain height %d, want 1240000", got)
 	}
 
 	os.Unsetenv("QSDM_RC1113_RULES_ACTIVATION_HEIGHT")
 	chain.SetRC1113RulesHeight(77)
 	hl1ReplayConsensusSettings(rc1113LoadCfg(t, "[consensus]\n"))
-	if got := chain.RC1113RulesHeight(); got != 0 {
-		t.Fatalf("unset: chain height %d, want 0 (never)", got)
+	if got := chain.RC1113RulesHeight(); got != 1230000 {
+		t.Fatalf("unset: chain height %d, want the release default 1230000", got)
 	}
 }
 
