@@ -239,6 +239,9 @@ func (s *TaskStateStore) applyAction(action TaskAction, allowLegacyResourceProof
 				return nil, err
 			}
 		}
+		if err := s.checkTaskRegisterFreshLocked(action, currentHeight); err != nil {
+			return nil, err
+		}
 		task, err := s.applyTaskCatalogActionLocked(action)
 		if err != nil {
 			return nil, err
