@@ -108,6 +108,10 @@ func (c *CLI) walletCommand(args []string) error {
 		return c.walletSignStreamAction(rest)
 	case "sign-token-tx":
 		return c.walletSignTokenTx(rest)
+	case "sign-pulse-action":
+		return c.walletSignPulseAction(rest)
+	case "sign-pulse-register":
+		return c.walletSignPulseRegister(rest)
 	case "help", "-h", "--help":
 		fmt.Fprint(os.Stdout, walletHelp)
 		return nil
@@ -117,7 +121,7 @@ func (c *CLI) walletCommand(args []string) error {
 }
 
 func walletUsageError() error {
-	return fmt.Errorf("usage: qsdmcli wallet <new|restore|enable-recovery|restore-legacy|export-recovery|show|inspect|sign|verify|sign-tx|sign-task-action|sign-stream-action|sign-token-tx> [flags]\n\n%s", walletHelp)
+	return fmt.Errorf("usage: qsdmcli wallet <new|restore|enable-recovery|restore-legacy|export-recovery|show|inspect|sign|verify|sign-tx|sign-task-action|sign-stream-action|sign-token-tx|sign-pulse-action|sign-pulse-register> [flags]\n\n%s", walletHelp)
 }
 
 const walletHelp = `qsdmcli wallet — self-custody keystore (ML-DSA-87)
@@ -163,6 +167,15 @@ Subcommands:
            POST /api/v1/streams/actions/submit-signed. Reads an action
            or {"action": ...} JSON object, optionally stamps --nonce,
            and writes the signed envelope to stdout.
+  sign-pulse-action
+           Sign a PULSE pool member transaction (join, leave or
+           reclaim) for POST /api/v1/pulse/submit-signed. Reads
+           {"sender", "nonce", "fee", "action": {"op", ...}} (JSON on
+           stdin by default) and writes the signed envelope to stdout.
+  sign-pulse-register
+           Sign a PULSE pool login (--worker NAME optional), proving
+           this wallet holds the payout address. Writes {login,
+           public_key, signature} to stdout.
   sign-token-tx
            Sign a QSDM-20 token transaction (create, transfer, mint,
            burn or renounce; see QSDM_20.md) and write the body of

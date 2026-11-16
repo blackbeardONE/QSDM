@@ -133,6 +133,15 @@ type Config struct {
 	// than spin wheels on guaranteed-reject proofs. Set explicitly
 	// to true via miner.toml or pass --allow-v1 on the CLI.
 	AllowV1 bool `toml:"allow_v1,omitempty"`
+
+	// PULSE pool mode (pool_mode.go). An empty pool_url keeps solo mining,
+	// the default. Pool mode needs the operator keystore: the pool login
+	// and the network proofs are signed with the wallet key.
+	PoolURL             string `toml:"pool_url,omitempty"`
+	PoolBackupURL       string `toml:"pool_backup_url,omitempty"`
+	PoolWorker          string `toml:"pool_worker,omitempty"`
+	PoolFallbackMinutes int    `toml:"pool_fallback_minutes,omitempty"`
+	PoolReceiptsFile    string `toml:"pool_receipts_file,omitempty"`
 }
 
 // v2Config is the subset of Config that LoadV2Context needs.
@@ -1121,6 +1130,12 @@ func realMain(parentCtx context.Context) int {
 		// flag's primary use case is one-off audit / replay runs
 		// where the operator does not want to touch their saved
 		// config. See preflight package for the gate semantics.
+		poolURL          = flag.String("pool-url", "", "PULSE pool API base (e.g. https://qsdm.tech/pool/api); empty = solo mining")
+		poolBackupURL    = flag.String("pool-backup-url", "", "PULSE: a second pool API base tried when the first does not answer")
+		poolWorker       = flag.String("pool-worker", "", "PULSE: worker name shown by the pool (1-32 letters, digits, _ or -)")
+		poolFallbackMins = flag.Int("pool-fallback-minutes", 0, "PULSE: mine solo after the pool is unreachable this long (0 = config, then 5)")
+		poolReceipts     = flag.String("pool-receipts-file", "", "PULSE: append the pool's signed share receipts here (JSON lines)")
+
 		allowV1 = flag.Bool("allow-v1", false, "override preflight: run v1 even if the validator reports v2 active (devnet / replay only — every proof will be rejected on a v2 chain)")
 	)
 	// Consumer-grade flags: --idle-only, --service, --log-file.
@@ -1273,6 +1288,21 @@ func realMain(parentCtx context.Context) int {
 	}
 	if *rewardAddr != "" {
 		cfg.RewardAddr = *rewardAddr
+	}
+	if *poolURL != "" {
+		cfg.PoolURL = strings.TrimRight(*poolURL, "/")
+	}
+	if *poolBackupURL != "" {
+		cfg.PoolBackupURL = strings.TrimRight(*poolBackupURL, "/")
+	}
+	if *poolWorker != "" {
+		cfg.PoolWorker = *poolWorker
+	}
+	if *poolFallbackMins > 0 {
+		cfg.PoolFallbackMinutes = *poolFallbackMins
+	}
+	if *poolReceipts != "" {
+		cfg.PoolReceiptsFile = *poolReceipts
 	}
 	if *batchCount > 0 {
 		cfg.BatchCount = uint32(*batchCount)
@@ -1615,7 +1645,18 @@ func realMain(parentCtx context.Context) int {
 		}()
 	}
 
-	runLoop(ctx, client, challengeFetcher, cfg, v2ctx, idleGateInstance, cudaBackend, events, &attempts)
+	var operatorSigner *operatorProofSigner
+	if v2ctx != nil {
+		operatorSigner = v2ctx.OperatorSigner
+	}
+	pm, err := newPoolMiner(cfg, operatorSigner, client)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "PULSE pool mode:", err)
+		cancel()
+		pollerWG.Wait()
+		return 2
+	}
+	runLoopPool(ctx, client, challengeFetcher, cfg, v2ctx, idleGateInstance, cudaBackend, events, &attempts, pm)
 	pollerWG.Wait()
 
 	events <- Event{Kind: EvShutdown, At: time.Now(), Message: "shutting down"}
@@ -1648,6 +1689,11 @@ func cliWantsContinue() bool {
 // -----------------------------------------------------------------------------
 
 func runLoop(ctx context.Context, client *http.Client, fetcher v2client.ChallengeFetcher, cfg Config, v2ctx *V2Context, gate *idleGate, cudaBackend *cudaSolver, events chan<- Event, attempts *uint64) {
+	runLoopPool(ctx, client, fetcher, cfg, v2ctx, gate, cudaBackend, events, attempts, nil)
+}
+
+// runLoopPool is runLoop with an optional PULSE pool (pm nil = solo).
+func runLoopPool(ctx context.Context, client *http.Client, fetcher v2client.ChallengeFetcher, cfg Config, v2ctx *V2Context, gate *idleGate, cudaBackend *cudaSolver, events chan<- Event, attempts *uint64, pm *poolMiner) {
 	var (
 		currentEpoch uint64 = ^uint64(0)
 		currentDAG   mining.DAG
@@ -1689,13 +1735,32 @@ func runLoop(ctx context.Context, client *http.Client, fetcher v2client.Challeng
 				wasPaused = false
 			}
 		}
-		work, err := fetchWork(ctx, client, cfg.ValidatorURL)
+		pj, perr := pm.job(ctx)
+		if perr != nil {
+			send(Event{Kind: EvError, Message: "pool: " + perr.Error()})
+			sleepOrCancel(ctx, poll)
+			continue
+		}
+		var work *api.MiningWork
+		var err error
+		if pj != nil {
+			work = pj.Work
+		} else {
+			work, err = fetchWork(ctx, client, cfg.ValidatorURL)
+		}
 		if err != nil {
 			send(Event{Kind: EvError, Message: "fetch work: " + err.Error()})
 			sleepOrCancel(ctx, poll)
 			continue
 		}
-		send(Event{Kind: EvConnected, Message: fmt.Sprintf("work received: height=%d", work.Height)})
+		if pj != nil {
+			send(Event{Kind: EvConnected, Message: fmt.Sprintf("pool work received: height=%d job=%s", work.Height, pj.ID)})
+		} else {
+			if pm != nil {
+				send(Event{Kind: EvInfo, Message: pm.poolSummary()})
+			}
+			send(Event{Kind: EvConnected, Message: fmt.Sprintf("work received: height=%d", work.Height)})
+		}
 
 		batchCount := cfg.BatchCount
 		if work.BatchCountMaximum > 0 && batchCount > work.BatchCountMaximum {
@@ -1756,6 +1821,9 @@ func runLoop(ctx context.Context, client *http.Client, fetcher v2client.Challeng
 			Target:     target,
 			DAG:        currentDAG,
 		}
+		if pj != nil && pj.ShareTarget.Cmp(target) > 0 {
+			solverParams.Target = pj.ShareTarget // the pool's easier share target
+		}
 		var res *mining.SolveResult
 		if cudaBackend != nil {
 			res, err = cudaBackend.Solve(sctx, solverParams, nil, cfg.CUDABatchSize, attempts)
@@ -1773,6 +1841,23 @@ func runLoop(ctx context.Context, client *http.Client, fetcher v2client.Challeng
 			}
 			sleepOrCancel(ctx, poll)
 			continue
+		}
+
+		if pj != nil {
+			sres, serr := pm.Share(ctx, pj.ID, res.Proof.Nonce, batchCount)
+			switch {
+			case serr != nil:
+				send(Event{Kind: EvError, Message: "pool share: " + serr.Error()})
+			case sres.Accepted:
+				send(Event{Kind: EvInfo, Message: fmt.Sprintf("pool share accepted (difficulty %d)", sres.Difficulty)})
+			default:
+				send(Event{Kind: EvInfo, Message: "pool share refused: " + sres.Reason})
+			}
+			h := mining.ProofPoWHash(res.Proof.HeaderHash, res.Proof.Nonce, res.Proof.BatchRoot, res.Proof.MixDigest)
+			if !mining.MeetsTarget(h, target) {
+				continue // a share only: look for the next one
+			}
+			send(Event{Kind: EvInfo, Message: "the share also meets the network target: submitting it to the network"})
 		}
 
 		// v2 NVIDIA-locked path: after Solve produced a valid
@@ -1815,6 +1900,11 @@ func runLoop(ctx context.Context, client *http.Client, fetcher v2client.Challeng
 			send(Event{Kind: EvError, Message: "submit: " + err.Error()})
 			sleepOrCancel(ctx, poll)
 			continue
+		}
+		if resp.Accepted && pj != nil {
+			if err := pm.ReportProof(ctx, resp.ProofID); err != nil {
+				send(Event{Kind: EvInfo, Message: "pool: report proof: " + err.Error()})
+			}
 		}
 		if resp.Accepted {
 			send(Event{
