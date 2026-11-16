@@ -215,8 +215,8 @@ type Config struct {
 	PulseActivationHeight   uint64
 	PulseMaxFeeBPS          uint16   // network fee ceiling; 0 = the default 300 bps (3 %)
 	PulsePools              []string // authorized pools: "<pool id>:<ML-DSA-87 public key hex>[:<max fee bps>]"
-	PulsePayeeEpochCapCell  float64  // PULSE payouts per payee per 8,640-block epoch
-	PulseReclaimAfterBlocks uint64   // an unsettled escrowed reward is reclaimable by its owner after this
+	PulsePayeeEpochCapCell  float64  // PULSE payouts per payee per 8,640-block epoch; 0 = the default 2,000 CELL (the solo cap)
+	PulseReclaimAfterBlocks uint64   // an unsettled escrowed reward is reclaimable by its owner after this; 0 = 8,640 blocks
 
 	// PoEActivationHeight is the first height at which signed wallet
 	// transfers must satisfy the Proof-of-Entanglement parent rules

@@ -33,6 +33,17 @@ const PulseEscrowPrefix = "qsdm-pulse-escrow-"
 // 2026-11-16). A pool's own manifest ceiling can only be lower.
 const DefaultPulseMaxFeeBPS uint16 = 300
 
+// DefaultPulseReclaimAfterBlocks is how long an escrowed reward waits for its
+// pool before the member may reclaim it: 8,640 blocks, about one day (owner
+// decision 2026-11-16). A config value overrides it.
+const DefaultPulseReclaimAfterBlocks uint64 = 8640
+
+// DefaultPulsePayeeEpochCapCell is the per-payee PULSE cap per 8,640-block
+// epoch: the same 2,000 CELL as the solo per-owner cap (owner decision
+// 2026-11-16, owner_epoch_cap_cell of the mining config). A config value
+// overrides it.
+const DefaultPulsePayeeEpochCapCell float64 = 2000
+
 // PulseParams are the consensus parameters. Every node must load the same
 // values (the boot line prints PulseParamsFingerprint).
 type PulseParams struct {
@@ -110,6 +121,12 @@ func ParsePulseConfig(height uint64, maxFeeBPS uint16, pools []string, capCell f
 	}
 	if capCell < 0 || capCell != capCell {
 		return p, errors.New("pulse: pulse_payee_epoch_cap_cell must be a positive number")
+	}
+	if capCell == 0 {
+		capCell = DefaultPulsePayeeEpochCapCell
+	}
+	if p.ReclaimAfterBlocks == 0 {
+		p.ReclaimAfterBlocks = DefaultPulseReclaimAfterBlocks
 	}
 	p.PayeeEpochCapDust = balanceToDust(capCell)
 	for i, s := range pools {

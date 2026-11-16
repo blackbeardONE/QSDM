@@ -178,6 +178,34 @@ func TestPulseSetParamsRefusesIncomplete(t *testing.T) {
 	}
 }
 
+// Owner decision 2026-11-16: with an activation height and no explicit value,
+// the reclaim timeout is 8,640 blocks and the per-payee cap is the solo cap
+// (2,000 CELL per epoch); explicit values still win.
+func TestParsePulseConfigDefaults(t *testing.T) {
+	k, _ := pulse.NewKeyPair()
+	pool := string(k.ID()) + ":" + hex.EncodeToString(k.Pub.Bytes())
+	p, err := ParsePulseConfig(5, 0, []string{pool}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ReclaimAfterBlocks != 8640 {
+		t.Fatalf("default reclaim = %d, want 8640", p.ReclaimAfterBlocks)
+	}
+	if p.PayeeEpochCapDust != balanceToDust(2000) {
+		t.Fatalf("default payee cap = %d dust, want 2000 CELL", p.PayeeEpochCapDust)
+	}
+	p, err = ParsePulseConfig(5, 0, []string{pool}, 12.5, 77)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ReclaimAfterBlocks != 77 || p.PayeeEpochCapDust != balanceToDust(12.5) {
+		t.Fatalf("explicit values lost: %+v", p)
+	}
+	if p, _ = ParsePulseConfig(0, 0, nil, 0, 0); p.ReclaimAfterBlocks != 0 || p.PayeeEpochCapDust != 0 {
+		t.Fatalf("defaults applied with the rule off: %+v", p)
+	}
+}
+
 // The whole path: join, escrowed rewards, a settlement that pays every member
 // and the fee directly, then replay protection.
 func TestPulseSettlementPaysMembersDirectly(t *testing.T) {
