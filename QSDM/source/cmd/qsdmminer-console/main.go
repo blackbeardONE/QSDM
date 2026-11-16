@@ -1649,6 +1649,18 @@ func realMain(parentCtx context.Context) int {
 	if v2ctx != nil {
 		operatorSigner = v2ctx.OperatorSigner
 	}
+	// Pool mode signs the pool login with the wallet key even when the
+	// protocol is not v2 (a local devnet or test chain).
+	if operatorSigner == nil && cfg.PoolURL != "" && cfg.OperatorPassphraseFile != "" {
+		loaded, err := loadOperatorProofSigner(cfg.OperatorKeystorePath, cfg.OperatorPassphraseFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "PULSE pool mode: load the wallet key:", err)
+			cancel()
+			pollerWG.Wait()
+			return 2
+		}
+		operatorSigner = loaded
+	}
 	pm, err := newPoolMiner(cfg, operatorSigner, client)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "PULSE pool mode:", err)
