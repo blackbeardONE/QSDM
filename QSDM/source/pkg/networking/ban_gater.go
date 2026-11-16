@@ -47,8 +47,8 @@ func (g *banGater) SetTracker(rt *ReputationTracker) {
 
 // SetExemptPeers marks peers that must never be refused at the transport.
 //
-// A ban is permanent for the life of the process: nothing decays it (DecayAll
-// moves the score, never the Banned flag) and Unban has no production caller.
+// A ban lasts ReputationConfig.BanDuration (24 hours by default since 2026-11-15; before that it was permanent for
+// the life of the process, since DecayAll moved only the score and Unban has no production caller).
 // Before this file that was tolerable, because a ban only dropped payloads. Now
 // it severs the connection and refuses the redial -- so a false positive
 // against the peers a node needs in order to be on the network at all is not a
