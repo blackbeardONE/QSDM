@@ -56,7 +56,7 @@ func (r *PolP2PRelay) readLoop() {
 			log.Printf("[pol-relay] pubsub read error: %v", err)
 			continue
 		}
-		// GHSA-2qx4: content is attributed to the StrictSign author, not the forwarder.
+		// Content is attributed to the StrictSign author, not the forwarder.
 		peer, skip := gossipAttribution(msg, r.selfID)
 		if skip {
 			continue

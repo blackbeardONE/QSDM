@@ -18,7 +18,7 @@ func attrMsg(author, forwarder peer.ID) *pubsub.Message {
 	return &pubsub.Message{Message: m, ReceivedFrom: forwarder}
 }
 
-// GHSA-2qx4: a message authored by one peer and forwarded by another is
+// A message authored by one peer and forwarded by another is
 // attributed to the author.
 func TestGossipAttribution_AuthorNotForwarder(t *testing.T) {
 	author, fwd := peer.ID("author-peer"), peer.ID("honest-forwarder")
@@ -58,7 +58,7 @@ func TestGossipAttribution_SkipsOwnMessages(t *testing.T) {
 }
 
 // The penalty-bearing relay loops must attribute through gossipAttribution,
-// never through msg.ReceivedFrom directly (the GHSA-2qx4 pattern).
+// never through msg.ReceivedFrom directly (the misattribution pattern).
 func TestGossipAttribution_RelayLoopsUseAuthor(t *testing.T) {
 	for _, f := range []string{"bft_relay.go", "evidence_relay.go", "pol_relay.go", "libp2p.go"} {
 		b, err := os.ReadFile(f)

@@ -18,7 +18,7 @@ func taskActionRec(id string) QSDMTaskActionRecord {
 	}
 }
 
-// GHSA-h5gg: a submit (preflight + append) must not re-read the whole ledger;
+// A submit (preflight + append) must not re-read the whole ledger;
 // the ID index is built once and kept current by this process's own appends.
 func TestTaskActionLedger_NoFullScanPerSubmit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "task-actions.ndjson")

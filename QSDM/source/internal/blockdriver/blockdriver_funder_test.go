@@ -7,7 +7,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 )
 
-// GHSA-49pr variant: a funder that cannot cover the due rewards must not fail
+// A funder that cannot cover the due rewards must not fail
 // every block (which ends in the no-seal FREEZE). The payouts stay owed, a
 // heartbeat is sealed, and the rewards are paid once the funder is topped up.
 func TestTick_UnderfundedFunderRetainsPayoutsAndSealsHeartbeat(t *testing.T) {

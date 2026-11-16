@@ -133,7 +133,7 @@ func FuzzHandleGossipSignedTx(f *testing.F) {
 	recipient := strings.Repeat("ab", 32)
 	signed := func(alg SigAlgorithm, nonce uint64) []byte {
 		stx := &SignedTx{Algorithm: alg, Tx: &mempool.Tx{ID: "gossip-tx-1", Recipient: recipient, Amount: 2.5,
-			Fee: 0.001, Nonce: nonce, ContractID: "qsdm/memo/v1", Payload: []byte("hello")}}
+			Fee: 0.001, Nonce: nonce, ContractID: "", Payload: []byte("hello")}}
 		keys.sign(stx)
 		raw, err := json.Marshal(stx)
 		if err != nil {

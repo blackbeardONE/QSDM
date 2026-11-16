@@ -1,6 +1,6 @@
 package api
 
-// GHSA-h5gg, owner decision 2026-11-15: one task action carries at most 4096 bytes of payload (it was 100,000).
+// Decided 2026-11-15: one task action carries at most 4096 bytes of payload (it was 100,000).
 // Larger is refused at submit with 413 and nothing is written to the ledger or the mempool.
 
 import (

@@ -7,7 +7,7 @@ import (
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
 )
 
-// Private finding #3: tx gossip must refuse contract families that peers do
+// Tx gossip must refuse contract families that peers do
 // not relay, before the tx reaches the mempool.
 func TestGossipValidator_RefusesOtherContractFamilies(t *testing.T) {
 	signer := newTestMLDSASigner(t)

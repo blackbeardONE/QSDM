@@ -278,7 +278,7 @@ type Driver struct {
 
 	// underfundedTicks counts ticks whose reward txs the funder could
 	// not cover: the payouts were retained and a heartbeat sealed
-	// instead (GHSA-49pr variant). Non-zero means: top up the funder.
+	// instead. Non-zero means: top up the funder.
 	underfundedTicks atomic.Uint64
 
 	// rewardPenalty is the resolved penalty source. Always
@@ -657,7 +657,7 @@ func (d *Driver) planTxs(height uint64, rewardCell float64, startNonce uint64) (
 			"error", err.Error())
 		return heartbeat()
 	}
-	// GHSA-49pr (2026-11-14) variant: a reward the funder cannot cover
+	// 2026-11-14: a reward the funder cannot cover
 	// fails state application, the block fails with it, every tick
 	// repeats it, and after NoSealTimeout the guard FREEZEs mining for
 	// everyone. Retain the payouts (they stay owed and are paid once the

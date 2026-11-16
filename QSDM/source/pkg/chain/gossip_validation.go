@@ -80,7 +80,7 @@ func (gv *GossipValidator) HandleIncoming(pool *mempool.Mempool, stx *SignedTx) 
 	}
 	tx := stx.Tx
 
-	// Private finding #3 (2026-11-06): gossip admitted a SignedTx of ANY
+	// 2026-11-06: gossip admitted a SignedTx of ANY
 	// contract family after checking only signature, fee and nonce. Only the
 	// families a peer may legitimately relay are admitted, and the check runs
 	// first, before the signature work.

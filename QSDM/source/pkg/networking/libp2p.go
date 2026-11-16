@@ -374,7 +374,7 @@ func (n *Network) handleMessages() {
 		txIng := n.txGossip
 		handler := n.msgHandler
 		n.mu.Unlock()
-		// GHSA-2qx4: invalid-tx penalties go to the StrictSign author, not the forwarder.
+		// Invalid-tx penalties go to the StrictSign author, not the forwarder.
 		if author, skip := gossipAttribution(msg, n.Host.ID().String()); !skip && txIng != nil && txIng.TryConsumeGossip(author, msg.Data) {
 			continue
 		}

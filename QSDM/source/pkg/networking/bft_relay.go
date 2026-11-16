@@ -50,7 +50,7 @@ func (r *BFTP2PRelay) readLoop() {
 			log.Printf("[bft-relay] pubsub read error: %v", err)
 			continue
 		}
-		// GHSA-2qx4: content is attributed to the StrictSign author, not the forwarder.
+		// Content is attributed to the StrictSign author, not the forwarder.
 		peer, skip := gossipAttribution(msg, r.selfID)
 		if skip {
 			continue

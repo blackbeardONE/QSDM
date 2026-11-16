@@ -1,6 +1,6 @@
 package networking
 
-// GHSA-2qx4, end to end through the real relay loop: attacker A is connected only to the honest forwarder F, and F
+// End to end through the real relay loop: attacker A is connected only to the honest forwarder F, and F
 // only to the victim V. A publishes one anchor propose and three conflicting proposes at one (height, round). V's BFT
 // relay must charge A (the StrictSign author), never F (the mesh neighbour that delivered them). Before the fix V
 // banned F at the third conflict, as in the report.

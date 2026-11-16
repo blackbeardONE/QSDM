@@ -7,7 +7,7 @@ import (
 // gossipAttribution returns the identity a gossip message's CONTENT is
 // attributed to, and whether the read loop should skip the message as our own.
 //
-// GHSA-2qx4 (2026-11-14): the relay read loops used msg.ReceivedFrom, the direct
+// 2026-11-14: the relay read loops used msg.ReceivedFrom, the direct
 // mesh neighbour that forwarded the message, as the identity for every content
 // penalty (BFT equivocation, invalid transaction, invalid evidence, rate limit).
 // GossipSub forwards any message that passes the transport guard, so a peer

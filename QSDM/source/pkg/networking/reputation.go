@@ -76,8 +76,8 @@ func DefaultReputationConfig() ReputationConfig {
 }
 
 // DefaultBanDuration is the owner's decision of 2026-11-15: a transport ban expires after 24 hours. Before it, a ban
-// lasted until the banning process restarted (Unban has no production caller), so one false positive - see
-// GHSA-2qx4 - partitioned a node from a peer it needed for good.
+// lasted until the banning process restarted (Unban has no production caller), so one false positive - for
+// example a penalty charged to a forwarder - partitioned a node from a peer it needed for good.
 const DefaultBanDuration = 24 * time.Hour
 
 // PeerRecord holds a single peer's reputation data.

@@ -106,7 +106,7 @@ func qsdmTaskActionLogPath() string {
 	return strings.TrimSpace(os.Getenv(qsdmTaskActionLogPathEnv))
 }
 
-// QSDMTaskActionMaxPayloadBytes caps one task action's payload (owner decision 2026-11-15, GHSA-h5gg). Only the
+// QSDMTaskActionMaxPayloadBytes caps one task action's payload (decided 2026-11-15). Only the
 // submit route checks it; what the chain accepts is unchanged.
 const QSDMTaskActionMaxPayloadBytes = 4096
 
@@ -138,7 +138,7 @@ func validateQSDMTaskActionEnvelope(env QSDMTaskActionEnvelope) error {
 			return err
 		}
 	}
-	// GHSA-h5gg, owner decision 2026-11-15: at most QSDMTaskActionMaxPayloadBytes of payload per entry (it was
+	// Decided 2026-11-15: at most QSDMTaskActionMaxPayloadBytes of payload per entry (it was
 	// 100,000). The ledger and the chain keep every accepted action; live entries are at most ~700 bytes.
 	if n := len(env.Payload); n > QSDMTaskActionMaxPayloadBytes {
 		return fmt.Errorf("%w: payload is %d bytes; the limit is %d", ErrTaskActionPayloadTooLarge, n, QSDMTaskActionMaxPayloadBytes)
@@ -193,7 +193,7 @@ type qsdmTaskActionAppendResult struct {
 	LastNonce   uint64
 }
 
-// GHSA-h5gg (2026-11-14): every submit scanned the whole ledger twice (the
+// 2026-11-14: every submit scanned the whole ledger twice (the
 // preflight and the append), so the per-request cost grew with a ledger that
 // anyone can grow. The duplicate check only needs the set of envelope IDs; it
 // is kept in memory and rebuilt only when the file is not what this process
