@@ -188,15 +188,33 @@ const getFirstAnsweringPool = async (settings: QsdmPulsePoolSettings) => {
     : new Error('No pool endpoint answered');
 };
 
-// The receipts the miner kept (newest last), at most RECEIPTS_SHOWN.
+const startOfLocalDay = (now: number) => {
+  const day = new Date(now);
+  day.setHours(0, 0, 0, 0);
+  return day.getTime();
+};
+
+// The receipts the miner kept (newest last), at most RECEIPTS_SHOWN, and how
+// many of all of them the pool signed today (local day).
 export const readQsdmPulseReceipts = (
-  receiptsPath: string = getQsdmPulseReceiptsPath()
+  receiptsPath: string = getQsdmPulseReceiptsPath(),
+  now: number = Date.now()
 ) => {
   try {
     const lines = fs
       .readFileSync(receiptsPath, 'utf8')
       .split('\n')
       .filter((line) => line.trim());
+    const dayStart = startOfLocalDay(now);
+    const today = lines.reduce((count, line) => {
+      try {
+        const at = (JSON.parse(line) as { receipt?: { at_unix_ms?: number } })
+          .receipt?.at_unix_ms;
+        return typeof at === 'number' && at >= dayStart ? count + 1 : count;
+      } catch {
+        return count;
+      }
+    }, 0);
     const recent = lines.slice(-RECEIPTS_SHOWN).flatMap((line) => {
       try {
         const parsed = JSON.parse(line) as {
@@ -212,9 +230,9 @@ export const readQsdmPulseReceipts = (
         return [];
       }
     });
-    return { total: lines.length, recent };
+    return { total: lines.length, today, recent };
   } catch {
-    return { total: 0, recent: [] };
+    return { total: 0, today: 0, recent: [] };
   }
 };
 
@@ -245,6 +263,7 @@ export const getQsdmPulsePoolStatus =
       settings,
       address,
       receiptsTotal: receipts.total,
+      receiptsToday: receipts.today,
       recentReceipts: receipts.recent,
       checkedAt: new Date().toISOString(),
     };

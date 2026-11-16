@@ -9,6 +9,7 @@ import {
 } from 'config/qsdmPlatformSupport';
 import {
   isQsdmMinerSystemTaskId,
+  isQsdmPoolMinerSystemTaskId,
   isQsdmMotherHiveSystemTaskId,
   isQsdmSkyFangLinkSystemTaskId,
   QSDM_MOTHER_HIVE_CONTRIBUTOR_SHARE_PERCENT,
@@ -38,6 +39,7 @@ import { formatRoundTimeWithFullUnit, getErrorToDisplay } from 'renderer/utils';
 import { useTaskRoundTime } from '../../hooks/useRoundTime';
 import { formatNumber } from '../../utils';
 
+import { PoolMinerCard } from './components/PoolMinerCard';
 import { PulsePoolPanel } from './components/PulsePoolPanel';
 import { TaskActions } from './components/TaskActions';
 import { TaskDescription } from './components/TaskDescription';
@@ -596,6 +598,7 @@ export function TaskInfo({
   const queryClient = useQueryClient();
   const { data: averageSlotTime } = useAverageSlotTime();
   const isMinerTask = isQsdmMinerSystemTaskId(publicKey);
+  const isPoolMinerTask = isQsdmPoolMinerSystemTaskId(publicKey);
   const isMotherHiveTask = isQsdmMotherHiveSystemTaskId(publicKey);
   const isSkyFangLinkTask = isQsdmSkyFangLinkSystemTaskId(publicKey);
   // Mining needs Windows or Linux with an NVIDIA GPU; on a Mac the panel says
@@ -870,7 +873,13 @@ export function TaskInfo({
         </div>
       )}
 
-      {isMinerTask && !miningUnsupported && <PulsePoolPanel />}
+      {isMinerTask &&
+        !miningUnsupported &&
+        (isPoolMinerTask ? (
+          <PoolMinerCard isRunning={Boolean(isRunning)} />
+        ) : (
+          <PulsePoolPanel />
+        ))}
 
       {isSkyFangLinkTask && (
         <SkyFangLinkPanel

@@ -1,5 +1,14 @@
 export const QSDM_MINER_SYSTEM_TASK_ID = 'qsdm-system-miner';
 export const QSDM_MINER_SYSTEM_TASK_METADATA_ID = 'qsdm-system-miner-metadata';
+// QSDM Pool Miner: the same packaged miner and GPU enrollment as QSDM Miner,
+// started in PULSE pool mode with the defaults (one button, no settings).
+export const QSDM_POOL_MINER_SYSTEM_TASK_ID = 'qsdm-system-pool-miner';
+export const QSDM_POOL_MINER_SYSTEM_TASK_METADATA_ID =
+  'qsdm-system-pool-miner-metadata';
+// PULSE payouts start at this block (the rc1114 consensus default). Before it
+// the Pool Miner task mines solo.
+export const QSDM_PULSE_ACTIVATION_HEIGHT = 1_210_000;
+export const QSDM_PULSE_ACTIVATION_DATE_TEXT = 'about 26-27 November';
 // Protocol miners lock the validator-advertised enrollment bond. They do not
 // also pay a separate Hive task stake.
 export const QSDM_MINER_MIN_STAKE_CELL = 0;
@@ -96,6 +105,7 @@ export const QSDM_SKYFANG_LINK_REWARD_POOL_TARGET_CELL = readPositiveCellEnv(
 
 export const QSDM_SYSTEM_TASK_IDS = [
   QSDM_MINER_SYSTEM_TASK_ID,
+  QSDM_POOL_MINER_SYSTEM_TASK_ID,
   QSDM_EDGE_WORKER_SYSTEM_TASK_ID,
   QSDM_EDGE_WORKER_GPU_SYSTEM_TASK_ID,
   QSDM_EDGE_WORKER_RAM_SYSTEM_TASK_ID,
@@ -106,9 +116,27 @@ export const QSDM_SYSTEM_TASK_IDS = [
 export const QSDM_HIVE_INTERNAL_TASK_ID = 'qsdm-hive-local-task';
 export const QSDM_HIVE_INTERNAL_TASK_IDS = [QSDM_HIVE_INTERNAL_TASK_ID];
 
+export const isQsdmPoolMinerSystemTaskId = (taskId?: string | null) =>
+  taskId === QSDM_POOL_MINER_SYSTEM_TASK_ID ||
+  taskId === QSDM_POOL_MINER_SYSTEM_TASK_METADATA_ID;
+
+// True for both miner tasks (solo and pool): they share the packaged miner,
+// the GPU enrollment, the protocol rewards and the no-stake rule.
 export const isQsdmMinerSystemTaskId = (taskId?: string | null) =>
   taskId === QSDM_MINER_SYSTEM_TASK_ID ||
-  taskId === QSDM_MINER_SYSTEM_TASK_METADATA_ID;
+  taskId === QSDM_MINER_SYSTEM_TASK_METADATA_ID ||
+  isQsdmPoolMinerSystemTaskId(taskId);
+
+// The other miner task on this GPU: only one of the two may run at a time.
+export const getQsdmMinerSiblingTaskId = (taskId?: string | null) =>
+  isQsdmPoolMinerSystemTaskId(taskId)
+    ? QSDM_MINER_SYSTEM_TASK_ID
+    : QSDM_POOL_MINER_SYSTEM_TASK_ID;
+
+export const getQsdmMinerSiblingConflictMessage = (taskId?: string | null) =>
+  isQsdmPoolMinerSystemTaskId(taskId)
+    ? 'QSDM Miner is already mining on this GPU. Stop QSDM Miner first, then start QSDM Pool Miner.'
+    : 'QSDM Pool Miner is already mining on this GPU. Stop QSDM Pool Miner first, then start QSDM Miner.';
 
 export const isQsdmEdgeWorkerSystemTaskId = (taskId?: string | null) =>
   taskId === QSDM_EDGE_WORKER_SYSTEM_TASK_ID ||

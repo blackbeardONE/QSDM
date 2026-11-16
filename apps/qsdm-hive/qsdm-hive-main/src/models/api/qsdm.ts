@@ -862,6 +862,8 @@ export interface QsdmPulsePoolStatus {
   reclaimableProofs?: string[];
   chainError?: string;
   receiptsTotal: number;
+  // Receipts the pool signed today (this computer's local day).
+  receiptsToday?: number;
   recentReceipts: QsdmPulseReceiptSummary[];
 }
 

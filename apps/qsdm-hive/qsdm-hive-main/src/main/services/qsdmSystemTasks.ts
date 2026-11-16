@@ -26,6 +26,7 @@ import {
   getQsdmEdgeWorkerResource,
   isQsdmEdgeWorkerSystemTaskId,
   isQsdmMinerSystemTaskId,
+  isQsdmPoolMinerSystemTaskId,
   isQsdmMotherHiveSystemTaskId,
   isQsdmSkyFangLinkSystemTaskId,
   isQsdmSystemTaskId,
@@ -45,6 +46,8 @@ import {
   QSDM_MINER_MIN_STAKE_AMOUNT,
   QSDM_MINER_SYSTEM_TASK_ID,
   QSDM_MINER_SYSTEM_TASK_METADATA_ID,
+  QSDM_POOL_MINER_SYSTEM_TASK_ID,
+  QSDM_POOL_MINER_SYSTEM_TASK_METADATA_ID,
   QSDM_MOTHER_HIVE_CONTRIBUTOR_SHARE_PERCENT,
   QSDM_MOTHER_HIVE_ECOSYSTEM_SHARE_PERCENT,
   QSDM_MOTHER_HIVE_SETTLEMENT_SOURCE,
@@ -104,6 +107,7 @@ import { RawTaskData, RequirementType, TaskMetadata } from 'models';
 import {
   QsdmMiningAccountResponse,
   QsdmMotherHiveStatusResponse,
+  QsdmPulsePoolSettings,
   QsdmTaskActionSubmitResponse,
 } from 'models/api/qsdm';
 import { PublicKey } from 'vendor/qsdm-chain/web3';
@@ -125,6 +129,8 @@ export {
   QSDM_MINER_SYSTEM_TASK_ID,
   QSDM_MINER_MIN_STAKE_AMOUNT,
   QSDM_MINER_SYSTEM_TASK_METADATA_ID,
+  QSDM_POOL_MINER_SYSTEM_TASK_ID,
+  QSDM_POOL_MINER_SYSTEM_TASK_METADATA_ID,
   QSDM_MOTHER_HIVE_CONTRIBUTOR_SHARE_PERCENT,
   QSDM_MOTHER_HIVE_ECOSYSTEM_SHARE_PERCENT,
   QSDM_MOTHER_HIVE_SETTLEMENT_SOURCE,
@@ -295,6 +301,9 @@ export type QsdmMinerRewardAddressUpdateResult = QsdmMinerRewardAddressInfo & {
 export const isQsdmMinerSystemTask = (taskId?: string | null) =>
   isQsdmMinerSystemTaskId(taskId);
 
+export const isQsdmPoolMinerSystemTask = (taskId?: string | null) =>
+  isQsdmPoolMinerSystemTaskId(taskId);
+
 export const isQsdmEdgeWorkerSystemTask = (taskId?: string | null) =>
   isQsdmEdgeWorkerSystemTaskId(taskId);
 
@@ -357,6 +366,29 @@ export const createQsdmMinerSystemTask = (
   minimum_stake_amount: QSDM_MINER_MIN_STAKE_AMOUNT,
   task_type: 'CELL',
 });
+
+// QSDM Pool Miner: one button for people who do not want settings. Same miner,
+// GPU enrollment and protocol rewards as QSDM Miner, in PULSE pool mode with
+// the defaults. Only one of the two miner tasks runs at a time.
+export const createQsdmPoolMinerSystemTask = (
+  overrides: Partial<RawTaskData> = {}
+): RawTaskData =>
+  createQsdmMinerSystemTask({
+    ...overrides,
+    task_id: QSDM_POOL_MINER_SYSTEM_TASK_ID,
+    task_name: 'QSDM Pool Miner',
+    task_audit_program: QSDM_POOL_MINER_SYSTEM_TASK_ID,
+    task_metadata: QSDM_POOL_MINER_SYSTEM_TASK_METADATA_ID,
+    task_description:
+      'Mine with the QSDM pool in one click. Hive sets everything up: your wallet, your NVIDIA GPU and the pool. The network pays you every block by your share of the pool. Pool fee 1%. If the pool is unreachable, it mines solo and returns to the pool by itself.',
+    task_vars: JSON.stringify({
+      qsdm_system_task: true,
+      no_expiry: true,
+      reward_source: 'protocol-mining-emission',
+      hive_task_bounty: false,
+      pulse_pool: true,
+    }),
+  });
 
 type QsdmEdgeWorkerTaskDefinition = {
   taskId: string;
@@ -634,6 +666,10 @@ export const getQsdmSystemTaskById = (
   taskId: string,
   overrides: Partial<RawTaskData> = {}
 ): RawTaskData | null => {
+  if (isQsdmPoolMinerSystemTask(taskId)) {
+    return createQsdmPoolMinerSystemTask(overrides);
+  }
+
   if (isQsdmMinerSystemTask(taskId)) {
     return createQsdmMinerSystemTask(overrides);
   }
@@ -670,6 +706,9 @@ export const mergeQsdmSystemTasks = (tasks: RawTaskData[]) => {
 
   return [
     createQsdmMinerSystemTask(systemTasksById[QSDM_MINER_SYSTEM_TASK_ID]),
+    createQsdmPoolMinerSystemTask(
+      systemTasksById[QSDM_POOL_MINER_SYSTEM_TASK_ID]
+    ),
     createQsdmEdgeWorkerSystemTask(
       systemTasksById[QSDM_EDGE_WORKER_SYSTEM_TASK_ID]
     ),
@@ -692,6 +731,51 @@ export const mergeQsdmSystemTasks = (tasks: RawTaskData[]) => {
 export const getQsdmSystemTaskMetadata = (
   metadataCID: string
 ): TaskMetadata | null => {
+  if (isQsdmPoolMinerSystemTask(metadataCID)) {
+    return {
+      author: 'QSDM',
+      description:
+        (isQsdmMiningPlatform(process.platform)
+          ? ''
+          : `${QSDM_MINING_UNSUPPORTED_MESSAGE} `) +
+        'Mine with the QSDM pool in one click: no settings and no command line. Start it, answer the questions once, and it mines. Your rewards collect in an escrow nobody can spend, and the network pays you every block by your share of the pool. Pool fee 1%. You can leave the pool any time.',
+      repositoryUrl: QSDM_MINER_SOURCE_URL,
+      createdAt: 0,
+      imageUrl: QSDM_MINER_SYSTEM_TASK_ID,
+      migrationDescription: '',
+      requirementsTags: [
+        {
+          type: RequirementType.OS,
+          value: process.platform,
+          description:
+            'Uses the QSDM miner packaged with Hive on this computer.',
+        },
+        {
+          type: RequirementType.ARCHITECTURE,
+          value: 'NVIDIA Turing+ / CUDA CC 7.5+',
+          description:
+            'Requires an NVIDIA GPU visible to nvidia-smi, the same as QSDM Miner.',
+        },
+        {
+          type: RequirementType.NETWORK,
+          value: 'QSDM pool (PULSE)',
+          description:
+            'Sends shares to the QSDM pool at qsdm.tech/pool and network proofs to QSDM Core. Mines solo while the pool is unreachable.',
+        },
+      ],
+      infoUrl: 'https://qsdm.tech/pool',
+      tags: [
+        'QSDM',
+        'CELL',
+        'Pool',
+        'One click',
+        'NVIDIA GPU Required',
+        'CC 7.5+',
+        'No Expiry',
+      ],
+    };
+  }
+
   if (isQsdmMinerSystemTask(metadataCID)) {
     return {
       author: 'QSDM',
@@ -2928,6 +3012,33 @@ const isEnabledEnvironmentFlag = (value?: string) =>
 // With an unlocked Hive wallet, the operator signing flags point the miner at
 // Hive's signer keystore and Hive's per-launch passphrase FILE. They are paths
 // only and override operator_* lines in miner.toml (miner CLI precedence).
+// How the miner process uses the pool this time: 'settings' follows the Miner
+// task's pool panel (off by default); 'force-on' is the Pool Miner task in pool
+// mode with its saved or default settings; 'off' is solo (the Pool Miner task
+// before the PULSE rule is active).
+export type QsdmMinerPulseMode = 'settings' | 'force-on' | 'off';
+
+export const resolveQsdmMinerPulseArgs = (
+  mode: QsdmMinerPulseMode,
+  settings: QsdmPulsePoolSettings = getQsdmPulseSettings()
+) => {
+  if (mode === 'off') return [];
+  if (mode === 'force-on') {
+    return buildQsdmPulseMinerArgs({ ...settings, enabled: true });
+  }
+  return buildQsdmPulseMinerArgs(settings);
+};
+
+export type QsdmMinerStartOptions = {
+  pulse?: QsdmMinerPulseMode;
+  // The task whose log also gets the miner's lines (the Pool Miner task).
+  mirrorLogTo?: string | null;
+};
+
+// Whether a running miner's command line is in pool mode.
+export const isQsdmMinerCommandLineInPoolMode = (commandLine?: string) =>
+  /(^|\s)--pool-url=/.test(commandLine || '');
+
 export const buildQsdmMinerLaunchArgs = ({
   configPath,
   logPath,
@@ -3541,65 +3652,109 @@ export const adoptQsdmMinerSystemProcess = (
   };
 };
 
-const startOrAdoptQsdmMinerSystemProcessUnlocked =
-  async (): Promise<QsdmManagedSystemProcess> => {
-    const processInfo = await getQsdmMinerSystemProcessInfo();
-    if (processInfo) {
-      await assertQsdmMinerEnrollmentReady();
-      await stopExtraQsdmMinerSystemProcesses(processInfo.pid);
-      return adoptQsdmMinerSystemProcess(processInfo);
-    }
+const waitForPidExit = async (pid: number, timeoutMs = 10000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (isPidAlive(pid) && Date.now() < deadline) {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 250);
+    });
+  }
+  return !isPidAlive(pid);
+};
 
-    const unmanagedProcesses = await getQsdmMinerSystemProcesses();
-    if (unmanagedProcesses.length > 0) {
-      writeTaskLog(
-        QSDM_MINER_SYSTEM_TASK_ID,
-        `Ignoring ${unmanagedProcesses.length} legacy or externally managed miner process(es); Hive only adopts its packaged CUDA miner.`
-      );
-    }
-
-    try {
-      return await startQsdmMinerSystemProcess();
-    } catch (error) {
-      // A previous AppImage miner can become visible between the initial probe
-      // and spawn, or can outlive an unclean Electron shutdown. If the new
-      // process loses that single-instance race, adopt the compatible process
-      // instead of reporting a false configuration failure while it mines.
-      const collisionProcess = await getQsdmMinerSystemProcessInfo();
-      if (!collisionProcess) {
-        throw error;
-      }
-
-      await assertQsdmMinerEnrollmentReady();
-      await stopExtraQsdmMinerSystemProcesses(collisionProcess.pid);
-      writeTaskLog(
-        QSDM_MINER_SYSTEM_TASK_ID,
-        `Miner launch collided with an existing compatible process; adopting pid=${collisionProcess.pid}`
-      );
-      return adoptQsdmMinerSystemProcess(collisionProcess);
-    }
-  };
-
-export const startOrAdoptQsdmMinerSystemProcess =
-  async (): Promise<QsdmManagedSystemProcess> => {
-    assertQsdmMiningPlatform();
-    if (qsdmMinerStartSingleFlight.isRunning) {
-      writeTaskLog(
-        QSDM_MINER_SYSTEM_TASK_ID,
-        'Joining the in-flight QSDM Miner startup instead of launching a duplicate process.'
-      );
-    }
-
-    return qsdmMinerStartSingleFlight.run(
-      startOrAdoptQsdmMinerSystemProcessUnlocked
+const startOrAdoptQsdmMinerSystemProcessUnlocked = async (
+  options: QsdmMinerStartOptions = {}
+): Promise<QsdmManagedSystemProcess> => {
+  qsdmMinerLogMirrorTaskId = options.mirrorLogTo || null;
+  const wantPool =
+    resolveQsdmMinerPulseArgs(options.pulse || 'settings').length > 0;
+  let processInfo = await getQsdmMinerSystemProcessInfo();
+  if (
+    processInfo &&
+    isQsdmMinerCommandLineInPoolMode(processInfo.commandLine) !== wantPool
+  ) {
+    // A miner left from the other miner task (or an earlier run) is in the
+    // other mode: stop it and start this task's miner instead of adopting it.
+    writeTaskLog(
+      QSDM_MINER_SYSTEM_TASK_ID,
+      `Stopping the running miner pid=${processInfo.pid}: it is in ${
+        wantPool ? 'solo' : 'pool'
+      } mode and this task mines in ${wantPool ? 'pool' : 'solo'} mode.`
     );
-  };
-
-const writeTaskLog = (taskId: string, message: string) => {
-  if (!message) {
-    return;
+    try {
+      process.kill(processInfo.pid, 'SIGTERM');
+    } catch (error: any) {
+      writeTaskLog(
+        QSDM_MINER_SYSTEM_TASK_ID,
+        `Could not stop miner pid=${processInfo.pid}: ${
+          error?.message || error
+        }`
+      );
+    }
+    if (!(await waitForPidExit(processInfo.pid))) {
+      throw new Error(
+        'A QSDM miner in the other mode is still running on this GPU. Stop the other miner task, then try again.'
+      );
+    }
+    processInfo = await getQsdmMinerSystemProcessInfo();
+  }
+  if (processInfo) {
+    await assertQsdmMinerEnrollmentReady();
+    await stopExtraQsdmMinerSystemProcesses(processInfo.pid);
+    return adoptQsdmMinerSystemProcess(processInfo);
   }
 
+  const unmanagedProcesses = await getQsdmMinerSystemProcesses();
+  if (unmanagedProcesses.length > 0) {
+    writeTaskLog(
+      QSDM_MINER_SYSTEM_TASK_ID,
+      `Ignoring ${unmanagedProcesses.length} legacy or externally managed miner process(es); Hive only adopts its packaged CUDA miner.`
+    );
+  }
+
+  try {
+    return await startQsdmMinerSystemProcess(options);
+  } catch (error) {
+    // A previous AppImage miner can become visible between the initial probe
+    // and spawn, or can outlive an unclean Electron shutdown. If the new
+    // process loses that single-instance race, adopt the compatible process
+    // instead of reporting a false configuration failure while it mines.
+    const collisionProcess = await getQsdmMinerSystemProcessInfo();
+    if (!collisionProcess) {
+      throw error;
+    }
+
+    await assertQsdmMinerEnrollmentReady();
+    await stopExtraQsdmMinerSystemProcesses(collisionProcess.pid);
+    writeTaskLog(
+      QSDM_MINER_SYSTEM_TASK_ID,
+      `Miner launch collided with an existing compatible process; adopting pid=${collisionProcess.pid}`
+    );
+    return adoptQsdmMinerSystemProcess(collisionProcess);
+  }
+};
+
+export const startOrAdoptQsdmMinerSystemProcess = async (
+  options: QsdmMinerStartOptions = {}
+): Promise<QsdmManagedSystemProcess> => {
+  assertQsdmMiningPlatform();
+  if (qsdmMinerStartSingleFlight.isRunning) {
+    writeTaskLog(
+      QSDM_MINER_SYSTEM_TASK_ID,
+      'Joining the in-flight QSDM Miner startup instead of launching a duplicate process.'
+    );
+  }
+
+  return qsdmMinerStartSingleFlight.run(() =>
+    startOrAdoptQsdmMinerSystemProcessUnlocked(options)
+  );
+};
+
+// While the Pool Miner task runs the miner, the miner's log lines also go to
+// that task's log, so its log view is not empty.
+let qsdmMinerLogMirrorTaskId: string | null = null;
+
+const appendTaskLog = (taskId: string, message: string) => {
   const taskDir = path.join(getAppDataPath(), 'namespace', taskId);
   fs.mkdirSync(taskDir, { recursive: true });
   fs.appendFileSync(
@@ -3607,6 +3762,24 @@ const writeTaskLog = (taskId: string, message: string) => {
     `[${new Date().toISOString()}] ${message}\n`
   );
 };
+
+const writeTaskLog = (taskId: string, message: string) => {
+  if (!message) {
+    return;
+  }
+
+  appendTaskLog(taskId, message);
+  if (
+    taskId === QSDM_MINER_SYSTEM_TASK_ID &&
+    qsdmMinerLogMirrorTaskId &&
+    qsdmMinerLogMirrorTaskId !== taskId
+  ) {
+    appendTaskLog(qsdmMinerLogMirrorTaskId, message);
+  }
+};
+
+export const writeQsdmSystemTaskLog = (taskId: string, message: string) =>
+  writeTaskLog(taskId, message);
 
 const getEdgeWorkerDirectory = (taskId: string) =>
   path.join(getAppDataPath(), 'namespace', taskId);
@@ -4360,7 +4533,9 @@ export const buildProcessStartupExitDetail = (
   return `${label} exited during startup with code ${code} and signal ${signal}.${protocolDetail}${operatorSigningDetail} Log: ${logPath}.${logDetail}`;
 };
 
-export const startQsdmMinerSystemProcess = async (): Promise<{
+export const startQsdmMinerSystemProcess = async (
+  options: QsdmMinerStartOptions = {}
+): Promise<{
   child: ChildProcess;
   secret: string;
   logPath: string;
@@ -4404,15 +4579,17 @@ export const startQsdmMinerSystemProcess = async (): Promise<{
   );
 
   const pulseSettings = getQsdmPulseSettings();
+  const pulseMode = options.pulse || 'settings';
+  const pulseArgs = resolveQsdmMinerPulseArgs(pulseMode, pulseSettings);
   const args = buildQsdmMinerLaunchArgs({
     configPath,
     logPath,
     operatorSigning,
-    pulse: buildQsdmPulseMinerArgs(pulseSettings),
+    pulse: pulseArgs,
   });
   writeTaskLog(
     QSDM_MINER_SYSTEM_TASK_ID,
-    pulseSettings.enabled
+    pulseArgs.length > 0
       ? `PULSE pool mode: shares go to ${pulseSettings.poolUrl}${
           pulseSettings.backupUrl ? ` (backup ${pulseSettings.backupUrl})` : ''
         }; network proofs still go to QSDM Core. Mining continues solo if the pool is unreachable for ${

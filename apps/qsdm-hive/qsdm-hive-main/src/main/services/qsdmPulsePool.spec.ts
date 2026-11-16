@@ -168,6 +168,7 @@ describe('PULSE receipts', () => {
       readQsdmPulseReceipts(path.join(os.tmpdir(), 'missing-pulse.jsonl'))
     ).toEqual({
       total: 0,
+      today: 0,
       recent: [],
     });
   });

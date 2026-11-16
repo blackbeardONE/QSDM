@@ -20,6 +20,12 @@ import { SystemDbKeys } from 'config/systemDbKeys';
 import cryptoRandomString from 'crypto-random-string';
 import { Application } from 'express';
 import { get } from 'lodash';
+import {
+  getQsdmMinerSiblingConflictMessage,
+  getQsdmMinerSiblingTaskId,
+  isQsdmPoolMinerSystemTaskId,
+  QSDM_POOL_MINER_SYSTEM_TASK_ID,
+} from 'config/qsdmSystemTasks';
 import getUserConfig from 'main/controllers/getUserConfig';
 import db from 'main/db';
 import { getK2NetworkUrl } from 'main/node/helpers/k2NetworkUrl';
@@ -34,6 +40,15 @@ import {
   prepareQsdmMinerV2Config,
 } from 'main/services/qsdmMinerEnrollment';
 import {
+  buildQsdmPoolJoinDetail,
+  planQsdmPoolMinerStart,
+  QsdmPoolMinerStartPlan,
+} from 'main/services/qsdmPoolMinerTask';
+import {
+  getQsdmPulsePoolStatus,
+  performQsdmPulseAction,
+} from 'main/services/qsdmPulsePool';
+import {
   assertQsdmMinerOperatorSigningReady,
   assertQsdmMotherHiveConfigured,
   isQsdmEdgeWorkerSystemTask,
@@ -46,6 +61,7 @@ import {
   startQsdmMotherHiveSystemProcess,
   startQsdmSkyFangLinkSystemProcess,
   startOrAdoptQsdmMinerSystemProcess,
+  writeQsdmSystemTaskLog,
 } from 'main/services/qsdmSystemTasks';
 import { getQsdmTaskStakeOwnership } from 'main/services/qsdmTaskStake';
 import { updateTaskCacheRecord } from 'main/services/tasks-cache-utils';
@@ -130,6 +146,7 @@ const startTask = async (
   const isQsdmNativeTaskRuntime = QSDM_TASK_RUNTIME_MODE === 'qsdm-native';
   const isSystemTask = isQsdmSystemTask(taskAccountPubKey);
   const isSystemMinerTask = isQsdmMinerSystemTask(taskAccountPubKey);
+  const isSystemPoolMinerTask = isQsdmPoolMinerSystemTaskId(taskAccountPubKey);
   const isSystemEdgeWorkerTask = isQsdmEdgeWorkerSystemTask(taskAccountPubKey);
   const isSystemMotherHiveTask = isQsdmMotherHiveSystemTask(taskAccountPubKey);
   const isSystemSkyFangLinkTask =
@@ -178,6 +195,16 @@ const startTask = async (
       return;
     }
   }
+  if (isQsdmNativeTaskRuntime && isSystemMinerTask) {
+    const siblingTaskId = getQsdmMinerSiblingTaskId(taskAccountPubKey);
+    if (await qsdmHiveTasks.getIsTaskRunning(siblingTaskId)) {
+      return throwDetailedError({
+        detailed: getQsdmMinerSiblingConflictMessage(taskAccountPubKey),
+        type: ErrorType.TASK_START,
+      });
+    }
+  }
+
   const mainSystemAccount = await getMainSystemAccountKeypair();
 
   const taskInfo = await qsdmHiveTasks.getTaskState(taskAccountPubKey);
@@ -257,6 +284,38 @@ const startTask = async (
           throw new Error('Miner enrollment did not become active.');
         }
       }
+    } catch (error: any) {
+      return throwDetailedError({
+        detailed: error?.message || error,
+        type: ErrorType.TASK_START,
+      });
+    }
+  }
+
+  let poolMinerPlan: QsdmPoolMinerStartPlan | null = null;
+  if (isQsdmNativeTaskRuntime && isSystemPoolMinerTask) {
+    try {
+      poolMinerPlan = await planQsdmPoolMinerStart({
+        getStatus: getQsdmPulsePoolStatus,
+        confirmJoin: async (prompt) => {
+          const answer = await dialog.showMessageBox({
+            type: 'question',
+            title: 'Join the QSDM pool?',
+            message: 'Mine with the QSDM pool and get paid every block.',
+            detail: buildQsdmPoolJoinDetail(prompt),
+            buttons: ['Join the pool', 'Cancel'],
+            defaultId: 0,
+            cancelId: 1,
+            noLink: true,
+          });
+          return answer.response === 0;
+        },
+        join: () => performQsdmPulseAction({ op: 'join' }),
+      });
+      writeQsdmSystemTaskLog(
+        QSDM_POOL_MINER_SYSTEM_TASK_ID,
+        poolMinerPlan.message
+      );
     } catch (error: any) {
       return throwDetailedError({
         detailed: error?.message || error,
@@ -360,7 +419,14 @@ const startTask = async (
         ? startQsdmMotherHiveSystemProcess()
         : isSystemSkyFangLinkTask
         ? startQsdmSkyFangLinkSystemProcess(taskInfo)
-        : await startOrAdoptQsdmMinerSystemProcess();
+        : await startOrAdoptQsdmMinerSystemProcess(
+            poolMinerPlan
+              ? {
+                  pulse: poolMinerPlan.pulse,
+                  mirrorLogTo: QSDM_POOL_MINER_SYSTEM_TASK_ID,
+                }
+              : { pulse: 'settings', mirrorLogTo: null }
+          );
 
       child.once('exit', async (code, signal) => {
         console.error(
