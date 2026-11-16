@@ -276,6 +276,11 @@ type Driver struct {
 	blocksFailed atomic.Uint64
 	proofsPaid   atomic.Uint64
 
+	// underfundedTicks counts ticks whose reward txs the funder could
+	// not cover: the payouts were retained and a heartbeat sealed
+	// instead (GHSA-49pr variant). Non-zero means: top up the funder.
+	underfundedTicks atomic.Uint64
+
 	// rewardPenalty is the resolved penalty source. Always
 	// non-nil after New (defaulted to noopRewardPenalty
 	// when the operator did not opt into Tier-3) so the
@@ -475,6 +480,9 @@ type Stats struct {
 	PenaltyActive bool
 	// Halted is true after a POST-APPLY outcome.
 	Halted bool
+	// UnderfundedTicks counts ticks that retained payouts because the
+	// funder could not cover them (a heartbeat was sealed instead).
+	UnderfundedTicks uint64
 }
 
 // Stats returns a snapshot of the driver's counters.
@@ -498,6 +506,7 @@ func (d *Driver) Stats() Stats {
 		WithheldDust:     d.withheldDust.Load(),
 		PenaltyActive:    !isNoop,
 		Halted:           d.halted.Load(),
+		UnderfundedTicks: d.underfundedTicks.Load(),
 	}
 }
 
@@ -648,7 +657,41 @@ func (d *Driver) planTxs(height uint64, rewardCell float64, startNonce uint64) (
 			"error", err.Error())
 		return heartbeat()
 	}
+	// GHSA-49pr (2026-11-14) variant: a reward the funder cannot cover
+	// fails state application, the block fails with it, every tick
+	// repeats it, and after NoSealTimeout the guard FREEZEs mining for
+	// everyone. Retain the payouts (they stay owed and are paid once the
+	// funder is topped up) and seal a heartbeat, so mining stays open.
+	if !d.funderCovers(txs) {
+		d.cfg.Ledger.Requeue()
+		d.underfundedTicks.Add(1)
+		d.cfg.Logger.Error("blockdriver: the funder cannot cover the payouts; retained, sealing heartbeat (top up the funder)",
+			"height", height,
+			"claims", len(claims))
+		return heartbeat()
+	}
 	return txs, claims
+}
+
+// funderCovers reports whether the funder's current balance covers every
+// funder-sent tx in txs applied in order, with the applier's own rule
+// (pkg/chain AccountStore: balance < amount+fee is refused).
+func (d *Driver) funderCovers(txs []*mempool.Tx) bool {
+	acc, ok := d.cfg.Accounts.Get(FunderAddress)
+	if !ok || acc == nil {
+		return false
+	}
+	bal := acc.Balance
+	for _, tx := range txs {
+		if tx == nil || tx.Sender != FunderAddress {
+			continue
+		}
+		if bal < tx.Amount+tx.Fee {
+			return false
+		}
+		bal -= tx.Amount + tx.Fee
+	}
+	return true
 }
 
 // release returns every in-flight ID to pending. It is a
