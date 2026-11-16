@@ -178,3 +178,19 @@ func TestPulseSettlementCrossCheckVector(t *testing.T) {
 		t.Fatalf("block state root %s, want %s", got, wantBlockRoot)
 	}
 }
+
+// The replay clone (used for every candidate block) carries the PULSE state: its root equals the live root.
+func TestPulseReplayCloneCarriesPulseState(t *testing.T) {
+	f := newPulseFix(t, activeParams())
+	f.must(f.pulseTx(f.m1, PulseAction{Op: "join", Pool: string(f.pool.ID())}))
+	clone, ok := f.aware.ChainReplayClone().(*EnrollmentAwareApplier)
+	if !ok || clone == nil {
+		t.Fatal("ChainReplayClone did not return an EnrollmentAwareApplier")
+	}
+	if clone.PulseStateStore() == nil || clone.PulseStateStore() == f.ps {
+		t.Fatal("the clone shares or drops the PULSE store")
+	}
+	if clone.StateRoot() != f.aware.StateRoot() {
+		t.Fatalf("clone root %s, live root %s", clone.StateRoot(), f.aware.StateRoot())
+	}
+}
