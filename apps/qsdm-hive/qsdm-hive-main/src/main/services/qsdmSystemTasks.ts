@@ -91,6 +91,10 @@ import {
   getDefaultEdgeRelayTokenFile,
   getDefaultEdgeRelayURL,
 } from 'main/services/qsdmMotherHiveRelayConfig';
+import {
+  buildQsdmPulseMinerArgs,
+  getQsdmPulseSettings,
+} from 'main/services/qsdmPulsePool';
 import { submitQsdmTaskActionIntent } from 'main/services/qsdmTaskActions';
 import {
   getQsdmTaskActionSender,
@@ -2910,6 +2914,9 @@ type QsdmMinerLaunchArgsOptions = {
   logPath: string;
   env?: NodeJS.ProcessEnv;
   operatorSigning?: QsdmMinerOperatorSigningPlan;
+  // PULSE pool mode flags (qsdmPulsePool.buildQsdmPulseMinerArgs); empty or
+  // absent = solo mining, the default.
+  pulse?: string[];
 };
 
 const isEnabledEnvironmentFlag = (value?: string) =>
@@ -2926,6 +2933,7 @@ export const buildQsdmMinerLaunchArgs = ({
   logPath,
   env = process.env,
   operatorSigning,
+  pulse = [],
 }: QsdmMinerLaunchArgsOptions) => {
   const args = [
     `--config=${configPath}`,
@@ -2935,6 +2943,7 @@ export const buildQsdmMinerLaunchArgs = ({
     '--plain',
     '--compute-backend=cuda',
     ...buildQsdmMinerOperatorSigningArgs(operatorSigning),
+    ...pulse,
   ];
 
   if (isEnabledEnvironmentFlag(env.QSDM_MINER_IDLE_ONLY)) {
@@ -4394,11 +4403,23 @@ export const startQsdmMinerSystemProcess = async (): Promise<{
     { recursive: true }
   );
 
+  const pulseSettings = getQsdmPulseSettings();
   const args = buildQsdmMinerLaunchArgs({
     configPath,
     logPath,
     operatorSigning,
+    pulse: buildQsdmPulseMinerArgs(pulseSettings),
   });
+  writeTaskLog(
+    QSDM_MINER_SYSTEM_TASK_ID,
+    pulseSettings.enabled
+      ? `PULSE pool mode: shares go to ${pulseSettings.poolUrl}${
+          pulseSettings.backupUrl ? ` (backup ${pulseSettings.backupUrl})` : ''
+        }; network proofs still go to QSDM Core. Mining continues solo if the pool is unreachable for ${
+          pulseSettings.fallbackMinutes
+        } minutes.`
+      : 'Solo mining (PULSE pool mode is off).'
+  );
 
   writeTaskLog(
     QSDM_MINER_SYSTEM_TASK_ID,

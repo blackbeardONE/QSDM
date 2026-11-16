@@ -114,6 +114,11 @@ import {
 } from './pairQsdmMotherHive';
 import { getRunnedPrivateTasks, setRunnedPrivateTasks } from './privateTasks';
 import {
+  getQsdmPulsePool,
+  runQsdmPulsePoolAction,
+  setQsdmPulsePool,
+} from './qsdmPulsePool';
+import {
   cancelQsdmVirtualComputeJob,
   getQsdmVirtualComputeJobs,
   getQsdmVirtualComputeResources,
@@ -205,6 +210,9 @@ export default {
   getPrivateTasks,
   getQsdmCellAccount,
   getQsdmMinerRewardStatus,
+  getQsdmPulsePool,
+  setQsdmPulsePool,
+  runQsdmPulsePoolAction,
   getQsdmMotherHiveStatus,
   pairQsdmMotherHive,
   disconnectQsdmMotherHive,

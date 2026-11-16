@@ -56,6 +56,9 @@ const endpointToControllerMap: Record<
   [Endpoints.GET_QSDM_CELL_ACCOUNT]: controllers.getQsdmCellAccount,
   [Endpoints.GET_QSDM_MINER_REWARD_STATUS]:
     controllers.getQsdmMinerRewardStatus,
+  [Endpoints.GET_QSDM_PULSE_POOL]: controllers.getQsdmPulsePool,
+  [Endpoints.SET_QSDM_PULSE_POOL]: controllers.setQsdmPulsePool,
+  [Endpoints.RUN_QSDM_PULSE_POOL_ACTION]: controllers.runQsdmPulsePoolAction,
   [Endpoints.GET_QSDM_MOTHER_HIVE_STATUS]: controllers.getQsdmMotherHiveStatus,
   [Endpoints.PAIR_QSDM_MOTHER_HIVE]: controllers.pairQsdmMotherHive,
   [Endpoints.DISCONNECT_QSDM_MOTHER_HIVE]: controllers.disconnectQsdmMotherHive,

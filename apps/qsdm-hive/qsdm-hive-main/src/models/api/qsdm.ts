@@ -820,3 +820,53 @@ export interface QsdmTaskResponse {
   catalog_state_root?: string;
   task: RawTaskData;
 }
+
+// PULSE, the non-custodial mining pool (main/services/qsdmPulsePool.ts).
+export interface QsdmPulsePoolSettings {
+  enabled: boolean;
+  poolUrl: string;
+  backupUrl: string;
+  fallbackMinutes: number;
+  worker: string;
+}
+
+export interface QsdmPulseReceiptSummary {
+  index?: number;
+  difficulty?: number;
+  at_unix_ms?: number;
+  job_id?: string;
+}
+
+export interface QsdmPulsePoolStatus {
+  settings: QsdmPulsePoolSettings;
+  address: string;
+  checkedAt: string;
+  poolAnswering?: string;
+  poolId?: string;
+  poolMode?: string;
+  poolNote?: string;
+  feeBps?: number;
+  feeTo?: string;
+  networkFeeCapBps?: number;
+  payoutFloorCell?: number;
+  poolStats?: Record<string, unknown>;
+  poolError?: string;
+  member?: boolean;
+  memberPool?: string;
+  ruleActive?: boolean;
+  activationHeight?: number;
+  reclaimAfterBlocks?: number;
+  tip?: number;
+  escrowedCell?: number;
+  owedCell?: number;
+  reclaimableProofs?: string[];
+  chainError?: string;
+  receiptsTotal: number;
+  recentReceipts: QsdmPulseReceiptSummary[];
+}
+
+export interface QsdmPulseActionResult {
+  tx_id?: string;
+  status?: string;
+  nonce: number;
+}

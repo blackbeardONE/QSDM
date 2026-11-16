@@ -8,6 +8,7 @@ export * from './getQsdmCoreStatus';
 export * from './getQsdmMinerRewardStatus';
 export * from './getQsdmMotherHiveStatus';
 export * from './pairQsdmMotherHive';
+export * from './qsdmPulsePool';
 export * from './qsdmVirtualCompute';
 export * from './getQsdmSkyFangLinkStatus';
 export * from './exportQsdmSignerWalletBackup';

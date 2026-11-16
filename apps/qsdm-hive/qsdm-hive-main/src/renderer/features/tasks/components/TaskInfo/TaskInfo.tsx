@@ -38,6 +38,7 @@ import { formatRoundTimeWithFullUnit, getErrorToDisplay } from 'renderer/utils';
 import { useTaskRoundTime } from '../../hooks/useRoundTime';
 import { formatNumber } from '../../utils';
 
+import { PulsePoolPanel } from './components/PulsePoolPanel';
 import { TaskActions } from './components/TaskActions';
 import { TaskDescription } from './components/TaskDescription';
 import { TaskStats } from './components/TaskStats';
@@ -868,6 +869,8 @@ export function TaskInfo({
           )}
         </div>
       )}
+
+      {isMinerTask && !miningUnsupported && <PulsePoolPanel />}
 
       {isSkyFangLinkTask && (
         <SkyFangLinkPanel
