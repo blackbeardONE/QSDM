@@ -498,3 +498,15 @@ func TestPulseStateFoldsIntoTheBlockRoot(t *testing.T) {
 		t.Fatal("PULSE membership is not committed by the block state root")
 	}
 }
+
+// The PULSE tx signing bytes are shared with qsdm-mining-bootstrap's pulse
+// package (TxSigningBytes): this vector is pinned in both repositories.
+func TestPulseTxSigningBytesVector(t *testing.T) {
+	tx := &mempool.Tx{Sender: "abababababababababababababababababababababababababababababababab", Nonce: 7, Fee: 0.001,
+		Payload: []byte(`{"op":"join","pool":"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"}`)}
+	sum := sha256.Sum256(PulseTxSigningBytes(tx))
+	const want = "809119a56e49435857355a33fc40b3ad2d84af5a18adab2a66110728f2766a95"
+	if got := hex.EncodeToString(sum[:]); got != want {
+		t.Fatalf("signing bytes sha256 %s, want %s", got, want)
+	}
+}

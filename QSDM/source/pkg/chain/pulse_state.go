@@ -199,14 +199,21 @@ func (s *PulseStateStore) Count() int {
 	return len(s.members) + len(s.escrow) + len(s.used) + len(s.seq)
 }
 
+// PulseEscrowView is one unsettled escrowed proof as the pool API shows it.
+type PulseEscrowView struct {
+	Owner  string `json:"owner"`
+	Dust   uint64 `json:"dust"`
+	Height uint64 `json:"height"`
+}
+
 // EscrowedProofs lists a pool's unsettled escrowed proofs (pool API, audit).
-func (s *PulseStateStore) EscrowedProofs(pool string) map[string]uint64 {
+func (s *PulseStateStore) EscrowedProofs(pool string) map[string]PulseEscrowView {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := map[string]uint64{}
+	out := map[string]PulseEscrowView{}
 	for id, e := range s.escrow {
 		if e.Pool == pool {
-			out[id] = e.Dust
+			out[id] = PulseEscrowView{Owner: e.Owner, Dust: e.Dust, Height: e.Height}
 		}
 	}
 	return out

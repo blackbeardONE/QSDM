@@ -26,7 +26,7 @@ import (
 
 type pulseStateProvider interface {
 	MemberPool(owner string) (string, bool)
-	EscrowedProofs(pool string) map[string]uint64
+	EscrowedProofs(pool string) map[string]chain.PulseEscrowView
 	Owed(pool string) map[string]uint64
 	LastSeq(pool string) uint64
 	Stats() chain.PulseStats
@@ -152,11 +152,23 @@ func (h *Handlers) QSDMPulseStateHandler(w http.ResponseWriter, r *http.Request)
 		var total uint64
 		for k, v := range esc {
 			ids = append(ids, k)
-			total += v
+			total += v.Dust
 		}
 		sort.Strings(ids)
-		out["pool"] = map[string]any{"id": id, "last_seq": prov.LastSeq(id), "escrowed_proofs": ids,
+		proofs := make([]map[string]any, 0, len(ids))
+		for _, k := range ids {
+			v := esc[k]
+			proofs = append(proofs, map[string]any{"proof_id": k, "owner": v.Owner, "dust": v.Dust, "height": v.Height})
+		}
+		po := map[string]any{"id": id, "last_seq": prov.LastSeq(id), "escrowed": proofs,
 			"escrowed_dust": total, "owed": prov.Owed(id)}
+		// The pool signs its settle txs from its own account: its next nonce.
+		if probe := currentMiningAccountProbe(); probe != nil {
+			_, nonce, present := probe.BalanceOf(id)
+			po["account_nonce"] = nonce
+			po["account_present"] = present
+		}
+		out["pool"] = po
 	}
 	if prov != nil {
 		out["stats"] = prov.Stats()
