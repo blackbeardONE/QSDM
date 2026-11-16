@@ -61,7 +61,7 @@ The manual steps below are what the script does. Use them if you prefer to do it
 | | |
 |---|---|
 | OS and CPU | Linux on x86_64 |
-| RAM | 6 GB for fullnode-rc1112, fullnode-rc1111, fullnode-rc1110, fullnode-rc1109 and fullnode-rc1108 (and fullnode-rc1107): the import and a start each peak at about 2 GiB at 880 376 blocks. A fullnode-rc1112, fullnode-rc1111, fullnode-rc1110, fullnode-rc1109 or fullnode-rc1108 node's memory stays flat while it runs; a fullnode-rc1107 node holds about 0.5 GiB more for every 100 000 blocks it appends until its next restart (11.6 days at 10 seconds per block). The installer stops below 5.5 GiB (below 11 GiB for the older fullnode-rc1019). See [Memory](#memory). |
+| RAM | 6 GB for fullnode-rc1113, fullnode-rc1112, fullnode-rc1111, fullnode-rc1110, fullnode-rc1109 and fullnode-rc1108 (and fullnode-rc1107): the import and a start each peak at about 2 GiB at 880 376 blocks. A fullnode-rc1113, fullnode-rc1112, fullnode-rc1111, fullnode-rc1110, fullnode-rc1109 or fullnode-rc1108 node's memory stays flat while it runs; a fullnode-rc1107 node holds about 0.5 GiB more for every 100 000 blocks it appends until its next restart (11.6 days at 10 seconds per block). The installer stops below 5.5 GiB (below 11 GiB for the older fullnode-rc1019). See [Memory](#memory). |
 | Disk | about 15 GB during setup (download, unpacked snapshot, state), about 6 GB afterwards, growing with the chain |
 | Network | outbound HTTPS to `api.qsdm.tech`; no inbound port |
 | Tools | `curl`, `sha256sum`, `tar`, Python 3; `qsdmcli` for the release signature check (optional, see step 2) |
@@ -72,7 +72,7 @@ The import and every start load the whole chain into memory, and the node keeps 
 memory a node needs grows with the chain. Go's garbage collector lets the heap grow to about twice what is in use
 before it collects, so the peak is about twice the heap, and a running node can use about as much as a start.
 
-fullnode-rc1112, the release qsdm.tech/fullnode.html names and the installer installs, is fullnode-rc1111 with the rc1112 rules ([Consensus rules](CONSENSUS_RULES.md#the-rc1112-rules-from-block-1190000)), which bind from block 1,190,000 (about 24 November 2026): an older node stops at that block, so install it before then. fullnode-rc1111 (14 November 2026) is fullnode-rc1110 with one
+fullnode-rc1113, the release qsdm.tech/fullnode.html names and the installer installs, is fullnode-rc1112 with the rc1113 changes ([Consensus rules](CONSENSUS_RULES.md#the-rc1113-rule-from-block-1230000)): its rule binds from block 1,230,000 (about 29 November 2026), so install it before then. fullnode-rc1112 (15 November 2026) is fullnode-rc1111 with the rc1112 rules ([Consensus rules](CONSENSUS_RULES.md#the-rc1112-rules-from-block-1190000)), which bind from block 1,190,000 (about 24 November 2026): an older node stops at that block, so install it before then. fullnode-rc1111 (14 November 2026) is fullnode-rc1110 with one
 more rule: a transaction ID names one transaction, whatever its contract, and from block 1,160,000 (about
 21 November 2026) a block that repeats a committed ID is invalid ([Consensus rules](CONSENSUS_RULES.md#transaction-id-uniqueness-from-block-1160000)), so install it
 before that height. fullnode-rc1110 (13 November 2026) is
