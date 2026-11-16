@@ -264,7 +264,8 @@ graylist (the node ignores everything it sends). The count fades over about
 - `QSDM/source/pkg/chain/propagation_budget.go`: the block request budget.
   `QSDM/source/pkg/chain/propagation.go`: the budget check on
   `block_request`, the skipped empty answer, deduplication before
-  verification, and the bounded seen set.
+  verification, the bounded seen set, and the four states of a received
+  block (in flight, seen, waiting, held back; risk 9).
 
 ## 6. Tests
 
@@ -308,6 +309,41 @@ CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/networking/ ./pkg/con
   seen set forgets the oldest hash first. Removing the budget check, the
   empty-answer check or the seen-set bound each makes one of these tests
   fail.
+- `pkg/chain/propagation_order_test.go`: blocks that arrive out of order
+  (risk 9). The cases:
+  - the orders 1, 2 and 2, 1, 2, with block 2 appended once;
+  - a queue drained by the parent alone;
+  - a `block_response` that fills the gap, and one whose blocks are out of
+    order;
+  - a refused block delivered by the next round's response, and a copy in
+    the same round that costs no handler call;
+  - the hold ends after 10 s without rounds;
+  - one handler call per round for a block that keeps failing;
+  - a flood of 600 blocks ahead of the tip, in both orders, that never
+    puts more than one window in the queue;
+  - a full queue keeps the blocks nearest the tip, and the window edge;
+  - the held-back set stays within its bound;
+  - a copy that arrives while the handler works on the block is dropped;
+  - a forged copy that arrives first does not stop the genuine block;
+  - a round after HTTP sync moved the tip;
+  - a refused lowest block does not stop the round;
+  - a restart;
+  - the producer role pays one call per block per round;
+  - concurrent deliveries in random orders append each block once;
+  - `TryAppendExternalBlock` reports a gap as `ErrExternalBlockAhead` with
+    the tip, and refuses the same blocks as before.
+- `pkg/chain/propagation_order_e2e_test.go`: two real hosts on gossipsub,
+  blocks sealed and signed (ML-DSA) by a producer that the follower pins in
+  its allowlist, and the follower appending through
+  `TryAppendExternalBlock`:
+  - 2, 1, 2 followed by a `block_response` replay reaches tip 2;
+  - a block held back is delivered by the next round's response;
+  - a restart;
+  - a flood of 99 blocks ahead of the tip stays within one window and the
+    follower still catches up.
+
+  Each part of the fix was removed in turn (16 cases, including the code as
+  it was before) and a test failed every time.
 - `pkg/config/live_shape_test.go` and `cmd/qsdm/live_shape_test.go` load
   `pkg/config/testdata/producer_live_shape.toml`, a config shaped like the
   block producer's from before these limits. It loads and validates, every
@@ -373,3 +409,30 @@ CGO_ENABLED=1 go test -count=1 -tags dilithium_circl ./pkg/networking/ ./pkg/con
    private test network before relying on them: peers, streams, gossip
    messages per second, the guard counters and the resource manager's
    refusals. Exporting the guard counters as metrics is a small follow-up.
+9. **A refused block stayed seen** (reported privately on 2026-11-13). The
+   propagator recorded a verified block as seen before the append handler
+   ran. A block the handler refused stayed seen for the life of the process.
+   This includes a genuine block that arrived before its parent (block 2
+   before block 1). Every later copy was skipped, catch-up `block_response`
+   copies too. A follower that relies on P2P alone stayed at the parent's
+   height until a restart. Full nodes that sync over HTTPS, as
+   [Run a full node](RUN_A_FULL_NODE.md) sets them up, were not affected.
+   **Addressed.** A verified block is now in one of four states:
+   - *in flight*: the handler is working on it;
+   - *seen*: only once the handler has accepted it;
+   - *waiting*: the handler found it ahead of the tip
+     (`chain.ErrExternalBlockAhead`). It sits in a queue of at most one
+     catch-up window: 64 blocks, none more than 64 heights above the tip.
+     When the queue is full, the blocks nearest the tip stay. A waiting
+     block is tried again as soon as its parent is accepted, and on every
+     catch-up round (`RetryPending`, every 10 s). The round also covers HTTP
+     sync moving the tip;
+   - *held back*: the handler refused it for another reason. Its copies are
+     dropped until the next round, at most 10 s. The hold set is bounded
+     like the seen set.
+
+   A copy of a block in any state costs a map lookup. A block enters a state
+   only after it verifies, and the request budget is unchanged. So a genuine
+   block that keeps failing costs one verification and one handler call per
+   round. There is no consensus change: `TryAppendExternalBlock` refuses the
+   same blocks, and only the error for a gap is new.

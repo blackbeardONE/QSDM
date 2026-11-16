@@ -25,6 +25,7 @@ they were produced with.
 | Proof-of-Entanglement | 816,600 | 2026-10-11 13:18 | `consensus_auth.poe_activation_height`, `poe_active` | A transfer that does not name 2 to 10 valid committed parents |
 | Signed consensus | 827,000 | 2026-10-12 18:11 | `consensus_auth.require_signed_votes`, `signed_message_activation_height`, `signed_consensus_active`, `unsigned_consensus_traffic_accepted` | Any BFT vote or consensus message without a valid ML-DSA signature |
 | Relay-only paid edge tasks | 833,800 | 2026-10-13 13:21 | `consensus_auth.edge_relay_only_activation_height`, `edge_relay_only_active` | A paid edge task settlement that does not come through an authorized settlement relay |
+| The rc1113 rule | 1,230,000 | Scheduled, about 2026-11-29 | none (the release default `rc1113_rules_activation_height`; every node on rc1113 uses 1,230,000) | A `catalog-register` for a task ID that already holds stake or a pool ([details](#the-rc1113-rule-from-block-1230000)) |
 | The rc1112 rules | 1,190,000 | Scheduled, about 2026-11-24 (the producer's admission applies them since 2026-11-15 12:23) | none (code constants: `RelaySettlementScopeActivationHeight`, `GPUUUIDFoldActivationHeight`, `CustomTaskPayActivationHeight`, `DeferredPruneActivationHeight`) | A Relay settlement on a task that is not a built-in resource task, one that reuses a consumed settlement proof or receipt, or one whose proof or receipt IDs are not 64 lowercase hex characters; a catalog action for a case variant of a reserved task ID; an enrollment of a GPU UUID that an active enrollment holds in another case; a submit that asks a task other than the built-in resource tasks for a reward. The block sweep also removes free enrollments that earned nothing in 60,480 blocks ([details](#the-rc1112-rules-from-block-1190000)) |
 | Transaction ID uniqueness | 1,160,000 | Scheduled, about 2026-11-21 (the producer's API refuses a taken ID since 2026-11-13 18:41) | none (a code constant, `TxIDUniqueActivationHeight`) | A transaction whose ID is committed in the last 8,640 blocks or earlier in the same block, whatever its contract |
 | Task migrate authorization | 1,150,000 | Scheduled, about 2026-11-19 (the producer's API enforces it since 2026-11-12 21:25) | none (a code constant, `TaskMigrateAuthActivationHeight`) | A task `migrate` not sent by the task's catalog manager, or to a target that is not another registered, unpaused task of the same manager, or that would make a cycle |
@@ -155,6 +156,20 @@ rc1111 (2026-11-13 18:41 UTC): 409, `status` `duplicate`, `mempool_status`
 `id_taken`. The producer leaves such a transaction out of its blocks, so full
 nodes on older releases keep following until they upgrade. Code:
 `QSDM/source/pkg/chain/txid_unique.go`. Details:
+[Network upgrades](NETWORK_UPGRADES.md).
+
+### The rc1113 rule (from block 1,230,000)
+
+From block 1,230,000 a block MUST NOT carry a task `catalog-register` for a
+task ID that already holds stake or a funded pool: a catalog entry can be
+registered only for a task ID nobody has put CELL into yet. Every other
+catalog action and every task action are unchanged.
+
+Blocks below 1,230,000 replay as they were produced. The height is the
+release default of node release rc1113 (`[consensus]
+rc1113_rules_activation_height`, or `QSDM_RC1113_RULES_ACTIVATION_HEIGHT`,
+override it; every node must use the same value, so leave both unset). Code:
+`QSDM/source/pkg/chain/rc1113_rules.go`, `task_state.go`. Details:
 [Network upgrades](NETWORK_UPGRADES.md).
 
 ### The rc1112 rules (from block 1,190,000)

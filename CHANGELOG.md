@@ -315,6 +315,15 @@ from 2026-04-22 on.
 
 ### Changed
 
+- **2026-11-16: release rc1113 (the rc1113 rule from block 1,230,000).** The producer has
+  run release rc1113 since 2026-11-16 04:29 UTC (mining paused 6 minutes). Block
+  propagation keeps a block that arrives before its parent and applies it when
+  the gap fills; gossip penalties go to the message's author and a peer ban ends
+  after 24 hours; gossip carries only the transaction types peers relay; a
+  task-action entry is at most 4 KB; a reward the funder cannot cover stays owed
+  instead of stopping mining. From block 1,230,000 a task catalog entry can be
+  registered only for a task ID that holds no stake and no pool ([Consensus rules](QSDM/docs/docs/CONSENSUS_RULES.md#the-rc1113-rule-from-block-1230000)).
+  - Full-node operators: install `fullnode-rc1113` before block 1,230,000.
 - **2026-11-15: the rc1112 rules (node release rc1112; consensus rules from block
   1,190,000).** The producer has run release rc1112 since 2026-11-15 12:23 UTC;
   its admission applies the transaction rules at once, and from block

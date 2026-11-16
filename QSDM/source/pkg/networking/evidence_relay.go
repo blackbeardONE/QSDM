@@ -62,10 +62,11 @@ func (r *EvidenceP2PRelay) readLoop() {
 			log.Printf("[evidence-relay] pubsub read error: %v", err)
 			continue
 		}
-		if msg.ReceivedFrom.String() == r.selfID {
+		// Content is attributed to the StrictSign author, not the forwarder.
+		peer, skip := gossipAttribution(msg, r.selfID)
+		if skip {
 			continue
 		}
-		peer := msg.ReceivedFrom.String()
 		if err := r.ingress.HandlePeerMessage(peer, msg.Data); err != nil {
 			log.Printf("[evidence-relay] ingress from %s: %v", peer, err)
 		}

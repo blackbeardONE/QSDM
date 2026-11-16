@@ -18,10 +18,12 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| About 2026-11-29 (scheduled) | 1,230,000 | The rc1113 rule: a task catalog entry can be registered only for a task ID that holds no stake and no pool ([Consensus rules](CONSENSUS_RULES.md#the-rc1113-rule-from-block-1230000)) | **Yes**, full-node operators: run fullnode-rc1113 or newer before this height |
 | 2026-11-15 | Hive release | QSDM Hive 1.4.23 | No (Hive 1.4.21 and newer update themselves; 1.4.20 / 1.4.17 install by hand) |
 | About 2026-11-24 (scheduled) | 1,190,000 | The rc1112 rules: Relay settlements only on the built-in resource tasks and with one spelling of their IDs, no case look-alikes of reserved task IDs or of enrolled GPUs, no reward for an unverified custom-task submit, and a free enrollment that earned nothing in 7 days is removed ([Consensus rules](CONSENSUS_RULES.md#the-rc1112-rules-from-block-1190000)) | **Yes**, full-node operators: run fullnode-rc1112 or newer before this height; an older node stops there |
 | About 2026-11-21 (scheduled) | 1,160,000 | A transaction ID names one transaction, whatever its contract: a block that repeats a committed ID is invalid ([Consensus rules](CONSENSUS_RULES.md#transaction-id-uniqueness-from-block-1160000)) | **Yes**, full-node operators: run fullnode-rc1111 or newer before this height |
 | About 2026-11-19 (scheduled) | 1,150,000 | Only a task's catalog manager may migrate it: a block with any other `migrate` is invalid ([Consensus rules](CONSENSUS_RULES.md#task-migrate-authorization-from-block-1150000)) | **Yes**, full-node operators: run fullnode-rc1110 or newer before this height |
+| 2026-11-16 04:29 | node release | Release rc1113: block propagation keeps a block that arrives before its parent and applies it when the gap fills; gossip penalties go to the peer that wrote a message, and a peer ban ends after 24 hours; gossip carries only the transaction types peers relay; a task-action entry is at most 4 KB; blocks enforce the rc1113 rule from 1,230,000. Mining paused 6 minutes. Full nodes: fullnode-rc1113 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | Full-node operators: upgrade before block 1,230,000 |
 | 2026-11-15 12:23 | node release | Release rc1112: the producer's admission applies the rc1112 rules at once and accepts each proof-of-work solution once, whoever submits it; blocks enforce the rules from 1,190,000. Mining paused 5 minutes. Full nodes: fullnode-rc1112 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | Full-node operators: upgrade before block 1,190,000 |
 | 2026-11-13 18:41 | node release | Release rc1111: a transaction ID names one transaction, whatever its contract. The API refuses a signed task action whose ID another transaction holds, the producer leaves such a transaction out of its blocks, and a committed receipt is final; blocks enforce the ID rule from 1,160,000. Mining paused 24 minutes. Full nodes: fullnode-rc1111 is the same `qsdm` ([Run a full node](RUN_A_FULL_NODE.md)) | Full-node operators: upgrade before block 1,160,000 |
 | 2026-11-13 11:59 to 12:50 | 1,095,602 and 1,095,785 | The first live turn of block production: the project's full node in Japan made blocks 1,095,602 to 1,095,784 with its own key, then the producer again from 1,095,785 with a new key; the block-maker schedule is a version 2 table with four block makers; mining paused 65 minutes ([details](#2026-11-13-the-first-live-turn-of-block-production)) | **Yes**, full-node operators: take the new schedule from qsdm.tech/fullnode.html (`install-full-node.sh --update-schedule --from-website`); a node with the old schedule stops at block 1,095,601 |
@@ -89,6 +91,24 @@ upgrades harden that pilot network; they do not change its stage. See
   `bash install-full-node.sh --update-schedule --from-website`
   ([Run a full node](RUN_A_FULL_NODE.md#when-the-block-maker-changes)); a new
   install takes it by itself. Its digest is `fd23fbcae12315a4e6d4abce24bd908d0e738d6227b6d3203c03d772238c1345`.
+
+## 2026-11-16: release rc1113, and the rc1113 rule from block 1,230,000
+
+- **When:** node release `hardened-legacy-20261116-d7ffcd4-hl2-edge-go12611-ids-pqe-rc1113`,
+  switched in 2026-11-16 04:29 UTC; mining reopened at 04:35 UTC. The rule
+  becomes a consensus rule at block **1,230,000** (about 29 November 2026 at
+  10-second blocks).
+- **What changed:** a task catalog entry can be registered only for a task ID that holds no stake and no pool
+  ([Consensus rules](CONSENSUS_RULES.md#the-rc1113-rule-from-block-1230000)). Without a height: a block that arrives
+  before its parent waits in a bounded queue and is applied when the gap
+  fills; gossip penalties go to the peer that wrote the message, not the one
+  that passed it on, and a peer ban ends after 24 hours; gossip carries only
+  the transaction types peers relay; a task-action entry is at most 4 KB;
+  a reward the funder cannot cover stays owed instead of stopping mining. Same
+  Go 1.26.11 and modules as rc1112.
+- **What you have to do:** nothing as a wallet holder, miner or task
+  publisher. Full-node operators: install `fullnode-rc1113` (the same `qsdm`)
+  before block 1,230,000.
 
 ## 2026-11-15: release rc1112, and the rc1112 rules from block 1,190,000
 

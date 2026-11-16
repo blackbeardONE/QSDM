@@ -203,6 +203,11 @@ type ConsensusConfigTOML struct {
 	// root. Setting it changes block roots, so every node must agree on it.
 	EnrollmentStateRootActivationHeight uint64 `toml:"enrollment_state_root_activation_height" yaml:"enrollment_state_root_activation_height"`
 
+	// RC1113RulesActivationHeight is the first height of the rc1113 security rules (chain.SetRC1113RulesHeight;
+	// [consensus] rc1113_rules_activation_height or QSDM_RC1113_RULES_ACTIVATION_HEIGHT). Zero = never. It changes
+	// what blocks are valid, so every node must use the same value; the rc1113 release sets it.
+	RC1113RulesActivationHeight uint64 `toml:"rc1113_rules_activation_height" yaml:"rc1113_rules_activation_height"`
+
 	// PoEActivationHeight is the first height at which signed wallet
 	// transfers must satisfy the Proof-of-Entanglement parent rules (at
 	// least two distinct parents, each a transaction committed in the last

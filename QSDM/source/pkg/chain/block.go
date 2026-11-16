@@ -55,6 +55,30 @@ func (e *ExternalAppendConflictError) Error() string {
 // Unwrap returns ErrExternalAppendConflict for errors.Is / errors.As chains.
 func (e *ExternalAppendConflictError) Unwrap() error { return ErrExternalAppendConflict }
 
+// ErrExternalBlockAhead is returned, as *ExternalBlockAheadError, when an
+// external block is above the next height: its parent has not been appended
+// yet. Nothing else about the block was decided, so the same block can be tried
+// again once the gap is filled. Block propagation holds such blocks in a
+// bounded queue instead of dropping them (propagation.go). The block is
+// refused exactly as before; only the error value is new.
+var ErrExternalBlockAhead = errors.New("chain: external block is ahead of the tip")
+
+// ExternalBlockAheadError carries the block's height and the local tip at the
+// time of the attempt (unwraps to ErrExternalBlockAhead).
+type ExternalBlockAheadError struct {
+	Height, Tip uint64
+}
+
+func (e *ExternalBlockAheadError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("chain: external block does not extend tip: height %d is ahead of tip %d", e.Height, e.Tip)
+}
+
+// Unwrap returns ErrExternalBlockAhead for errors.Is / errors.As chains.
+func (e *ExternalBlockAheadError) Unwrap() error { return ErrExternalBlockAhead }
+
 // Block represents a finalised block in the chain.
 type Block struct {
 	Height       uint64        `json:"height"`
@@ -732,6 +756,12 @@ func (bp *BlockProducer) TryAppendExternalBlock(blk *Block) error {
 	}
 	if len(bp.chain) > 0 {
 		last := bp.chain[len(bp.chain)-1]
+		if blk.Height > last.Height && blk.Height-last.Height > 1 {
+			// A gap: the parent has not arrived yet. Refused, as before,
+			// but marked so that a caller can try it again later.
+			bp.mu.Unlock()
+			return &ExternalBlockAheadError{Height: blk.Height, Tip: last.Height}
+		}
 		if blk.PrevHash != last.Hash || blk.Height != last.Height+1 {
 			bp.mu.Unlock()
 			return fmt.Errorf("chain: external block does not extend tip")

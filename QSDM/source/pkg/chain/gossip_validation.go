@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -78,6 +79,14 @@ func (gv *GossipValidator) HandleIncoming(pool *mempool.Mempool, stx *SignedTx) 
 		return GossipRejected, fmt.Errorf("nil signed transaction")
 	}
 	tx := stx.Tx
+
+	// 2026-11-06: gossip admitted a SignedTx of ANY
+	// contract family after checking only signature, fee and nonce. Only the
+	// families a peer may legitimately relay are admitted, and the check runs
+	// first, before the signature work.
+	if !gossipFamilyAllowed(tx.ContractID) {
+		return GossipRejected, fmt.Errorf("%w: %q", ErrGossipContractFamily, tx.ContractID)
+	}
 
 	if gv.sig != nil {
 		if err := gv.sig.Verify(stx); err != nil {
@@ -161,3 +170,18 @@ func (gv *GossipValidator) PurgeExpired() int {
 	return removed
 }
 
+// ErrGossipContractFamily refuses a gossiped tx whose contract family is not
+// relayed by peers.
+var ErrGossipContractFamily = errors.New("chain: contract family not admitted by tx gossip")
+
+// gossipFamilyAllowed lists the families a peer may relay: plain and signed
+// wallet transfers and signed task actions. Mining rewards are produced only
+// by the producer's own driver, and every other family has its own signed
+// HTTP route.
+func gossipFamilyAllowed(contractID string) bool {
+	switch contractID {
+	case "", WalletTransferContractID, TaskContractID:
+		return true
+	}
+	return false
+}

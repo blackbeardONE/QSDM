@@ -106,6 +106,13 @@ func qsdmTaskActionLogPath() string {
 	return strings.TrimSpace(os.Getenv(qsdmTaskActionLogPathEnv))
 }
 
+// QSDMTaskActionMaxPayloadBytes caps one task action's payload (decided 2026-11-15). Only the
+// submit route checks it; what the chain accepts is unchanged.
+const QSDMTaskActionMaxPayloadBytes = 4096
+
+// ErrTaskActionPayloadTooLarge is answered with 413.
+var ErrTaskActionPayloadTooLarge = errors.New("task action payload too large")
+
 func validateQSDMTaskActionEnvelope(env QSDMTaskActionEnvelope) error {
 	if err := ValidateTransactionID(env.ID); err != nil {
 		return fmt.Errorf("invalid action id: %w", err)
@@ -131,8 +138,10 @@ func validateQSDMTaskActionEnvelope(env QSDMTaskActionEnvelope) error {
 			return err
 		}
 	}
-	if err := ValidateString(env.Payload, "payload", 0, 100000); err != nil {
-		return err
+	// Decided 2026-11-15: at most QSDMTaskActionMaxPayloadBytes of payload per entry (it was
+	// 100,000). The ledger and the chain keep every accepted action; live entries are at most ~700 bytes.
+	if n := len(env.Payload); n > QSDMTaskActionMaxPayloadBytes {
+		return fmt.Errorf("%w: payload is %d bytes; the limit is %d", ErrTaskActionPayloadTooLarge, n, QSDMTaskActionMaxPayloadBytes)
 	}
 	if err := ValidateTimestamp(env.Timestamp); err != nil {
 		return err
@@ -184,17 +193,42 @@ type qsdmTaskActionAppendResult struct {
 	LastNonce   uint64
 }
 
-func inspectQSDMTaskActionLog(path string, env QSDMTaskActionEnvelope) (qsdmTaskActionAppendResult, error) {
-	file, err := os.Open(path) // #nosec G304 -- path is the operator-configured task action ledger.
+// 2026-11-14: every submit scanned the whole ledger twice (the
+// preflight and the append), so the per-request cost grew with a ledger that
+// anyone can grow. The duplicate check only needs the set of envelope IDs; it
+// is kept in memory and rebuilt only when the file is not what this process
+// last wrote (another path, a changed size, or the file removed).
+type qsdmTaskActionIDIndex struct {
+	path string
+	size int64
+	ids  map[string]struct{}
+}
+
+// qsdmTaskActionIdx is guarded by qsdmTaskActionLogMu.
+var qsdmTaskActionIdx qsdmTaskActionIDIndex
+
+// qsdmTaskActionIndexScans counts full-file index rebuilds (tests).
+var qsdmTaskActionIndexScans int
+
+func qsdmTaskActionIndexLocked(path string) (map[string]struct{}, error) {
+	st, err := os.Stat(path)
 	if os.IsNotExist(err) {
-		return qsdmTaskActionAppendResult{}, nil
+		qsdmTaskActionIdx = qsdmTaskActionIDIndex{path: path, size: 0, ids: map[string]struct{}{}}
+		return qsdmTaskActionIdx.ids, nil
 	}
 	if err != nil {
-		return qsdmTaskActionAppendResult{}, err
+		return nil, err
+	}
+	if qsdmTaskActionIdx.ids != nil && qsdmTaskActionIdx.path == path && qsdmTaskActionIdx.size == st.Size() {
+		return qsdmTaskActionIdx.ids, nil
+	}
+	file, err := os.Open(path) // #nosec G304 -- path is the operator-configured task action ledger.
+	if err != nil {
+		return nil, err
 	}
 	defer file.Close()
-
-	var result qsdmTaskActionAppendResult
+	qsdmTaskActionIndexScans++
+	ids := map[string]struct{}{}
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
 	for scanner.Scan() {
@@ -202,22 +236,38 @@ func inspectQSDMTaskActionLog(path string, env QSDMTaskActionEnvelope) (qsdmTask
 		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
 			continue
 		}
-		if record.Envelope.ID == env.ID {
-			result.Duplicate = true
-			return result, nil
-		}
+		ids[record.Envelope.ID] = struct{}{}
 	}
 	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	qsdmTaskActionIdx = qsdmTaskActionIDIndex{path: path, size: st.Size(), ids: ids}
+	return ids, nil
+}
+
+func inspectQSDMTaskActionLogLocked(path string, env QSDMTaskActionEnvelope) (qsdmTaskActionAppendResult, error) {
+	ids, err := qsdmTaskActionIndexLocked(path)
+	if err != nil {
 		return qsdmTaskActionAppendResult{}, err
 	}
+	var result qsdmTaskActionAppendResult
+	if _, ok := ids[env.ID]; ok {
+		result.Duplicate = true
+	}
 	return result, nil
+}
+
+func inspectQSDMTaskActionLog(path string, env QSDMTaskActionEnvelope) (qsdmTaskActionAppendResult, error) {
+	qsdmTaskActionLogMu.Lock()
+	defer qsdmTaskActionLogMu.Unlock()
+	return inspectQSDMTaskActionLogLocked(path, env)
 }
 
 func appendQSDMTaskAction(path string, record QSDMTaskActionRecord) (qsdmTaskActionAppendResult, error) {
 	qsdmTaskActionLogMu.Lock()
 	defer qsdmTaskActionLogMu.Unlock()
 
-	result, err := inspectQSDMTaskActionLog(path, record.Envelope)
+	result, err := inspectQSDMTaskActionLogLocked(path, record.Envelope)
 	if err != nil {
 		return qsdmTaskActionAppendResult{}, err
 	}
@@ -238,7 +288,14 @@ func appendQSDMTaskAction(path string, record QSDMTaskActionRecord) (qsdmTaskAct
 	}
 	defer file.Close()
 	if _, err := file.Write(append(raw, '\n')); err != nil {
+		qsdmTaskActionIdx.ids = nil // a partial write: rebuild from the file next time
 		return qsdmTaskActionAppendResult{}, err
+	}
+	if st, err := file.Stat(); err == nil && qsdmTaskActionIdx.ids != nil && qsdmTaskActionIdx.path == path {
+		qsdmTaskActionIdx.ids[record.Envelope.ID] = struct{}{}
+		qsdmTaskActionIdx.size = st.Size()
+	} else {
+		qsdmTaskActionIdx.ids = nil
 	}
 	return result, nil
 }
@@ -310,6 +367,10 @@ func (h *Handlers) QSDMTaskActionSubmitSignedHandler(w http.ResponseWriter, r *h
 	env.TaskID = strings.TrimSpace(env.TaskID)
 
 	if err := validateQSDMTaskActionEnvelope(env); err != nil {
+		if errors.Is(err, ErrTaskActionPayloadTooLarge) {
+			writeErrorResponse(w, http.StatusRequestEntityTooLarge, err.Error())
+			return
+		}
 		writeErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}

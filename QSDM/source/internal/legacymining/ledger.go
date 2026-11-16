@@ -59,10 +59,21 @@ func DefaultRewardCell(height uint64) float64 {
 
 // AuditTxFamilies is I7 (§6.4): it returns every tx of blk that is not a
 // funder heartbeat (ContractID "", Sender = Recipient = funder, Amount 0), a
-// funder reward (chain.MiningRewardContractID from the funder) or a signed
-// wallet transfer (chain.WalletTransferContractID). A nil tx is reported with
-// empty fields. The caller runs it for local seals in every mode (H8 (a));
-// OnDurableBlock also runs it in canary mode.
+// funder reward (chain.MiningRewardContractID from the funder), a signed
+// wallet transfer (chain.WalletTransferContractID) or a signed task action
+// (chain.TaskContractID). A nil tx is reported with empty fields. The caller
+// runs it for local seals in every mode (H8 (a)); OnDurableBlock also runs it
+// in canary mode.
+//
+// Task actions (2026-11-15): the public task-action route
+// admits qsdm/tasks/v1 into the producer's own mempool, and COMMUNITY_REVIEW.md
+// lists signed task actions as an allowed I7 family, but this audit did not, so
+// one signed zero-fee task action latched the mining guard FROZEN on a producer
+// built from this source. The live release has allowed the family since
+// 2026-10-12. A task action cannot touch the funder (its sender is
+// hex(sha256(ML-DSA key)), never "qsdm-system-funder"); one that did would still
+// fail I5 ("unknown accounting") and FREEZE. Streams, enrollment and every other
+// family stay excluded.
 func AuditTxFamilies(blk *chain.Block) []FamilyViolation {
 	if blk == nil {
 		return nil
@@ -76,6 +87,7 @@ func AuditTxFamilies(blk *chain.Block) []FamilyViolation {
 		case tx.ContractID == "" && tx.Sender == funder && tx.Recipient == funder && tx.Amount == 0:
 		case tx.ContractID == chain.MiningRewardContractID && tx.Sender == funder:
 		case tx.ContractID == chain.WalletTransferContractID:
+		case tx.ContractID == chain.TaskContractID:
 		default:
 			out = append(out, FamilyViolation{TxID: tx.ID, ContractID: tx.ContractID})
 		}

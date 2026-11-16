@@ -39,6 +39,9 @@ type ReputationConfig struct {
 	MinScore              float64       // score floor (to prevent -inf spirals)
 	LatencyPenaltyPerMs   float64       // score deduction per ms of excess latency
 	LatencyBaselineMs     float64       // below this, latency is fine (no penalty)
+	// BanDuration is how long a ban lasts (owner decision 2026-11-15: 24 hours). After it the peer is no longer
+	// banned and starts again at InitialScore. 0 keeps the old behaviour: a ban lasts until the process restarts.
+	BanDuration time.Duration
 }
 
 // ReputationConfigForEvidence returns stricter penalties for consensus-evidence gossip,
@@ -68,8 +71,14 @@ func DefaultReputationConfig() ReputationConfig {
 		MinScore:            -500,
 		LatencyPenaltyPerMs: -0.01,
 		LatencyBaselineMs:   200,
+		BanDuration:         DefaultBanDuration,
 	}
 }
+
+// DefaultBanDuration is the owner's decision of 2026-11-15: a transport ban expires after 24 hours. Before it, a ban
+// lasted until the banning process restarted (Unban has no production caller), so one false positive - for
+// example a penalty charged to a forwarder - partitioned a node from a peer it needed for good.
+const DefaultBanDuration = 24 * time.Hour
 
 // PeerRecord holds a single peer's reputation data.
 type PeerRecord struct {
@@ -97,6 +106,31 @@ type ReputationTracker struct {
 	cfg    ReputationConfig
 	stopCh chan struct{}
 	onBan  func(peerID string)
+	clock  func() time.Time // tests; nil = time.Now
+}
+
+func (rt *ReputationTracker) now() time.Time {
+	if rt.clock != nil {
+		return rt.clock()
+	}
+	return time.Now()
+}
+
+// banActive reports whether rec is banned now: a ban older than BanDuration has expired.
+func (rt *ReputationTracker) banActive(rec *PeerRecord, now time.Time) bool {
+	if rec == nil || !rec.Banned {
+		return false
+	}
+	return rt.cfg.BanDuration <= 0 || now.Sub(rec.BannedAt) < rt.cfg.BanDuration
+}
+
+// liftIfExpiredLocked clears an expired ban; the peer starts again at InitialScore. The caller holds rt.mu.
+func (rt *ReputationTracker) liftIfExpiredLocked(rec *PeerRecord, now time.Time) {
+	if rec != nil && rec.Banned && !rt.banActive(rec, now) {
+		rec.Banned = false
+		rec.BannedAt = time.Time{}
+		rec.Score = rt.cfg.InitialScore
+	}
 }
 
 // NewReputationTracker creates a tracker with the given config.
@@ -138,7 +172,9 @@ func (rt *ReputationTracker) recordEvent(peerID string, event PeerEvent, value f
 	defer rt.mu.Unlock()
 
 	rec := rt.getOrCreate(peerID)
-	rec.LastSeen = time.Now()
+	now := rt.now()
+	rt.liftIfExpiredLocked(rec, now)
+	rec.LastSeen = now
 
 	switch event {
 	case EventValidBlock:
@@ -175,7 +211,7 @@ func (rt *ReputationTracker) recordEvent(peerID string, event PeerEvent, value f
 
 	if rec.Score <= rt.cfg.BanThreshold && !rec.Banned {
 		rec.Banned = true
-		rec.BannedAt = time.Now()
+		rec.BannedAt = now
 		return true, rt.onBan
 	}
 	return false, nil
@@ -196,7 +232,7 @@ func (rt *ReputationTracker) IsBanned(peerID string) bool {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
 	if rec, ok := rt.peers[peerID]; ok {
-		return rec.Banned
+		return rt.banActive(rec, rt.now())
 	}
 	return false
 }
@@ -217,8 +253,11 @@ func (rt *ReputationTracker) AllPeers() []PeerRecord {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
 	out := make([]PeerRecord, 0, len(rt.peers))
+	now := rt.now()
 	for _, rec := range rt.peers {
-		out = append(out, *rec)
+		c := *rec
+		c.Banned = rt.banActive(rec, now) // an expired ban is not shown as active
+		out = append(out, c)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
 	return out
@@ -244,8 +283,9 @@ func (rt *ReputationTracker) BannedPeers() []PeerRecord {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
 	var banned []PeerRecord
+	now := rt.now()
 	for _, rec := range rt.peers {
-		if rec.Banned {
+		if rt.banActive(rec, now) {
 			banned = append(banned, *rec)
 		}
 	}
@@ -291,8 +331,9 @@ func (rt *ReputationTracker) Snapshot() repmetrics.ReputationSnapshot {
 		max    = math.Inf(-1)
 		sum    float64
 	)
+	now := rt.now()
 	for _, rec := range rt.peers {
-		if rec.Banned {
+		if rt.banActive(rec, now) {
 			banned++
 		}
 		if rec.Score < min {
@@ -317,7 +358,9 @@ func (rt *ReputationTracker) Snapshot() repmetrics.ReputationSnapshot {
 func (rt *ReputationTracker) DecayAll() {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	now := rt.now()
 	for _, rec := range rt.peers {
+		rt.liftIfExpiredLocked(rec, now)
 		rec.Score *= rt.cfg.DecayFactor
 		rec.Score = math.Max(rt.cfg.MinScore, math.Min(rt.cfg.MaxScore, rec.Score))
 	}

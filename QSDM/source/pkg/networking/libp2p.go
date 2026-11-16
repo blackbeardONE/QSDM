@@ -374,7 +374,8 @@ func (n *Network) handleMessages() {
 		txIng := n.txGossip
 		handler := n.msgHandler
 		n.mu.Unlock()
-		if txIng != nil && txIng.TryConsumeGossip(msg.ReceivedFrom.String(), msg.Data) {
+		// Invalid-tx penalties go to the StrictSign author, not the forwarder.
+		if author, skip := gossipAttribution(msg, n.Host.ID().String()); !skip && txIng != nil && txIng.TryConsumeGossip(author, msg.Data) {
 			continue
 		}
 		n.mu.Lock()

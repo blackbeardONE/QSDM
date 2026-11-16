@@ -1608,6 +1608,11 @@ func main() {
 			"env", "QSDM_TX_CONTENT_ROOT_ACTIVATION_HEIGHT",
 			"note", "enabling this is a coordinated fork; every node must agree on the height")
 	}
+	chain.SetRC1113RulesHeight(cfg.RC1113RulesActivationHeight)
+	if cfg.RC1113RulesActivationHeight > 0 {
+		logger.Info("rc1113 rules: activation height set", "from_height", cfg.RC1113RulesActivationHeight,
+			"warning", "every node must use this exact value")
+	}
 	chain.SetEnrollmentStateRootActivationHeight(cfg.EnrollmentStateRootActivationHeight)
 	if cfg.EnrollmentStateRootActivationHeight > 0 {
 		logger.Info("Block state root commits mining enrollment side state",
@@ -2777,7 +2782,13 @@ func main() {
 
 		go func() {
 			requestNextWindow := func() {
-				if blockPropagator == nil || net == nil || net.PeerCount() == 0 {
+				if blockPropagator == nil {
+					return
+				}
+				// Each round, blocks that arrived before their parent and
+				// blocks held back after a failed append are tried again.
+				blockPropagator.RetryPending()
+				if net == nil || net.PeerCount() == 0 {
 					return
 				}
 				from := uint64(0)

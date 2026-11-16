@@ -50,10 +50,11 @@ func (r *BFTP2PRelay) readLoop() {
 			log.Printf("[bft-relay] pubsub read error: %v", err)
 			continue
 		}
-		if msg.ReceivedFrom.String() == r.selfID {
+		// Content is attributed to the StrictSign author, not the forwarder.
+		peer, skip := gossipAttribution(msg, r.selfID)
+		if skip {
 			continue
 		}
-		peer := msg.ReceivedFrom.String()
 		if err := r.ingress.HandlePeerMessage(peer, msg.Data); err != nil {
 			log.Printf("[bft-relay] ingress from %s: %v", peer, err)
 		}
