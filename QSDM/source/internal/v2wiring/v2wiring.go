@@ -1107,5 +1107,6 @@ func (w *Wired) AttachToProducer(bp *chain.BlockProducer) {
 	bp.OnSealedBlock = w.SealedBlockHook
 	if w.PulseState != nil {
 		api.SetPulseStateProvider(w.PulseState, bp.TipHeight)
+		chain.SetPulseAdmissionState(w.PulseState, func() uint64 { return bp.TipHeight() + 1 })
 	}
 }

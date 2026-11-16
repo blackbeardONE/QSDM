@@ -122,8 +122,11 @@ func PulseAdmissionChecker(next func(*mempool.Tx) error) func(*mempool.Tx) error
 			if PulseActivationHeight() == 0 {
 				return ErrPulseInactive
 			}
-			_, err := DecodePulseTx(tx)
-			return err
+			a, err := DecodePulseTx(tx)
+			if err != nil {
+				return err
+			}
+			return pulseAdmissionPrecheck(tx.Sender, a)
 		}
 		if tx != nil && tx.ContractID != MiningRewardContractID {
 			if _, _, escrow := ParsePulseEscrow(tx.Recipient); escrow {
