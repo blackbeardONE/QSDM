@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestArchSpoofUnknownArchBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_archspoof_rejected_total{reason=\"unknown_arch\"}[5m]) > 0.1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#31-mode-a--qsdmattestarchspoofunknownarchburst",
+      "description": "**Alert**: `QSDMAttestArchSpoofUnknownArchBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_archspoof_rejected_total{reason=\"unknown_arch\"}[5m]) > 0.1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#31-mode-a--qsdmattestarchspoofunknownarchburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestArchSpoofGPUNameMismatch`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_archspoof_rejected_total{reason=\"gpu_name_mismatch\"}[5m]) > 0.05`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#32-mode-b--qsdmattestarchspoofgpunamemismatch",
+      "description": "**Alert**: `QSDMAttestArchSpoofGPUNameMismatch`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_archspoof_rejected_total{reason=\"gpu_name_mismatch\"}[5m]) > 0.05`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#32-mode-b--qsdmattestarchspoofgpunamemismatch",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -176,7 +176,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestArchSpoofCCSubjectMismatch`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_attest_archspoof_rejected_total{reason=\"cc_subject_mismatch\"}[15m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#33-mode-c--qsdmattestarchspoofccsubjectmismatch",
+      "description": "**Alert**: `QSDMAttestArchSpoofCCSubjectMismatch`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_attest_archspoof_rejected_total{reason=\"cc_subject_mismatch\"}[15m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#33-mode-c--qsdmattestarchspoofccsubjectmismatch",
       "fieldConfig": {
         "defaults": {
           "color": {

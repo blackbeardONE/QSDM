@@ -47,8 +47,8 @@ groups:
           # NGC_SUBMISSION_INCIDENT.md as the
           # upstream cause when the proof ring is
           # empty because ingest is rejecting.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#31-mode-a--qsdmnvidialockhttpblocksspike"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-operator-hygiene-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#31-mode-a--qsdmnvidialockhttpblocksspike"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-operator-hygiene-incident.json"
           summary: "{{ $labels.instance }}: elevated NVIDIA-lock HTTP 403 rate"
           description: |
             qsdm_nvidia_lock_http_blocks_total is incrementing
@@ -90,8 +90,8 @@ groups:
           # right action. The libp2p drop is silent —
           # producers have no client-visible signal,
           # so the alert IS the operator's only handle.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#32-mode-b--qsdmnvidialockp2prejects"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-operator-hygiene-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#32-mode-b--qsdmnvidialockp2prejects"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-operator-hygiene-incident.json"
           summary: "{{ $labels.instance }}: P2P transactions rejected by NVIDIA-lock gate"
           description: |
             qsdm_nvidia_lock_p2p_rejects_total has incremented
@@ -150,8 +150,8 @@ groups:
           # rollback, nonce-TTL extension}. Explicitly
           # anti-patterns silently raising the per-IP
           # cap to silence the alert.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#31-mode-a--qsdmngcchallengeratelimited"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-ngc-submission-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#31-mode-a--qsdmngcchallengeratelimited"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-ngc-submission-incident.json"
           summary: "{{ $labels.instance }}: sustained 429s on /monitoring/ngc-challenge"
           description: |
             qsdm_ngc_challenge_rate_limited_total has incremented
@@ -197,8 +197,8 @@ groups:
           # cascade map in §4 explicitly hands off to
           # TRUST_INCIDENT.md Modes A/B/D when those
           # fire alongside.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-ngc-submission-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-ngc-submission-incident.json"
           summary: "{{ $labels.instance }}: sustained POST /monitoring/ngc-proof rejections"
           description: |
             qsdm_ngc_proof_ingest_rejected_total summed across
@@ -280,8 +280,8 @@ groups:
           # no client-visible response, so silencing
           # leaves a population permanently unable to
           # participate.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#31-mode-a--qsdmsubmeshp2prejects"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-submesh-policy-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#31-mode-a--qsdmsubmeshp2prejects"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-submesh-policy-incident.json"
           summary: "{{ $labels.instance }}: P2P transactions dropped by submesh policy gate"
           description: |
             qsdm_submesh_p2p_reject_route_total or
@@ -338,8 +338,8 @@ groups:
           # privileged max_tx_size to silence one bad
           # producer (it's a global change affecting
           # every privileged caller).
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#32-mode-b--qsdmsubmeshapisustained422"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-submesh-policy-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#32-mode-b--qsdmsubmeshapisustained422"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-submesh-policy-incident.json"
           summary: "{{ $labels.instance }}: sustained HTTP 422s from submesh policy gate"
           description: |
             ≥5 API submesh-policy rejects over 10m,
@@ -407,8 +407,8 @@ groups:
           # (NVIDIA-lock P2P gate cause), and
           # MINING_LIVENESS.md (when storage failures
           # wedge block production).
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#34-mode-d--qsdmnotransactionsstored"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-operator-hygiene-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#34-mode-d--qsdmnotransactionsstored"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-operator-hygiene-incident.json"
           summary: "{{ $labels.instance }}: transactions processed but none stored"
           description: |
             Validator is admitting inbound P2P txs but storing
@@ -464,8 +464,8 @@ groups:
           # map walks the typical 30–40m progression so
           # an operator hit by 4 alerts at once knows
           # they're one incident.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#31-mode-a--qsdmtrustnoattestationsaccepted"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-trust-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#31-mode-a--qsdmtrustnoattestationsaccepted"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-trust-incident.json"
           summary: "No accepted NGC proof bundles for 20 minutes"
           description: |
             /api/v1/trust/attestations/summary will report attested=0 until a
@@ -498,8 +498,8 @@ groups:
           # unauthorized = third-party probe. The runbook
           # table maps every closed-enum reason to a
           # cause and an action.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#32-mode-b--qsdmtrustingestrejectrateelevated"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-trust-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#32-mode-b--qsdmtrustingestrejectrateelevated"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-trust-incident.json"
           summary: "NGC ingest rejections outpacing acceptances"
           description: |
             Break out qsdm_ngc_proof_ingest_rejected_total by reason.
@@ -547,8 +547,8 @@ groups:
           # with the same QSDM_NGC_PROOF_NODE_ID dedupe to
           # one source, which can fire this alert even when
           # both sidecars are healthy and posting.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#33-mode-c--qsdmtrustattestationsbelowfloor"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-trust-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#33-mode-c--qsdmtrustattestationsbelowfloor"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-trust-incident.json"
           summary: "{{ $labels.instance }}: only {{ $value }} fresh attestation source(s)"
           description: |
             /api/v1/trust/attestations/summary reports attested={{ $value }}
@@ -583,8 +583,8 @@ groups:
           # pre-warning trigger to identify the upstream
           # cause (Modes A/B) rather than a thing to
           # mitigate directly.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#34-mode-d--qsdmtrustngcservicedegraded"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-trust-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#34-mode-d--qsdmtrustngcservicedegraded"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-trust-incident.json"
           summary: "{{ $labels.instance }}: NGC service status is not 'healthy'"
           description: |
             /api/v1/trust/attestations/summary ngc_service_status is
@@ -615,8 +615,8 @@ groups:
           # out. Threshold is calibrated to fire halfway
           # through the degradation window so an operator
           # has 30 minutes to act before Mode C fires.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#35-mode-e--qsdmtrustlastattestedstale"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-trust-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#35-mode-e--qsdmtrustlastattestedstale"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-trust-incident.json"
           summary: "{{ $labels.instance }}: newest attestation is >30m old"
           description: |
             Newest attestation timestamp is {{ $value | humanizeDuration }}
@@ -648,8 +648,8 @@ groups:
           # BEFORE restarting (state will be lost on
           # restart, and the wedge is likely
           # reproducible).
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#36-mode-f--qsdmtrustaggregatorstale"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-trust-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#36-mode-f--qsdmtrustaggregatorstale"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-trust-incident.json"
           summary: "{{ $labels.instance }}: TrustAggregator Refresh() is stuck"
           description: |
             qsdm_trust_last_checked_seconds has not advanced in >2m
@@ -700,8 +700,8 @@ groups:
           # when the operator either fixes the upstream
           # cause or calls RemoveQuarantine after
           # confirming the policy hit has stopped.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-quarantine-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-quarantine-incident.json"
           summary: "{{ $labels.instance }}: {{ $value }} submesh(es) currently quarantined"
           description: |
             The QuarantineManager has {{ $value }} submeshes with
@@ -736,8 +736,8 @@ groups:
           # without root cause re-fires within 15 min
           # and loses the diagnostic state of which
           # submeshes triggered when.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-quarantine-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-quarantine-incident.json"
           summary: "{{ $labels.instance }}: majority of tracked submeshes quarantined ({{ $value | humanizePercentage }})"
           description: |
             {{ $value | humanizePercentage }} of the submeshes this
@@ -785,8 +785,8 @@ groups:
           # but the runbook walks the receipt verification so
           # the on-call doesn't reflexively page protocol-eng
           # for a single legitimate slash.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#31-mode-a--qsdmminingslashapplied"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-slashing-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#31-mode-a--qsdmminingslashapplied"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-slashing-incident.json"
           summary: "{{ $labels.instance }}: slash transaction applied"
           description: |
             At least one qsdm_slash_applied_total has incremented
@@ -818,8 +818,8 @@ groups:
           # Runbook §3.2 walks the distinguishing query AND
           # the verifier-rollback procedure. Wrong call here
           # loses real money for honest miners; do not skip it.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#32-mode-b--qsdmminingslasheddustburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-slashing-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#32-mode-b--qsdmminingslasheddustburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-slashing-incident.json"
           summary: "{{ $labels.instance }}: >50 CELL slashed in 15m"
           description: |
             qsdm_slash_drained_dust_total has increased by
@@ -858,8 +858,8 @@ groups:
           # indicator of an attacker probing the admission gate
           # before the real slash burst. Runbook §3.3 has the
           # per-reason triage table.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#33-mode-c--qsdmminingslashrejectionsburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-slashing-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#33-mode-c--qsdmminingslashrejectionsburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-slashing-incident.json"
           summary: "{{ $labels.instance }}: ≥10 slash transactions rejected in 10m"
           description: |
             qsdm_slash_rejected_total grew by {{ $value }} in 10m.
@@ -897,8 +897,8 @@ groups:
           # debiting bonds. Runbook §3.4 covers the slash-
           # arithmetic-bug and stake-stripping-attack
           # branches that AREN'T just B in disguise.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#34-mode-d--qsdmminingautorevokeburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-slashing-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#34-mode-d--qsdmminingautorevokeburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-slashing-incident.json"
           summary: "{{ $labels.instance }}: ≥3 records auto-revoked by SlashApplier in 15m"
           description: |
             SlashApplier.RevokeIfUnderBonded fired for {{ $value }}
@@ -941,8 +941,8 @@ groups:
           # rather than empty, the runbook redirects the
           # operator to the chain-liveness runbook in step
           # 3.1.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#31-mode-a--qsdmminingregistryempty"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-enrollment-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#31-mode-a--qsdmminingregistryempty"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-enrollment-incident.json"
           summary: "{{ $labels.instance }}: zero active enrollments for 15m"
           description: |
             qsdm_enrollment_active_count is 0 on a node that has
@@ -980,8 +980,8 @@ groups:
           # forced-exit driver dominates — a coordinated
           # cheat-ring incident is a different on-call than a
           # voluntary release-regression exit.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#32-mode-b--qsdmminingregistryshrinkingfast"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-enrollment-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#32-mode-b--qsdmminingregistryshrinkingfast"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-enrollment-incident.json"
           summary: "{{ $labels.instance }}: active enrollments fell {{ $value | humanizePercentage }} in 1h"
           description: |
             qsdm_enrollment_active_count dropped by {{ $value | humanizePercentage }}
@@ -1018,8 +1018,8 @@ groups:
           # consensus-byzantine signals so operators can
           # identify the upstream cause before the 7-day
           # unbond window matures.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#33-mode-c--qsdmminingpendingunbondmajority"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-enrollment-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#33-mode-c--qsdmminingpendingunbondmajority"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-enrollment-incident.json"
           summary: "{{ $labels.instance }}: {{ $value | humanizePercentage }} of bonded miners pending unbond"
           description: |
             More than half of the bonded population is in the 7-day
@@ -1048,8 +1048,8 @@ groups:
           # `reason` label off the by-reason breakout query
           # in the description and jump straight to the row
           # in the runbook table.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#34-mode-d--qsdmminingenrollmentrejectionsburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-enrollment-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#34-mode-d--qsdmminingenrollmentrejectionsburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-enrollment-incident.json"
           summary: "{{ $labels.instance }}: ≥20 enrollment rejections in 10m"
           description: |
             qsdm_enrollment_rejected_total grew by {{ $value }} in
@@ -1084,8 +1084,8 @@ groups:
           # /api/v1/mining/enrollments. Catches stale
           # EnrollmentStateProvider closures that survive a
           # partial restart.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#35-mode-e--qsdmminingbondeddustdropped"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-enrollment-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#35-mode-e--qsdmminingbondeddustdropped"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-enrollment-incident.json"
           summary: "{{ $labels.instance }}: bonded stake dropped >50 CELL in 30m"
           description: |
             Total active bond fell by {{ humanize $value }} dust
@@ -1129,8 +1129,8 @@ groups:
           # silently refuses to seal, and every downstream
           # mining alert flatlines as collateral signal
           # rather than firing.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-mining-liveness.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-mining-liveness.json"
           summary: "{{ $labels.instance }}: qsdm_chain_height has not advanced in 5m"
           description: |
             Block production has stalled. v2 mining alerts above
@@ -1166,8 +1166,8 @@ groups:
           # (not_enrolled / wrong_contract / decode_failed
           # vs. insufficient_balance / fee_invalid) lives in
           # the runbook table.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#32-mode-b--qsdmminingmempoolbacklog"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-mining-liveness.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#32-mode-b--qsdmminingmempoolbacklog"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-mining-liveness.json"
           summary: "{{ $labels.instance }}: mempool >10k pending for 10m"
           description: |
             qsdm_mempool_size is {{ $value }}. Either traffic spiked
@@ -1230,8 +1230,8 @@ groups:
           # slashing because the offending field is
           # simply not in the enum — there's no
           # economic gain to harvest.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#31-mode-a--qsdmattestarchspoofunknownarchburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-arch-spoof-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#31-mode-a--qsdmattestarchspoofunknownarchburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-arch-spoof-incident.json"
           summary: "{{ $labels.instance }}: sustained unknown-arch rejections"
           description: |
             qsdm_attest_archspoof_rejected_total{reason="unknown_arch"}
@@ -1273,8 +1273,8 @@ groups:
           # Mode A because the economic cost (stake
           # bond at risk) means honest operators rarely
           # trigger this by accident.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#32-mode-b--qsdmattestarchspoofgpunamemismatch"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-arch-spoof-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#32-mode-b--qsdmattestarchspoofgpunamemismatch"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-arch-spoof-incident.json"
           summary: "{{ $labels.instance }}: HMAC bundle gpu_name vs gpu_arch mismatch"
           description: |
             qsdm_attest_archspoof_rejected_total{reason="gpu_name_mismatch"}
@@ -1325,8 +1325,8 @@ groups:
           # anomaly branch (slashing destroys forensic
           # state and the bundle may need to be
           # preserved untouched as evidence).
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#33-mode-c--qsdmattestarchspoofccsubjectmismatch"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-arch-spoof-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#33-mode-c--qsdmattestarchspoofccsubjectmismatch"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-arch-spoof-incident.json"
           summary: "{{ $labels.instance }}: CC leaf cert subject contradicts gpu_arch"
           description: |
             qsdm_attest_archspoof_rejected_total{reason="cc_subject_mismatch"}
@@ -1401,8 +1401,8 @@ groups:
           # alert often co-fires with rejection-flood
           # signals and may flow into a slashing case
           # for sustained single-NodeID activity.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#33-mode-c--qsdmattesthashrateoutofband"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-operator-hygiene-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#33-mode-c--qsdmattesthashrateoutofband"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-operator-hygiene-incident.json"
           summary: "{{ $labels.instance }}: claimed hashrate out of band for arch={{ $labels.arch }}"
           description: |
             qsdm_attest_hashrate_rejected_total{arch="{{ $labels.arch }}"}
@@ -1466,8 +1466,8 @@ groups:
           # informational — if it pages someone out of
           # bed, the Alertmanager routing config is
           # wrong.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#31-mode-a--qsdmgovauthorityvoterecorded"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-governance-authority-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#31-mode-a--qsdmgovauthorityvoterecorded"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-governance-authority-incident.json"
           summary: "{{ $labels.instance }}: authority rotation vote recorded ({{ $labels.op }})"
           description: |
             qsdm_gov_authority_voted_total{op="{{ $labels.op }}"}
@@ -1504,8 +1504,8 @@ groups:
           # post-count-check}. The veto path is
           # explicitly racing a counter-rotation —
           # there is no "cancel proposal" tx.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#32-mode-b--qsdmgovauthoritythresholdcrossed"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-governance-authority-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#32-mode-b--qsdmgovauthoritythresholdcrossed"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-governance-authority-incident.json"
           summary: "{{ $labels.instance }}: authority rotation crossed M-of-N threshold ({{ $labels.op }})"
           description: |
             qsdm_gov_authority_crossed_total{op="{{ $labels.op }}"}
@@ -1556,8 +1556,8 @@ groups:
           # (gov recovery is gated on chain liveness
           # if the authority drop has wedged
           # consensus).
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#33-mode-c--qsdmgovauthoritycounttoolow"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-governance-authority-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#33-mode-c--qsdmgovauthoritycounttoolow"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-governance-authority-incident.json"
           summary: "{{ $labels.instance }}: AuthorityList size = {{ $value }} (< 2)"
           description: |
             qsdm_gov_authority_count is {{ $value }}, below the
@@ -1645,8 +1645,8 @@ groups:
           # cross-check ARCH_SPOOF_INCIDENT.md;
           # cert_subject ⇒ benign multi-byte unicode
           # in a real NVIDIA cert.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#74-mode-d--qsdmattestrejectionfieldtruncationsustained"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-rejection-flood.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#74-mode-d--qsdmattestrejectionfieldtruncationsustained"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-rejection-flood.json"
           summary: "{{ $labels.instance }}: recent-rejection ring is truncating {{ $labels.field }} >25% of the time"
           description: |
             qsdm_attest_rejection_field_truncated_total{field="{{ $labels.field }}"}
@@ -1713,8 +1713,8 @@ groups:
           # before Mode D crosses 25%. Cross-references
           # Mode D's cause table for the same `field`
           # label.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#75-mode-e--qsdmattestrejectionfieldrunesmaxnearcap"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-rejection-flood.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#75-mode-e--qsdmattestrejectionfieldrunesmaxnearcap"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-rejection-flood.json"
           summary: "{{ $labels.instance }}: recent-rejection ring {{ $labels.field }} runes_max within 10% of cap"
           description: |
             qsdm_attest_rejection_field_runes_max{field="{{ $labels.field }}"}
@@ -1770,8 +1770,8 @@ groups:
           # the runbook also walks the promotion path
           # to Mode B (§7.2) if compactions stay high
           # AND the persister starts dropping records.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#71-mode-a--qsdmattestrejectionpersistcompactionshigh"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-rejection-flood.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#71-mode-a--qsdmattestrejectionpersistcompactionshigh"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-rejection-flood.json"
           summary: "{{ $labels.instance }}: recent-rejection ring is compacting {{ $value | humanize }}× per minute"
           description: |
             qsdm_attest_rejection_persist_compactions_total has
@@ -1839,8 +1839,8 @@ groups:
           # forensic-record persistence is being
           # dropped. Anchor §7.2 walks the
           # cap-tuning vs. mempool-rate-limit decision.
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#72-mode-b--qsdmattestrejectionpersisthardcapdropping"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-rejection-flood.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#72-mode-b--qsdmattestrejectionpersisthardcapdropping"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-rejection-flood.json"
           summary: "{{ $labels.instance }}: recent-rejection persister is shedding records at the hard byte cap"
           description: |
             qsdm_attest_rejection_persist_hardcap_drops_total has
@@ -1928,8 +1928,8 @@ groups:
           # limiter is doing its job (apply policy
           # upstream) vs. the limiter rate is too tight
           # (relax cfg.RecentRejectionsRateLimitPerSec).
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#73-mode-c--qsdmattestrejectionperminerratelimited"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-rejection-flood.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#73-mode-c--qsdmattestrejectionperminerratelimited"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-rejection-flood.json"
           summary: "{{ $labels.instance }}: per-miner rate-limit is dropping records at recent-rejection ring entry"
           description: |
             qsdm_attest_rejection_per_miner_rate_limited_total has
@@ -2025,8 +2025,8 @@ groups:
           # remediation (rebuild with CGO, swap the CC verifier,
           # register a real slashing evidence verifier, etc.) rather
           # than the runbook header.
-          runbook_url: 'https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-{{ reReplaceAll "_" "-" $labels.kind }}'
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-stub-deployment-incident.json"
+          runbook_url: 'https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-{{ reReplaceAll "_" "-" $labels.kind }}'
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-stub-deployment-incident.json"
           summary: "{{ $labels.instance }}: stub implementation active for kind={{ $labels.kind }}"
           description: |
             qsdm_stub_active{kind="{{ $labels.kind }}"} == 1 on
@@ -2131,8 +2131,8 @@ groups:
           severity: warning
           subsystem: v2-wallet
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-wallet-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-wallet-incident.json"
           summary: "{{ $labels.instance }}: /api/v1/wallet/send error rate above 10% for ≥10m"
           description: |
             qsdm_wallet_send_total handler-side failure ratio
@@ -2182,8 +2182,8 @@ groups:
           severity: warning
           subsystem: v2-wallet
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-wallet-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-wallet-incident.json"
           summary: "{{ $labels.instance }}: wallet API storage errors > 1/min for ≥5m"
           description: |
             Combined rate of qsdm_wallet_balance_query_total{result="storage_error"}
@@ -2223,8 +2223,8 @@ groups:
           severity: warning
           subsystem: v2-wallet
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#33-mode-c--qsdmwalletmintburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-wallet-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#33-mode-c--qsdmwalletmintburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-wallet-incident.json"
           summary: "{{ $labels.instance }}: $CELL mint rate > 5/min for ≥30m"
           description: |
             qsdm_wallet_mint_total{result="success"} on
@@ -2285,8 +2285,8 @@ groups:
           severity: warning
           subsystem: v2-storage
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-storage-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-storage-incident.json"
           summary: "{{ $labels.instance }}: storage StoreTransaction errors > 1/min for ≥5m"
           description: |
             qsdm_storage_op_total{op="store_transaction",result="error"}
@@ -2333,8 +2333,8 @@ groups:
           severity: critical
           subsystem: v2-storage
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-storage-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-storage-incident.json"
           summary: "{{ $labels.instance }}: storage Ready() probe failing"
           description: |
             qsdm_storage_op_total{op="ready",result="error"} is
@@ -2396,8 +2396,8 @@ groups:
           severity: warning
           subsystem: v2-networking
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-networking-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-networking-incident.json"
           summary: "{{ $labels.instance }}: libp2p peer count == 0 for ≥5m"
           description: |
             qsdm_p2p_peers_connected{instance="{{ $labels.instance }}",provider="live"}
@@ -2443,8 +2443,8 @@ groups:
           severity: warning
           subsystem: v2-networking
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-networking-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-networking-incident.json"
           summary: "{{ $labels.instance }}: peers > 0 but no inbound gossip for ≥10m"
           description: |
             On {{ $labels.instance }}, qsdm_p2p_peers_connected
@@ -2491,8 +2491,8 @@ groups:
           severity: info
           subsystem: v2-networking
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-networking-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-networking-incident.json"
           summary: "{{ $labels.instance }}: wallet-tx dedupe skip rate > 1/sec for ≥15m"
           description: |
             qsdm_p2p_wallet_ingress_dedupe_skip_total on
@@ -2551,8 +2551,8 @@ groups:
           severity: warning
           subsystem: v2-contracts
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#31-mode-a--qsdmcontractexecuteerrorrate"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-contracts-bridge-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#31-mode-a--qsdmcontractexecuteerrorrate"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-contracts-bridge-incident.json"
           summary: "{{ $labels.instance }}: contract execution error rate > 50% for ≥15m"
           description: |
             ContractEngine.ExecuteContract on
@@ -2593,8 +2593,8 @@ groups:
           severity: warning
           subsystem: v2-bridge
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#32-mode-b--qsdmbridgeoperrorburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-contracts-bridge-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#32-mode-b--qsdmbridgeoperrorburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-contracts-bridge-incident.json"
           summary: "{{ $labels.instance }}: bridge op error rate > 0.2/min for ≥10m"
           description: |
             BridgeProtocol on {{ $labels.instance }} has had
@@ -2651,8 +2651,8 @@ groups:
           severity: warning
           subsystem: v2-reputation
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#31-mode-a--qsdmreputationbanratiohigh"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-reputation-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#31-mode-a--qsdmreputationbanratiohigh"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-reputation-incident.json"
           summary: "{{ $labels.instance }}: {{ $labels.tracker }} ban ratio > 50% for ≥10m"
           description: |
             qsdm_reputation_peers_banned /
@@ -2699,8 +2699,8 @@ groups:
           severity: info
           subsystem: v2-reputation
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#32-mode-b--qsdmreputationscorecollapse"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-reputation-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#32-mode-b--qsdmreputationscorecollapse"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-reputation-incident.json"
           summary: "{{ $labels.instance }}: {{ $labels.tracker }} min-score < -100 for ≥30m"
           description: |
             qsdm_reputation_score_min on
@@ -2739,8 +2739,8 @@ groups:
           severity: warning
           subsystem: v2-hotreload
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#31-mode-a--qsdmhotreloadapplyfailures"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-hot-reload-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#31-mode-a--qsdmhotreloadapplyfailures"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-hot-reload-incident.json"
           summary: "{{ $labels.instance }}: hot-reload apply failures sustained for ≥10m"
           description: |
             qsdm_hot_reload_apply_failure_total on
@@ -2775,8 +2775,8 @@ groups:
           severity: info
           subsystem: v2-hotreload
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#32-mode-b--qsdmhotreloaddryrundegraded"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-hot-reload-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#32-mode-b--qsdmhotreloaddryrundegraded"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-hot-reload-incident.json"
           summary: "{{ $labels.instance }}: last hot-reload dry-run failed load or policy for ≥30m"
           description: |
             On {{ $labels.instance }} the most-recent
@@ -2823,8 +2823,8 @@ groups:
           severity: warning
           subsystem: security
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#31-qsdmsecurityfailedloginburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#31-qsdmsecurityfailedloginburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: "{{ $labels.instance }}: failed-login rate >1/s for 10m"
           description: |
             qsdm_security_failed_logins_total is climbing
@@ -2854,8 +2854,8 @@ groups:
           severity: critical
           subsystem: security
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#32-qsdmsecurityaccountlockoutburst"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#32-qsdmsecurityaccountlockoutburst"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: "{{ $labels.instance }}: >5 account lockouts in 15m"
           description: |
             qsdm_security_account_lockouts_total
@@ -2884,8 +2884,8 @@ groups:
           severity: warning
           subsystem: security
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#33-qsdmsecurityratelimitviolationspike"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#33-qsdmsecurityratelimitviolationspike"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: "{{ $labels.instance }}: rate-limit rejections >5/s for 10m"
           description: |
             qsdm_security_rate_limit_violations_total
@@ -2913,8 +2913,8 @@ groups:
           severity: warning
           subsystem: security
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#34-qsdmsecuritycsrffailurespike"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#34-qsdmsecuritycsrffailurespike"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: "{{ $labels.instance }}: CSRF failures >0.1/s for 5m"
           description: |
             qsdm_security_csrf_failures_total is
@@ -2945,8 +2945,8 @@ groups:
           severity: warning
           subsystem: security
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#35-qsdmsecurityinvalidtokenspike"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#35-qsdmsecurityinvalidtokenspike"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: "{{ $labels.instance }}: invalid-JWT rate >1/s for 10m"
           description: |
             qsdm_security_auth_invalid_token_total is
@@ -2971,8 +2971,8 @@ groups:
           severity: critical
           subsystem: security
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#36-qsdmsecuritytokenrevokedhit"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#36-qsdmsecuritytokenrevokedhit"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: "{{ $labels.instance }}: revoked-JWT replay attempt"
           description: |
             qsdm_security_token_revoked_hits_total
@@ -3004,8 +3004,8 @@ groups:
           severity: warning
           subsystem: security
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#37-qsdmsecurityrequestsignaturefailurespike"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#37-qsdmsecurityrequestsignaturefailurespike"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: "{{ $labels.instance }}: request signature failures >0.1/s for 5m"
           description: |
             qsdm_security_request_signature_failed_total
@@ -3033,8 +3033,8 @@ groups:
           severity: warning
           subsystem: security
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#38-qsdmsecurityrequesttimeoutspike"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#38-qsdmsecurityrequesttimeoutspike"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: "{{ $labels.instance }}: per-request timeouts >0.5/s for 10m"
           description: |
             qsdm_security_request_timeout_total is
@@ -3062,8 +3062,8 @@ groups:
           severity: warning
           subsystem: security
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#39-qsdmsecuritycorsrejectionspike"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#39-qsdmsecuritycorsrejectionspike"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: "{{ $labels.instance }}: CORS rejections >1/s for 10m"
           description: |
             qsdm_security_cors_rejections_total is
@@ -3105,8 +3105,8 @@ groups:
           severity: warning
           subsystem: v2-peer-attester
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/DEPLOYMENT_TOPOLOGY.md#mode-a--qsdmpeerattesterabsent"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-deployment-topology.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/DEPLOYMENT_TOPOLOGY.md#mode-a--qsdmpeerattesterabsent"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-deployment-topology.json"
           summary: "{{ $labels.peer_slot }}: peer attester unreachable via tunnel for >=5m"
           description: |
             Prometheus has been unable to scrape
@@ -3166,8 +3166,8 @@ groups:
           severity: warning
           audit_row: rotation-05
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/MTLS_CERT_ROTATION.md#31-qsdmtlscertnearexpiry"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/MTLS_CERT_ROTATION.md#31-qsdmtlscertnearexpiry"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: |
             TLS / mTLS cert near expiry (<30 days)
           description: |
@@ -3188,8 +3188,8 @@ groups:
           severity: critical
           audit_row: rotation-05
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/MTLS_CERT_ROTATION.md#32-qsdmtlscertcriticalexpiry"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/MTLS_CERT_ROTATION.md#32-qsdmtlscertcriticalexpiry"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: |
             TLS / mTLS cert CRITICALLY near expiry (<7 days)
           description: |
@@ -3206,8 +3206,8 @@ groups:
           severity: warning
           audit_row: rotation-05
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/JWT_KEY_ROTATION.md#31-qsdmjwtprimarykeyagedout"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/JWT_KEY_ROTATION.md#31-qsdmjwtprimarykeyagedout"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: |
             JWT / request-sig primary HMAC older than 90d — rotate
           description: |
@@ -3228,8 +3228,8 @@ groups:
           severity: warning
           audit_row: rotation-05
         annotations:
-          runbook_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/JWT_KEY_ROTATION.md#32-qsdmjwtsecondarykeywindowleftopen"
-          dashboard_url: "https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
+          runbook_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/JWT_KEY_ROTATION.md#32-qsdmjwtsecondarykeywindowleftopen"
+          dashboard_url: "https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/grafana/dashboards/qsdm-runbook-security-incident.json"
           summary: |
             JWT secondary HMAC rotation window left open >7d
           description: |

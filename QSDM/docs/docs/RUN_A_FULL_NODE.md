@@ -19,7 +19,7 @@ before it installs anything if a check fails.
 Get the script and read it first (it is plain bash):
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/blackbeardONE/QSDM/main/QSDM/scripts/fullnode/install-full-node.sh
+curl -fsSLO https://raw.githubusercontent.com/qsdm-tech/QSDM/main/QSDM/scripts/fullnode/install-full-node.sh
 less install-full-node.sh
 ```
 
@@ -308,7 +308,7 @@ node's process. It never stops, restarts or changes the node. Take it from the c
 names for it, and compare its SHA-256 with the one the page gives:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/blackbeardONE/QSDM/<commit>/QSDM/scripts/fullnode/watch-full-node.py
+curl -fsSLO https://raw.githubusercontent.com/qsdm-tech/QSDM/<commit>/QSDM/scripts/fullnode/watch-full-node.py
 sha256sum watch-full-node.py
 sudo python3 watch-full-node.py install --name "my node"
 ```

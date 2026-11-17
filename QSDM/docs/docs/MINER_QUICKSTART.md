@@ -224,7 +224,7 @@ The full lifecycle (unbond, slash, watch) is documented in
 ### 4.1 Install (`qsdmminer-console`)
 
 ```bash
-git clone https://github.com/blackbeardONE/QSDM.git
+git clone https://github.com/qsdm-tech/QSDM.git
 cd QSDM/source
 go build -o qsdmminer-console ./cmd/qsdmminer-console
 ```
@@ -904,7 +904,7 @@ The legitimate uses for the v1 path are:
 ### A.1 Build
 
 ```bash
-git clone https://github.com/blackbeardONE/QSDM.git
+git clone https://github.com/qsdm-tech/QSDM.git
 cd QSDM/source
 go build -o qsdmminer ./cmd/qsdmminer
 ```

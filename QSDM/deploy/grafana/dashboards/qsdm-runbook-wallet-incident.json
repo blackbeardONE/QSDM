@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMWalletSendErrorRate`\n\n**Severity**: `warning`\n\n**Trigger**: `( sum by (instance) ( rate(qsdm_wallet_send_total{result=~\"tx_create_failed|store_failed|no_wallet_service|nvidia_lock_blocked\"}[5m]) ) ) / ( sum by (instance) ( rate(qsdm_wallet_send_total[5m]) ) > 0 ) > 0.1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate",
+      "description": "**Alert**: `QSDMWalletSendErrorRate`\n\n**Severity**: `warning`\n\n**Trigger**: `( sum by (instance) ( rate(qsdm_wallet_send_total{result=~\"tx_create_failed|store_failed|no_wallet_service|nvidia_lock_blocked\"}[5m]) ) ) / ( sum by (instance) ( rate(qsdm_wallet_send_total[5m]) ) > 0 ) > 0.1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMWalletStorageErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `( sum by (instance) (rate(qsdm_wallet_balance_query_total{result=\"storage_error\"}[5m])) + sum by (instance) (rate(qsdm_wallet_send_total{result=\"store_failed\"}[5m])) ) * 60 > 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst",
+      "description": "**Alert**: `QSDMWalletStorageErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `( sum by (instance) (rate(qsdm_wallet_balance_query_total{result=\"storage_error\"}[5m])) + sum by (instance) (rate(qsdm_wallet_send_total{result=\"store_failed\"}[5m])) ) * 60 > 1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -176,7 +176,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMWalletMintBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_wallet_mint_total{result=\"success\"}[5m]) * 60 > 5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#33-mode-c--qsdmwalletmintburst",
+      "description": "**Alert**: `QSDMWalletMintBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_wallet_mint_total{result=\"success\"}[5m]) * 60 > 5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#33-mode-c--qsdmwalletmintburst",
       "fieldConfig": {
         "defaults": {
           "color": {

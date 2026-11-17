@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestRejectionFieldTruncationSustained`\n\n**Severity**: `warning`\n\n**Trigger**: `( rate(qsdm_attest_rejection_field_truncated_total[10m]) / rate(qsdm_attest_rejection_field_runes_observed_total[10m]) ) > 0.25 and rate(qsdm_attest_rejection_field_runes_observed_total[10m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#74-mode-d--qsdmattestrejectionfieldtruncationsustained",
+      "description": "**Alert**: `QSDMAttestRejectionFieldTruncationSustained`\n\n**Severity**: `warning`\n\n**Trigger**: `( rate(qsdm_attest_rejection_field_truncated_total[10m]) / rate(qsdm_attest_rejection_field_runes_observed_total[10m]) ) > 0.25 and rate(qsdm_attest_rejection_field_runes_observed_total[10m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#74-mode-d--qsdmattestrejectionfieldtruncationsustained",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestRejectionFieldRunesMaxNearCap`\n\n**Severity**: `info`\n\n**Trigger**: `( (qsdm_attest_rejection_field_runes_max{field=\"detail\"} >= 180) or (qsdm_attest_rejection_field_runes_max{field=\"gpu_name\"} >= 230) or (qsdm_attest_rejection_field_runes_max{field=\"cert_subject\"} >= 230) )`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#75-mode-e--qsdmattestrejectionfieldrunesmaxnearcap",
+      "description": "**Alert**: `QSDMAttestRejectionFieldRunesMaxNearCap`\n\n**Severity**: `info`\n\n**Trigger**: `( (qsdm_attest_rejection_field_runes_max{field=\"detail\"} >= 180) or (qsdm_attest_rejection_field_runes_max{field=\"gpu_name\"} >= 230) or (qsdm_attest_rejection_field_runes_max{field=\"cert_subject\"} >= 230) )`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#75-mode-e--qsdmattestrejectionfieldrunesmaxnearcap",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -176,7 +176,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestRejectionPersistCompactionsHigh`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_rejection_persist_compactions_total[5m]) * 60 > 5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#71-mode-a--qsdmattestrejectionpersistcompactionshigh",
+      "description": "**Alert**: `QSDMAttestRejectionPersistCompactionsHigh`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_rejection_persist_compactions_total[5m]) * 60 > 5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#71-mode-a--qsdmattestrejectionpersistcompactionshigh",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -241,7 +241,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestRejectionPersistHardCapDropping`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_rejection_persist_hardcap_drops_total[5m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#72-mode-b--qsdmattestrejectionpersisthardcapdropping",
+      "description": "**Alert**: `QSDMAttestRejectionPersistHardCapDropping`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_rejection_persist_hardcap_drops_total[5m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#72-mode-b--qsdmattestrejectionpersisthardcapdropping",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -306,7 +306,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestRejectionPerMinerRateLimited`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_rejection_per_miner_rate_limited_total[5m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#73-mode-c--qsdmattestrejectionperminerratelimited",
+      "description": "**Alert**: `QSDMAttestRejectionPerMinerRateLimited`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_rejection_per_miner_rate_limited_total[5m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#73-mode-c--qsdmattestrejectionperminerratelimited",
       "fieldConfig": {
         "defaults": {
           "color": {

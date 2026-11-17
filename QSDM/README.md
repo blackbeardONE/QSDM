@@ -74,7 +74,7 @@ sudo apt install -y build-essential cmake git libssl-dev libsqlite3-dev
 # Install Go 1.26.11 from https://go.dev/dl/ (Ubuntu's golang-go package is too old)
 
 # Clone repository
-git clone https://github.com/blackbeardONE/QSDM.git
+git clone https://github.com/qsdm-tech/QSDM.git
 cd QSDM
 
 # Build liboqs (post-quantum signature library)

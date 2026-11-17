@@ -3,7 +3,7 @@
 blank_issues_enabled: true
 contact_links:
   - name: Report a security vulnerability (private)
-    url: https://github.com/blackbeardONE/QSDM/security/advisories/new
+    url: https://github.com/qsdm-tech/QSDM/security/advisories/new
     about: Never open a public issue for a vulnerability. Report it privately here; only the maintainers see it.
   - name: Security policy and bug bounty
     url: https://qsdm.tech/security.html

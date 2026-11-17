@@ -37,11 +37,11 @@
   "homepage": "https://qsdm.tech",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/blackbeardONE/QSDM.git",
+    "url": "git+https://github.com/qsdm-tech/QSDM.git",
     "directory": "QSDM/source/sdk/javascript"
   },
   "bugs": {
-    "url": "https://github.com/blackbeardONE/QSDM/issues"
+    "url": "https://github.com/qsdm-tech/QSDM/issues"
   },
   "engines": {
     "node": ">=18"

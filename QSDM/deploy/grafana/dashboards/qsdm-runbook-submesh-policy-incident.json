@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSubmeshP2PRejects`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_submesh_p2p_reject_route_total[15m]) > 0 or increase(qsdm_submesh_p2p_reject_size_total[15m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#31-mode-a--qsdmsubmeshp2prejects",
+      "description": "**Alert**: `QSDMSubmeshP2PRejects`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_submesh_p2p_reject_route_total[15m]) > 0 or increase(qsdm_submesh_p2p_reject_size_total[15m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#31-mode-a--qsdmsubmeshp2prejects",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSubmeshAPISustained422`\n\n**Severity**: `warning`\n\n**Trigger**: `( increase(qsdm_submesh_api_wallet_reject_route_total[10m]) + increase(qsdm_submesh_api_wallet_reject_size_total[10m]) + increase(qsdm_submesh_api_privileged_reject_size_total[10m]) ) >= 5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#32-mode-b--qsdmsubmeshapisustained422",
+      "description": "**Alert**: `QSDMSubmeshAPISustained422`\n\n**Severity**: `warning`\n\n**Trigger**: `( increase(qsdm_submesh_api_wallet_reject_route_total[10m]) + increase(qsdm_submesh_api_wallet_reject_size_total[10m]) + increase(qsdm_submesh_api_privileged_reject_size_total[10m]) ) >= 5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#32-mode-b--qsdmsubmeshapisustained422",
       "fieldConfig": {
         "defaults": {
           "color": {

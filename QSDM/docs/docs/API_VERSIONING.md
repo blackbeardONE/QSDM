@@ -21,7 +21,7 @@ QSDM has **two** versioned surfaces, and they version **independently**:
 | **Mining protocol** | **v2 only** at consensus | v1 retired on the pilot network (pre-mainnet) at `FORK_V2_HEIGHT = 0`; rejected at admission | Wire field on proofs / blocks; surfaced on `/api/v1/status.mining.protocol_versions_accepted` |
 
 The "v1 deprecation" shipped in `v0.3.2` (commit
-[`f727fef`](https://github.com/blackbeardONE/QSDM/commit/f727fef)) was
+[`f727fef`](https://github.com/qsdm-tech/QSDM/commit/f727fef)) was
 about the **mining protocol's CPU-only PoW path**, not the HTTP URL
 prefix. Three concrete deliverables landed in that session
 (see `RELEASE_NOTES_v0.3.0.md` § Session 86 for the long-form):
@@ -50,7 +50,7 @@ Every public endpoint lives under `/api/v1/*`. This includes:
   - `GET  /api/v1/trust/attestations/summary`
   - `GET  /api/v1/trust/attestations/recent`
 - **Audit-checklist transparency** (new in commit
-  [`2039035`](https://github.com/blackbeardONE/QSDM/commit/2039035),
+  [`2039035`](https://github.com/qsdm-tech/QSDM/commit/2039035),
   matches the trust-attestation precedent).
   - `GET  /api/v1/audit/summary`
   - `GET  /api/v1/audit/items`
@@ -76,7 +76,7 @@ exists in the running validator.
 
 `POST /api/v1/wallet/mint` returns **HTTP 410 Gone** with a migration
 block since v0.3.3 (commit
-[`03edf41`](https://github.com/blackbeardONE/QSDM/commit/03edf41)).
+[`03edf41`](https://github.com/qsdm-tech/QSDM/commit/03edf41)).
 This was a supply-inflation surface from the seed-faucet era —
 publicly callable, returned `status:"minted"`, and did not actually
 credit the recipient. Any client still hitting it is visible in the node's metrics via
@@ -160,7 +160,7 @@ supported**.
 
 If you find any other surface that disagrees with this document
 (marketing copy, blog post, third-party SDK README), please file an
-issue: <https://github.com/blackbeardONE/QSDM/issues>.
+issue: <https://github.com/qsdm-tech/QSDM/issues>.
 
 ## See also
 

@@ -84,7 +84,7 @@ gcc --version           # → MSYS2 mingw64 12.x+
 ## 2. Build the CUDA fatbin + the cuda-tagged miner
 
 ```powershell
-git clone https://github.com/blackbeardONE/QSDM
+git clone https://github.com/qsdm-tech/QSDM
 cd QSDM
 
 # Narrow the build to your arch — sm_86 = RTX 30-series (Ampere consumer).

@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMStubActive`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_stub_active == 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-{{ reReplaceAll \"_\" \"-\" $labels.kind }}",
+      "description": "**Alert**: `QSDMStubActive`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_stub_active == 1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-{{ reReplaceAll \"_\" \"-\" $labels.kind }}",
       "fieldConfig": {
         "defaults": {
           "color": {

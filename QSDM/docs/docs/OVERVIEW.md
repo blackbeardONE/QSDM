@@ -67,4 +67,4 @@ day. It was built further as QSDM+, became QSDM again with the coin CELL on
 - What changed recently: [Network upgrades](NETWORK_UPGRADES.md). How it all
   began: [History](HISTORY.md).
 - Unfamiliar term? See the [Glossary](GLOSSARY.md).
-- Source code: [github.com/blackbeardONE/QSDM](https://github.com/blackbeardONE/QSDM).
+- Source code: [github.com/blackbeardONE/QSDM](https://github.com/qsdm-tech/QSDM).

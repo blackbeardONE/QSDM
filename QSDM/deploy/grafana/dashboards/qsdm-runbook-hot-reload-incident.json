@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMHotReloadApplyFailures`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_hot_reload_apply_failure_total[5m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#31-mode-a--qsdmhotreloadapplyfailures",
+      "description": "**Alert**: `QSDMHotReloadApplyFailures`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_hot_reload_apply_failure_total[5m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#31-mode-a--qsdmhotreloadapplyfailures",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMHotReloadDryRunDegraded`\n\n**Severity**: `info`\n\n**Trigger**: `(qsdm_hot_reload_last_dry_run_load_ok == 0 or qsdm_hot_reload_last_dry_run_policy_ok == 0) and qsdm_hot_reload_last_dry_run_timestamp > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#32-mode-b--qsdmhotreloaddryrundegraded",
+      "description": "**Alert**: `QSDMHotReloadDryRunDegraded`\n\n**Severity**: `info`\n\n**Trigger**: `(qsdm_hot_reload_last_dry_run_load_ok == 0 or qsdm_hot_reload_last_dry_run_policy_ok == 0) and qsdm_hot_reload_last_dry_run_timestamp > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#32-mode-b--qsdmhotreloaddryrundegraded",
       "fieldConfig": {
         "defaults": {
           "color": {

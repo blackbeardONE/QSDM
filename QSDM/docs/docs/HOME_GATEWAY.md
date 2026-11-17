@@ -41,7 +41,7 @@ Blocked by default:
 ## Home Side
 
 Download the gateway for your platform from the matching
-[QSDM GitHub release](https://github.com/blackbeardONE/QSDM/releases):
+[QSDM GitHub release](https://github.com/qsdm-tech/QSDM/releases):
 
 ```text
 qsdm-home-gateway-linux-amd64

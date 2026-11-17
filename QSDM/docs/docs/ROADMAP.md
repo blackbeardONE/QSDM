@@ -3,7 +3,7 @@
 What has to happen before QSDM can leave the pilot stage, in the order the
 project plans to do it. Dates are not promised; each step ships when it is
 ready and is announced on [Network status](NETWORK_STATUS.md) and in the
-[changelog](https://github.com/blackbeardONE/QSDM/blob/main/CHANGELOG.md).
+[changelog](https://github.com/qsdm-tech/QSDM/blob/main/CHANGELOG.md).
 
 > [!NOTE]
 > This page replaces the earlier phase-by-phase roadmap (May 2025 to September
@@ -90,4 +90,4 @@ Until then, treat balances and history as pilot data.
 ## How to follow along
 
 - Live state: [Network status](NETWORK_STATUS.md) and `GET https://api.qsdm.tech/api/v1/status`.
-- Code and discussion: [github.com/blackbeardONE/QSDM](https://github.com/blackbeardONE/QSDM).
+- Code and discussion: [github.com/blackbeardONE/QSDM](https://github.com/qsdm-tech/QSDM).

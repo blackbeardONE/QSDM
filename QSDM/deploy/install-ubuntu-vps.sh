@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 source "${SCRIPT_DIR}/scripts/authorized-block-producers.sh"
 
 QSDM_HOME="${QSDM_HOME:-$HOME/QSDM}"
-QSDM_GIT="${QSDM_GIT:-https://github.com/blackbeardONE/QSDM.git}"
+QSDM_GIT="${QSDM_GIT:-https://github.com/qsdm-tech/QSDM.git}"
 GO_TGZ="${GO_TGZ:-https://go.dev/dl/go1.23.4.linux-amd64.tar.gz}"
 # Install directory keeps the legacy 'qsdm' name during the rebrand
 # migration window so systemd units and operator bookmarks remain valid.

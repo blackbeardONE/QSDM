@@ -29,7 +29,7 @@ certificate on consumer computers to imitate public Windows trust.
 
 ## Project and roles
 
-- Repository: <https://github.com/blackbeardONE/QSDM>
+- Repository: <https://github.com/qsdm-tech/QSDM>
 - License: [MIT](LICENSE)
 - Committer and reviewer: [@blackbeardONE](https://github.com/blackbeardONE)
 - Release approver: [@blackbeardONE](https://github.com/blackbeardONE)

@@ -324,11 +324,11 @@ def fixture_alert(severity: str, alertname: str) -> dict:
                 f"(severity={severity})"
             ),
             "runbook_url": (
-                f"https://github.com/blackbeardONE/QSDM/blob/main/"
+                f"https://github.com/qsdm-tech/QSDM/blob/main/"
                 f"QSDM/docs/docs/runbooks/SMOKE_TEST.md#{alertname.lower()}"
             ),
             "dashboard_url": (
-                f"https://github.com/blackbeardONE/QSDM/blob/main/"
+                f"https://github.com/qsdm-tech/QSDM/blob/main/"
                 f"QSDM/deploy/grafana/dashboards/qsdm-runbook-smoke-test.json"
             ),
         },

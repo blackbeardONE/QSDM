@@ -156,7 +156,7 @@ network see [Network status](NETWORK_STATUS.md).
 ## Reporting a vulnerability
 
 Please report security issues privately as described in the
-[security policy](https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md).
+[security policy](https://github.com/qsdm-tech/QSDM/blob/main/SECURITY.md).
 Do not open a public issue for a vulnerability. The [bug bounty](BUG_BOUNTY.md)
 sets out the scope, the rules (test on a local node, never against other
 users' funds or the live producer), the safe harbour and the rewards

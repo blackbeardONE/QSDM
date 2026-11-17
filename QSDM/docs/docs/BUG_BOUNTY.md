@@ -17,10 +17,10 @@ what is live today.
 
 Use the existing private security contacts, the same ones listed in
 [`security.txt`](https://qsdm.tech/.well-known/security.txt) and
-[`SECURITY.md`](https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md):
+[`SECURITY.md`](https://github.com/qsdm-tech/QSDM/blob/main/SECURITY.md):
 
 1. **Preferred:** a private GitHub security advisory on the QSDM repository:
-   <https://github.com/blackbeardONE/QSDM/security/advisories/new>.
+   <https://github.com/qsdm-tech/QSDM/security/advisories/new>.
 2. **If you cannot use GitHub:** email `admin@qsdm.tech`. Email is not
    encrypted, so send a short description first, without exploit details, keys
    or personal data, and we will set up a private advisory with you.
@@ -273,12 +273,12 @@ Reporters who agree to be named are listed in the
 - **tokenist / swaplaner**: the first report (R1, 12 November 2026, Medium):
   any signed wallet could set any task's migration pointer. Fixed in
   release rc1110; advisory
-  [GHSA-ppp3-xm6g-w5wc](https://github.com/blackbeardONE/QSDM/security/advisories/GHSA-ppp3-xm6g-w5wc)
+  [GHSA-ppp3-xm6g-w5wc](https://github.com/qsdm-tech/QSDM/security/advisories/GHSA-ppp3-xm6g-w5wc)
   (13 November 2026). Reward: 1,000 CELL, paid on 13 November 2026.
 - **tokenist / swaplaner**: the second report (R2, 13 November 2026, Medium):
   a signed task action could carry another transaction's ID and replace that
   transaction's receipt. Fixed in release rc1111; advisory
-  [GHSA-324j-w3cm-g7h4](https://github.com/blackbeardONE/QSDM/security/advisories/GHSA-324j-w3cm-g7h4)
+  [GHSA-324j-w3cm-g7h4](https://github.com/qsdm-tech/QSDM/security/advisories/GHSA-324j-w3cm-g7h4)
   (14 November 2026). Reward: 1,000 CELL, paid on 15 November 2026 from the
   program wallet (§5).
 

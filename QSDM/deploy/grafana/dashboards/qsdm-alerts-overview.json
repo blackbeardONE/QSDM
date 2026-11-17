@@ -59,7 +59,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestArchSpoofUnknownArchBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_archspoof_rejected_total{reason=\"unknown_arch\"}[5m]) > 0.1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#31-mode-a--qsdmattestarchspoofunknownarchburst",
+      "description": "**Alert**: `QSDMAttestArchSpoofUnknownArchBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_archspoof_rejected_total{reason=\"unknown_arch\"}[5m]) > 0.1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#31-mode-a--qsdmattestarchspoofunknownarchburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -124,7 +124,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestArchSpoofGPUNameMismatch`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_archspoof_rejected_total{reason=\"gpu_name_mismatch\"}[5m]) > 0.05`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#32-mode-b--qsdmattestarchspoofgpunamemismatch",
+      "description": "**Alert**: `QSDMAttestArchSpoofGPUNameMismatch`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_archspoof_rejected_total{reason=\"gpu_name_mismatch\"}[5m]) > 0.05`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#32-mode-b--qsdmattestarchspoofgpunamemismatch",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -189,7 +189,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestArchSpoofCCSubjectMismatch`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_attest_archspoof_rejected_total{reason=\"cc_subject_mismatch\"}[15m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#33-mode-c--qsdmattestarchspoofccsubjectmismatch",
+      "description": "**Alert**: `QSDMAttestArchSpoofCCSubjectMismatch`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_attest_archspoof_rejected_total{reason=\"cc_subject_mismatch\"}[15m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ARCH_SPOOF_INCIDENT.md#33-mode-c--qsdmattestarchspoofccsubjectmismatch",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -267,7 +267,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMContractExecuteErrorRate`\n\n**Severity**: `warning`\n\n**Trigger**: `( rate(qsdm_contract_executions_total{result=\"error\"}[15m]) / (rate(qsdm_contract_executions_total[15m]) > 0) ) > 0.5 and rate(qsdm_contract_executions_total[15m]) * 60 >= 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#31-mode-a--qsdmcontractexecuteerrorrate",
+      "description": "**Alert**: `QSDMContractExecuteErrorRate`\n\n**Severity**: `warning`\n\n**Trigger**: `( rate(qsdm_contract_executions_total{result=\"error\"}[15m]) / (rate(qsdm_contract_executions_total[15m]) > 0) ) > 0.5 and rate(qsdm_contract_executions_total[15m]) * 60 >= 1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#31-mode-a--qsdmcontractexecuteerrorrate",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -332,7 +332,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMBridgeOpErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_bridge_op_total{result=\"error\"}[10m]) * 60 > 0.2`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#32-mode-b--qsdmbridgeoperrorburst",
+      "description": "**Alert**: `QSDMBridgeOpErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_bridge_op_total{result=\"error\"}[10m]) * 60 > 0.2`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/CONTRACTS_BRIDGE_INCIDENT.md#32-mode-b--qsdmbridgeoperrorburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -410,7 +410,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMPeerAttesterAbsent`\n\n**Severity**: `warning`\n\n**Trigger**: `up{job=~\"qsdm-peer-attester-.+\"} == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/DEPLOYMENT_TOPOLOGY.md#mode-a--qsdmpeerattesterabsent",
+      "description": "**Alert**: `QSDMPeerAttesterAbsent`\n\n**Severity**: `warning`\n\n**Trigger**: `up{job=~\"qsdm-peer-attester-.+\"} == 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/DEPLOYMENT_TOPOLOGY.md#mode-a--qsdmpeerattesterabsent",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -488,7 +488,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningRegistryEmpty`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_enrollment_active_count == 0 and qsdm_process_uptime_seconds > 600`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#31-mode-a--qsdmminingregistryempty",
+      "description": "**Alert**: `QSDMMiningRegistryEmpty`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_enrollment_active_count == 0 and qsdm_process_uptime_seconds > 600`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#31-mode-a--qsdmminingregistryempty",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -553,7 +553,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningRegistryShrinkingFast`\n\n**Severity**: `warning`\n\n**Trigger**: `( (qsdm_enrollment_active_count offset 1h) - qsdm_enrollment_active_count ) / (qsdm_enrollment_active_count offset 1h) > 0.25 and (qsdm_enrollment_active_count offset 1h) >= 4`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#32-mode-b--qsdmminingregistryshrinkingfast",
+      "description": "**Alert**: `QSDMMiningRegistryShrinkingFast`\n\n**Severity**: `warning`\n\n**Trigger**: `( (qsdm_enrollment_active_count offset 1h) - qsdm_enrollment_active_count ) / (qsdm_enrollment_active_count offset 1h) > 0.25 and (qsdm_enrollment_active_count offset 1h) >= 4`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#32-mode-b--qsdmminingregistryshrinkingfast",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -618,7 +618,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningPendingUnbondMajority`\n\n**Severity**: `warning`\n\n**Trigger**: `( qsdm_enrollment_pending_unbond_count / (qsdm_enrollment_active_count + qsdm_enrollment_pending_unbond_count) ) > 0.5 and (qsdm_enrollment_active_count + qsdm_enrollment_pending_unbond_count) >= 4`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#33-mode-c--qsdmminingpendingunbondmajority",
+      "description": "**Alert**: `QSDMMiningPendingUnbondMajority`\n\n**Severity**: `warning`\n\n**Trigger**: `( qsdm_enrollment_pending_unbond_count / (qsdm_enrollment_active_count + qsdm_enrollment_pending_unbond_count) ) > 0.5 and (qsdm_enrollment_active_count + qsdm_enrollment_pending_unbond_count) >= 4`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#33-mode-c--qsdmminingpendingunbondmajority",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -683,7 +683,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningEnrollmentRejectionsBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_enrollment_rejected_total[10m])) >= 20`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#34-mode-d--qsdmminingenrollmentrejectionsburst",
+      "description": "**Alert**: `QSDMMiningEnrollmentRejectionsBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_enrollment_rejected_total[10m])) >= 20`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#34-mode-d--qsdmminingenrollmentrejectionsburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -748,7 +748,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningBondedDustDropped`\n\n**Severity**: `warning`\n\n**Trigger**: `(qsdm_enrollment_bonded_dust offset 30m) - qsdm_enrollment_bonded_dust > 5e10 and (qsdm_enrollment_bonded_dust offset 30m) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#35-mode-e--qsdmminingbondeddustdropped",
+      "description": "**Alert**: `QSDMMiningBondedDustDropped`\n\n**Severity**: `warning`\n\n**Trigger**: `(qsdm_enrollment_bonded_dust offset 30m) - qsdm_enrollment_bonded_dust > 5e10 and (qsdm_enrollment_bonded_dust offset 30m) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#35-mode-e--qsdmminingbondeddustdropped",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -826,7 +826,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMGovAuthorityVoteRecorded`\n\n**Severity**: `info`\n\n**Trigger**: `increase(qsdm_gov_authority_voted_total[24h]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#31-mode-a--qsdmgovauthorityvoterecorded",
+      "description": "**Alert**: `QSDMGovAuthorityVoteRecorded`\n\n**Severity**: `info`\n\n**Trigger**: `increase(qsdm_gov_authority_voted_total[24h]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#31-mode-a--qsdmgovauthorityvoterecorded",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -891,7 +891,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMGovAuthorityThresholdCrossed`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_gov_authority_crossed_total[24h]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#32-mode-b--qsdmgovauthoritythresholdcrossed",
+      "description": "**Alert**: `QSDMGovAuthorityThresholdCrossed`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_gov_authority_crossed_total[24h]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#32-mode-b--qsdmgovauthoritythresholdcrossed",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -956,7 +956,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMGovAuthorityCountTooLow`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_gov_authority_count < 2`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#33-mode-c--qsdmgovauthoritycounttoolow",
+      "description": "**Alert**: `QSDMGovAuthorityCountTooLow`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_gov_authority_count < 2`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#33-mode-c--qsdmgovauthoritycounttoolow",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1034,7 +1034,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMHotReloadApplyFailures`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_hot_reload_apply_failure_total[5m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#31-mode-a--qsdmhotreloadapplyfailures",
+      "description": "**Alert**: `QSDMHotReloadApplyFailures`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_hot_reload_apply_failure_total[5m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#31-mode-a--qsdmhotreloadapplyfailures",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1099,7 +1099,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMHotReloadDryRunDegraded`\n\n**Severity**: `info`\n\n**Trigger**: `(qsdm_hot_reload_last_dry_run_load_ok == 0 or qsdm_hot_reload_last_dry_run_policy_ok == 0) and qsdm_hot_reload_last_dry_run_timestamp > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#32-mode-b--qsdmhotreloaddryrundegraded",
+      "description": "**Alert**: `QSDMHotReloadDryRunDegraded`\n\n**Severity**: `info`\n\n**Trigger**: `(qsdm_hot_reload_last_dry_run_load_ok == 0 or qsdm_hot_reload_last_dry_run_policy_ok == 0) and qsdm_hot_reload_last_dry_run_timestamp > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/HOT_RELOAD_INCIDENT.md#32-mode-b--qsdmhotreloaddryrundegraded",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1177,7 +1177,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningChainStuck`\n\n**Severity**: `critical`\n\n**Trigger**: `delta(qsdm_chain_height[5m]) == 0 and qsdm_process_uptime_seconds > 300`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck",
+      "description": "**Alert**: `QSDMMiningChainStuck`\n\n**Severity**: `critical`\n\n**Trigger**: `delta(qsdm_chain_height[5m]) == 0 and qsdm_process_uptime_seconds > 300`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1242,7 +1242,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningMempoolBacklog`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_mempool_size > 10000`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#32-mode-b--qsdmminingmempoolbacklog",
+      "description": "**Alert**: `QSDMMiningMempoolBacklog`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_mempool_size > 10000`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#32-mode-b--qsdmminingmempoolbacklog",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1320,7 +1320,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMP2PNoPeers`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_p2p_peers_connected{provider=\"live\"} == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers",
+      "description": "**Alert**: `QSDMP2PNoPeers`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_p2p_peers_connected{provider=\"live\"} == 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1385,7 +1385,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMP2PGossipIngressStalled`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_p2p_peers_connected{provider=\"live\"} > 0 and on(instance) rate(qsdm_p2p_messages_total{direction=\"in\"}[10m]) == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled",
+      "description": "**Alert**: `QSDMP2PGossipIngressStalled`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_p2p_peers_connected{provider=\"live\"} > 0 and on(instance) rate(qsdm_p2p_messages_total{direction=\"in\"}[10m]) == 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1450,7 +1450,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMP2PWalletIngressDedupeBurst`\n\n**Severity**: `info`\n\n**Trigger**: `rate(qsdm_p2p_wallet_ingress_dedupe_skip_total[5m]) > 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst",
+      "description": "**Alert**: `QSDMP2PWalletIngressDedupeBurst`\n\n**Severity**: `info`\n\n**Trigger**: `rate(qsdm_p2p_wallet_ingress_dedupe_skip_total[5m]) > 1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1528,7 +1528,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMNGCChallengeRateLimited`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_ngc_challenge_rate_limited_total[10m]) > 5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#31-mode-a--qsdmngcchallengeratelimited",
+      "description": "**Alert**: `QSDMNGCChallengeRateLimited`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_ngc_challenge_rate_limited_total[10m]) > 5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#31-mode-a--qsdmngcchallengeratelimited",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1593,7 +1593,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMNGCProofIngestRejectBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_ngc_proof_ingest_rejected_total[10m])) > 10`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst",
+      "description": "**Alert**: `QSDMNGCProofIngestRejectBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_ngc_proof_ingest_rejected_total[10m])) > 10`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1671,7 +1671,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMNvidiaLockHTTPBlocksSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_nvidia_lock_http_blocks_total[5m]) > 0.5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#31-mode-a--qsdmnvidialockhttpblocksspike",
+      "description": "**Alert**: `QSDMNvidiaLockHTTPBlocksSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_nvidia_lock_http_blocks_total[5m]) > 0.5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#31-mode-a--qsdmnvidialockhttpblocksspike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1736,7 +1736,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMNvidiaLockP2PRejects`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_nvidia_lock_p2p_rejects_total[15m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#32-mode-b--qsdmnvidialockp2prejects",
+      "description": "**Alert**: `QSDMNvidiaLockP2PRejects`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_nvidia_lock_p2p_rejects_total[15m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#32-mode-b--qsdmnvidialockp2prejects",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1801,7 +1801,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMNoTransactionsStored`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_transactions_stored_total[30m]) == 0 and rate(qsdm_transactions_processed_total[30m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#34-mode-d--qsdmnotransactionsstored",
+      "description": "**Alert**: `QSDMNoTransactionsStored`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_transactions_stored_total[30m]) == 0 and rate(qsdm_transactions_processed_total[30m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#34-mode-d--qsdmnotransactionsstored",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1866,7 +1866,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestHashrateOutOfBand`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_hashrate_rejected_total[5m]) > 0.05`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#33-mode-c--qsdmattesthashrateoutofband",
+      "description": "**Alert**: `QSDMAttestHashrateOutOfBand`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_hashrate_rejected_total[5m]) > 0.05`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#33-mode-c--qsdmattesthashrateoutofband",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1944,7 +1944,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMQuarantineAnySubmesh`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_quarantine_submeshes > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh",
+      "description": "**Alert**: `QSDMQuarantineAnySubmesh`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_quarantine_submeshes > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2009,7 +2009,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMQuarantineMajorityIsolated`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_quarantine_submeshes_tracked >= 4 and qsdm_quarantine_submeshes_ratio > 0.5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated",
+      "description": "**Alert**: `QSDMQuarantineMajorityIsolated`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_quarantine_submeshes_tracked >= 4 and qsdm_quarantine_submeshes_ratio > 0.5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2087,7 +2087,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestRejectionFieldTruncationSustained`\n\n**Severity**: `warning`\n\n**Trigger**: `( rate(qsdm_attest_rejection_field_truncated_total[10m]) / rate(qsdm_attest_rejection_field_runes_observed_total[10m]) ) > 0.25 and rate(qsdm_attest_rejection_field_runes_observed_total[10m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#74-mode-d--qsdmattestrejectionfieldtruncationsustained",
+      "description": "**Alert**: `QSDMAttestRejectionFieldTruncationSustained`\n\n**Severity**: `warning`\n\n**Trigger**: `( rate(qsdm_attest_rejection_field_truncated_total[10m]) / rate(qsdm_attest_rejection_field_runes_observed_total[10m]) ) > 0.25 and rate(qsdm_attest_rejection_field_runes_observed_total[10m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#74-mode-d--qsdmattestrejectionfieldtruncationsustained",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2152,7 +2152,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestRejectionFieldRunesMaxNearCap`\n\n**Severity**: `info`\n\n**Trigger**: `( (qsdm_attest_rejection_field_runes_max{field=\"detail\"} >= 180) or (qsdm_attest_rejection_field_runes_max{field=\"gpu_name\"} >= 230) or (qsdm_attest_rejection_field_runes_max{field=\"cert_subject\"} >= 230) )`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#75-mode-e--qsdmattestrejectionfieldrunesmaxnearcap",
+      "description": "**Alert**: `QSDMAttestRejectionFieldRunesMaxNearCap`\n\n**Severity**: `info`\n\n**Trigger**: `( (qsdm_attest_rejection_field_runes_max{field=\"detail\"} >= 180) or (qsdm_attest_rejection_field_runes_max{field=\"gpu_name\"} >= 230) or (qsdm_attest_rejection_field_runes_max{field=\"cert_subject\"} >= 230) )`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#75-mode-e--qsdmattestrejectionfieldrunesmaxnearcap",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2217,7 +2217,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestRejectionPersistCompactionsHigh`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_rejection_persist_compactions_total[5m]) * 60 > 5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#71-mode-a--qsdmattestrejectionpersistcompactionshigh",
+      "description": "**Alert**: `QSDMAttestRejectionPersistCompactionsHigh`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_rejection_persist_compactions_total[5m]) * 60 > 5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#71-mode-a--qsdmattestrejectionpersistcompactionshigh",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2282,7 +2282,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestRejectionPersistHardCapDropping`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_rejection_persist_hardcap_drops_total[5m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#72-mode-b--qsdmattestrejectionpersisthardcapdropping",
+      "description": "**Alert**: `QSDMAttestRejectionPersistHardCapDropping`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_rejection_persist_hardcap_drops_total[5m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#72-mode-b--qsdmattestrejectionpersisthardcapdropping",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2347,7 +2347,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestRejectionPerMinerRateLimited`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_rejection_per_miner_rate_limited_total[5m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#73-mode-c--qsdmattestrejectionperminerratelimited",
+      "description": "**Alert**: `QSDMAttestRejectionPerMinerRateLimited`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_rejection_per_miner_rate_limited_total[5m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REJECTION_FLOOD.md#73-mode-c--qsdmattestrejectionperminerratelimited",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2425,7 +2425,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMReputationBanRatioHigh`\n\n**Severity**: `warning`\n\n**Trigger**: `(qsdm_reputation_peers_banned / qsdm_reputation_peers_total) > 0.5 and qsdm_reputation_peers_total >= 4`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#31-mode-a--qsdmreputationbanratiohigh",
+      "description": "**Alert**: `QSDMReputationBanRatioHigh`\n\n**Severity**: `warning`\n\n**Trigger**: `(qsdm_reputation_peers_banned / qsdm_reputation_peers_total) > 0.5 and qsdm_reputation_peers_total >= 4`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#31-mode-a--qsdmreputationbanratiohigh",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2490,7 +2490,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMReputationScoreCollapse`\n\n**Severity**: `info`\n\n**Trigger**: `qsdm_reputation_score_min < -100 and qsdm_reputation_peers_total >= 4`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#32-mode-b--qsdmreputationscorecollapse",
+      "description": "**Alert**: `QSDMReputationScoreCollapse`\n\n**Severity**: `info`\n\n**Trigger**: `qsdm_reputation_score_min < -100 and qsdm_reputation_peers_total >= 4`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/REPUTATION_INCIDENT.md#32-mode-b--qsdmreputationscorecollapse",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2568,7 +2568,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityFailedLoginBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_failed_logins_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#31-qsdmsecurityfailedloginburst",
+      "description": "**Alert**: `QSDMSecurityFailedLoginBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_failed_logins_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#31-qsdmsecurityfailedloginburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2633,7 +2633,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityAccountLockoutBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_security_account_lockouts_total[15m]) > 5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#32-qsdmsecurityaccountlockoutburst",
+      "description": "**Alert**: `QSDMSecurityAccountLockoutBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_security_account_lockouts_total[15m]) > 5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#32-qsdmsecurityaccountlockoutburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2698,7 +2698,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityRateLimitViolationSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_rate_limit_violations_total[5m]) > 5.0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#33-qsdmsecurityratelimitviolationspike",
+      "description": "**Alert**: `QSDMSecurityRateLimitViolationSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_rate_limit_violations_total[5m]) > 5.0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#33-qsdmsecurityratelimitviolationspike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2763,7 +2763,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityCSRFFailureSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_csrf_failures_total[5m]) > 0.1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#34-qsdmsecuritycsrffailurespike",
+      "description": "**Alert**: `QSDMSecurityCSRFFailureSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_csrf_failures_total[5m]) > 0.1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#34-qsdmsecuritycsrffailurespike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2828,7 +2828,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityInvalidTokenSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_auth_invalid_token_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#35-qsdmsecurityinvalidtokenspike",
+      "description": "**Alert**: `QSDMSecurityInvalidTokenSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_auth_invalid_token_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#35-qsdmsecurityinvalidtokenspike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2893,7 +2893,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityTokenRevokedHit`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_security_token_revoked_hits_total[15m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#36-qsdmsecuritytokenrevokedhit",
+      "description": "**Alert**: `QSDMSecurityTokenRevokedHit`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_security_token_revoked_hits_total[15m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#36-qsdmsecuritytokenrevokedhit",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2958,7 +2958,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityRequestSignatureFailureSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_request_signature_failed_total[5m]) > 0.1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#37-qsdmsecurityrequestsignaturefailurespike",
+      "description": "**Alert**: `QSDMSecurityRequestSignatureFailureSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_request_signature_failed_total[5m]) > 0.1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#37-qsdmsecurityrequestsignaturefailurespike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3023,7 +3023,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityRequestTimeoutSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_request_timeout_total[5m]) > 0.5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#38-qsdmsecurityrequesttimeoutspike",
+      "description": "**Alert**: `QSDMSecurityRequestTimeoutSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_request_timeout_total[5m]) > 0.5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#38-qsdmsecurityrequesttimeoutspike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3088,7 +3088,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityCORSRejectionSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_cors_rejections_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#39-qsdmsecuritycorsrejectionspike",
+      "description": "**Alert**: `QSDMSecurityCORSRejectionSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_cors_rejections_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#39-qsdmsecuritycorsrejectionspike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3166,7 +3166,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningSlashApplied`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_slash_applied_total[15m])) >= 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#31-mode-a--qsdmminingslashapplied",
+      "description": "**Alert**: `QSDMMiningSlashApplied`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_slash_applied_total[15m])) >= 1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#31-mode-a--qsdmminingslashapplied",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3231,7 +3231,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningSlashedDustBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `sum(increase(qsdm_slash_drained_dust_total[15m])) > 5e10`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#32-mode-b--qsdmminingslasheddustburst",
+      "description": "**Alert**: `QSDMMiningSlashedDustBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `sum(increase(qsdm_slash_drained_dust_total[15m])) > 5e10`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#32-mode-b--qsdmminingslasheddustburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3296,7 +3296,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningSlashRejectionsBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_slash_rejected_total[10m])) >= 10`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#33-mode-c--qsdmminingslashrejectionsburst",
+      "description": "**Alert**: `QSDMMiningSlashRejectionsBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_slash_rejected_total[10m])) >= 10`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#33-mode-c--qsdmminingslashrejectionsburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3361,7 +3361,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningAutoRevokeBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `sum(increase(qsdm_slash_auto_revoked_total[15m])) >= 3`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#34-mode-d--qsdmminingautorevokeburst",
+      "description": "**Alert**: `QSDMMiningAutoRevokeBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `sum(increase(qsdm_slash_auto_revoked_total[15m])) >= 3`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#34-mode-d--qsdmminingautorevokeburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3439,7 +3439,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMStorageWriteErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_storage_op_total{op=\"store_transaction\",result=\"error\"}[5m]) * 60 > 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst",
+      "description": "**Alert**: `QSDMStorageWriteErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_storage_op_total{op=\"store_transaction\",result=\"error\"}[5m]) * 60 > 1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3504,7 +3504,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMStorageReadyFailing`\n\n**Severity**: `critical`\n\n**Trigger**: `rate(qsdm_storage_op_total{op=\"ready\",result=\"error\"}[5m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing",
+      "description": "**Alert**: `QSDMStorageReadyFailing`\n\n**Severity**: `critical`\n\n**Trigger**: `rate(qsdm_storage_op_total{op=\"ready\",result=\"error\"}[5m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3582,7 +3582,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMStubActive`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_stub_active == 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-{{ reReplaceAll \"_\" \"-\" $labels.kind }}",
+      "description": "**Alert**: `QSDMStubActive`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_stub_active == 1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/STUB_DEPLOYMENT_INCIDENT.md#kind-{{ reReplaceAll \"_\" \"-\" $labels.kind }}",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3660,7 +3660,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSubmeshP2PRejects`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_submesh_p2p_reject_route_total[15m]) > 0 or increase(qsdm_submesh_p2p_reject_size_total[15m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#31-mode-a--qsdmsubmeshp2prejects",
+      "description": "**Alert**: `QSDMSubmeshP2PRejects`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_submesh_p2p_reject_route_total[15m]) > 0 or increase(qsdm_submesh_p2p_reject_size_total[15m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#31-mode-a--qsdmsubmeshp2prejects",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3725,7 +3725,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSubmeshAPISustained422`\n\n**Severity**: `warning`\n\n**Trigger**: `( increase(qsdm_submesh_api_wallet_reject_route_total[10m]) + increase(qsdm_submesh_api_wallet_reject_size_total[10m]) + increase(qsdm_submesh_api_privileged_reject_size_total[10m]) ) >= 5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#32-mode-b--qsdmsubmeshapisustained422",
+      "description": "**Alert**: `QSDMSubmeshAPISustained422`\n\n**Severity**: `warning`\n\n**Trigger**: `( increase(qsdm_submesh_api_wallet_reject_route_total[10m]) + increase(qsdm_submesh_api_wallet_reject_size_total[10m]) + increase(qsdm_submesh_api_privileged_reject_size_total[10m]) ) >= 5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SUBMESH_POLICY_INCIDENT.md#32-mode-b--qsdmsubmeshapisustained422",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3803,7 +3803,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMTrustNoAttestationsAccepted`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(rate(qsdm_ngc_proof_ingest_accepted_total[20m])) == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#31-mode-a--qsdmtrustnoattestationsaccepted",
+      "description": "**Alert**: `QSDMTrustNoAttestationsAccepted`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(rate(qsdm_ngc_proof_ingest_accepted_total[20m])) == 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#31-mode-a--qsdmtrustnoattestationsaccepted",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3868,7 +3868,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMTrustIngestRejectRateElevated`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(rate(qsdm_ngc_proof_ingest_rejected_total[10m])) > 1 + sum(rate(qsdm_ngc_proof_ingest_accepted_total[10m]))`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#32-mode-b--qsdmtrustingestrejectrateelevated",
+      "description": "**Alert**: `QSDMTrustIngestRejectRateElevated`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(rate(qsdm_ngc_proof_ingest_rejected_total[10m])) > 1 + sum(rate(qsdm_ngc_proof_ingest_accepted_total[10m]))`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#32-mode-b--qsdmtrustingestrejectrateelevated",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3933,7 +3933,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMTrustAttestationsBelowFloor`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_attested < 2`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#33-mode-c--qsdmtrustattestationsbelowfloor",
+      "description": "**Alert**: `QSDMTrustAttestationsBelowFloor`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_attested < 2`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#33-mode-c--qsdmtrustattestationsbelowfloor",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3998,7 +3998,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMTrustNGCServiceDegraded`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_ngc_service_healthy == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#34-mode-d--qsdmtrustngcservicedegraded",
+      "description": "**Alert**: `QSDMTrustNGCServiceDegraded`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_ngc_service_healthy == 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#34-mode-d--qsdmtrustngcservicedegraded",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4063,7 +4063,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMTrustLastAttestedStale`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_last_attested_seconds > 0 and (time() - qsdm_trust_last_attested_seconds) > 1800`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#35-mode-e--qsdmtrustlastattestedstale",
+      "description": "**Alert**: `QSDMTrustLastAttestedStale`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_last_attested_seconds > 0 and (time() - qsdm_trust_last_attested_seconds) > 1800`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#35-mode-e--qsdmtrustlastattestedstale",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4128,7 +4128,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMTrustAggregatorStale`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_last_checked_seconds > 0 and (time() - qsdm_trust_last_checked_seconds) > 120`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#36-mode-f--qsdmtrustaggregatorstale",
+      "description": "**Alert**: `QSDMTrustAggregatorStale`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_last_checked_seconds > 0 and (time() - qsdm_trust_last_checked_seconds) > 120`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#36-mode-f--qsdmtrustaggregatorstale",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4206,7 +4206,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMWalletSendErrorRate`\n\n**Severity**: `warning`\n\n**Trigger**: `( sum by (instance) ( rate(qsdm_wallet_send_total{result=~\"tx_create_failed|store_failed|no_wallet_service|nvidia_lock_blocked\"}[5m]) ) ) / ( sum by (instance) ( rate(qsdm_wallet_send_total[5m]) ) > 0 ) > 0.1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate",
+      "description": "**Alert**: `QSDMWalletSendErrorRate`\n\n**Severity**: `warning`\n\n**Trigger**: `( sum by (instance) ( rate(qsdm_wallet_send_total{result=~\"tx_create_failed|store_failed|no_wallet_service|nvidia_lock_blocked\"}[5m]) ) ) / ( sum by (instance) ( rate(qsdm_wallet_send_total[5m]) ) > 0 ) > 0.1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#31-mode-a--qsdmwalletsenderrorrate",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4271,7 +4271,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMWalletStorageErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `( sum by (instance) (rate(qsdm_wallet_balance_query_total{result=\"storage_error\"}[5m])) + sum by (instance) (rate(qsdm_wallet_send_total{result=\"store_failed\"}[5m])) ) * 60 > 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst",
+      "description": "**Alert**: `QSDMWalletStorageErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `( sum by (instance) (rate(qsdm_wallet_balance_query_total{result=\"storage_error\"}[5m])) + sum by (instance) (rate(qsdm_wallet_send_total{result=\"store_failed\"}[5m])) ) * 60 > 1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#32-mode-b--qsdmwalletstorageerrorburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4336,7 +4336,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMWalletMintBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_wallet_mint_total{result=\"success\"}[5m]) * 60 > 5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#33-mode-c--qsdmwalletmintburst",
+      "description": "**Alert**: `QSDMWalletMintBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_wallet_mint_total{result=\"success\"}[5m]) * 60 > 5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/WALLET_INCIDENT.md#33-mode-c--qsdmwalletmintburst",
       "fieldConfig": {
         "defaults": {
           "color": {

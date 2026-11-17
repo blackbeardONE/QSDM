@@ -9,7 +9,7 @@
 #   under QSDM/docs/docs/ and apps/qsdm-nvidia-ngc/.
 #
 # Usage:
-#   1. One-time: go to https://github.com/blackbeardONE/QSDM/wiki and
+#   1. One-time: go to https://github.com/qsdm-tech/QSDM/wiki and
 #      click "Create the first page". Title it "Home", paste anything,
 #      save. This materialises the wiki repo.
 #   2. Every time the source docs change: bash QSDM/scripts/sync-wiki.sh
@@ -116,9 +116,9 @@ EOF
 cat > "${WIKI_DIR}/_Footer.md" <<'EOF'
 ---
 
-This wiki mirrors the [QSDM](https://github.com/blackbeardONE/QSDM)
+This wiki mirrors the [QSDM](https://github.com/qsdm-tech/QSDM)
 main repo docs. For the latest canonical content, see
-[`QSDM/docs/docs/`](https://github.com/blackbeardONE/QSDM/tree/main/QSDM/docs/docs).
+[`QSDM/docs/docs/`](https://github.com/qsdm-tech/QSDM/tree/main/QSDM/docs/docs).
 EOF
 
 cd "$WIKI_DIR"

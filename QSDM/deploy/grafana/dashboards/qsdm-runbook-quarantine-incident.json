@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMQuarantineAnySubmesh`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_quarantine_submeshes > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh",
+      "description": "**Alert**: `QSDMQuarantineAnySubmesh`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_quarantine_submeshes > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#31-mode-a--qsdmquarantineanysubmesh",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMQuarantineMajorityIsolated`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_quarantine_submeshes_tracked >= 4 and qsdm_quarantine_submeshes_ratio > 0.5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated",
+      "description": "**Alert**: `QSDMQuarantineMajorityIsolated`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_quarantine_submeshes_tracked >= 4 and qsdm_quarantine_submeshes_ratio > 0.5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/QUARANTINE_INCIDENT.md#32-mode-b--qsdmquarantinemajorityisolated",
       "fieldConfig": {
         "defaults": {
           "color": {
