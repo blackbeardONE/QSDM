@@ -148,7 +148,7 @@ jobs:
           }) | Set-Content -LiteralPath $checksum -Encoding ascii
 
       - name: Upload browser wallet extension
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qsdm-hive-wallet-extension-${{ github.sha }}
           path: |
@@ -224,7 +224,7 @@ jobs:
 
       - name: Upload unsigned signing input
         id: upload-unsigned
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qsdm-hive-${{ steps.versions.outputs.hive }}-windows-signpath-input-UNSIGNED
           path: .cache/signpath/qsdm-hive-${{ steps.versions.outputs.hive }}-windows-unpacked-unsigned.zip
@@ -232,7 +232,7 @@ jobs:
           retention-days: 7
 
       - name: Upload unsigned build evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qsdm-hive-${{ steps.versions.outputs.hive }}-windows-build-evidence
           path: |
@@ -275,7 +275,7 @@ jobs:
 
       - name: Upload unsigned stable release
         if: steps.versions.outputs.is-production-tag == 'true' && vars.SIGNPATH_ENABLED != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qsdm-hive-${{ steps.versions.outputs.hive }}-windows-UNSIGNED
           path: |
@@ -392,7 +392,7 @@ jobs:
 
       - name: Upload unsigned outer installer
         id: upload-installer
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qsdm-hive-${{ env.HIVE_VERSION }}-windows-installer-signing-input-UNSIGNED
           path: apps/qsdm-hive/qsdm-hive-main/release/signpath-installer/qsdm-hive-${{ env.HIVE_VERSION }}-win-x64.exe
@@ -438,7 +438,7 @@ jobs:
           "$hash  $(Split-Path -Leaf $installer)" | Set-Content -LiteralPath (Join-Path $final 'SHA256SUMS-win.txt') -Encoding ascii
 
       - name: Upload signed release
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qsdm-hive-${{ env.HIVE_VERSION }}-windows-SIGNED
           path: |
