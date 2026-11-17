@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningChainStuck`\n\n**Severity**: `critical`\n\n**Trigger**: `delta(qsdm_chain_height[5m]) == 0 and qsdm_process_uptime_seconds > 300`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck",
+      "description": "**Alert**: `QSDMMiningChainStuck`\n\n**Severity**: `critical`\n\n**Trigger**: `delta(qsdm_chain_height[5m]) == 0 and qsdm_process_uptime_seconds > 300`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#31-mode-a--qsdmminingchainstuck",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningMempoolBacklog`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_mempool_size > 10000`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#32-mode-b--qsdmminingmempoolbacklog",
+      "description": "**Alert**: `QSDMMiningMempoolBacklog`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_mempool_size > 10000`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/MINING_LIVENESS.md#32-mode-b--qsdmminingmempoolbacklog",
       "fieldConfig": {
         "defaults": {
           "color": {

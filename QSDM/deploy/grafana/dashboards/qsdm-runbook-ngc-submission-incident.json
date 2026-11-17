@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMNGCChallengeRateLimited`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_ngc_challenge_rate_limited_total[10m]) > 5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#31-mode-a--qsdmngcchallengeratelimited",
+      "description": "**Alert**: `QSDMNGCChallengeRateLimited`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_ngc_challenge_rate_limited_total[10m]) > 5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#31-mode-a--qsdmngcchallengeratelimited",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMNGCProofIngestRejectBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_ngc_proof_ingest_rejected_total[10m])) > 10`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst",
+      "description": "**Alert**: `QSDMNGCProofIngestRejectBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_ngc_proof_ingest_rejected_total[10m])) > 10`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NGC_SUBMISSION_INCIDENT.md#32-mode-b--qsdmngcproofingestrejectburst",
       "fieldConfig": {
         "defaults": {
           "color": {

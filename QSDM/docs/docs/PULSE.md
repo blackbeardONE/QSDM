@@ -3,7 +3,7 @@
 PULSE (Payout, Utility & Ledger Settlement Engine) lets NVIDIA miners mine
 together and be paid every block, without anyone holding their CELL. The pool
 software is open source (MIT) in
-[qsdm-mining-bootstrap](https://github.com/blackbeardONE/qsdm-mining-bootstrap);
+[qsdm-mining-bootstrap](https://github.com/qsdm-tech/qsdm-mining-bootstrap);
 the project runs a pool at [qsdm.tech/pool](https://qsdm.tech/pool).
 
 ## How it works

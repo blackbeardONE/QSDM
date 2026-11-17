@@ -10,7 +10,7 @@ from scripts.report_producer_incident import (
 
 
 REPOSITORY = "blackbeardONE/QSDM"
-RUN_URL = "https://github.com/blackbeardONE/QSDM/actions/runs/123"
+RUN_URL = "https://github.com/qsdm-tech/QSDM/actions/runs/123"
 CHECKED_AT = "2026-10-19T12:00:00Z"
 REASON = "mining closed (GET /mining/work HTTP 503, chain at 884000)"
 

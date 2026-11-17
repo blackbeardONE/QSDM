@@ -250,5 +250,5 @@ on 2026-11-12:
 | Operator dashboard | Private; not offered publicly |
 
 If something on this page disagrees with the status API, the API is right.
-Please [open an issue](https://github.com/blackbeardONE/QSDM/issues) so the
+Please [open an issue](https://github.com/qsdm-tech/QSDM/issues) so the
 page can be fixed.

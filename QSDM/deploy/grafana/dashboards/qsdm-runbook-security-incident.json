@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityFailedLoginBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_failed_logins_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#31-qsdmsecurityfailedloginburst",
+      "description": "**Alert**: `QSDMSecurityFailedLoginBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_failed_logins_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#31-qsdmsecurityfailedloginburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityAccountLockoutBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_security_account_lockouts_total[15m]) > 5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#32-qsdmsecurityaccountlockoutburst",
+      "description": "**Alert**: `QSDMSecurityAccountLockoutBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_security_account_lockouts_total[15m]) > 5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#32-qsdmsecurityaccountlockoutburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -176,7 +176,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityRateLimitViolationSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_rate_limit_violations_total[5m]) > 5.0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#33-qsdmsecurityratelimitviolationspike",
+      "description": "**Alert**: `QSDMSecurityRateLimitViolationSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_rate_limit_violations_total[5m]) > 5.0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#33-qsdmsecurityratelimitviolationspike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -241,7 +241,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityCSRFFailureSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_csrf_failures_total[5m]) > 0.1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#34-qsdmsecuritycsrffailurespike",
+      "description": "**Alert**: `QSDMSecurityCSRFFailureSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_csrf_failures_total[5m]) > 0.1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#34-qsdmsecuritycsrffailurespike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -306,7 +306,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityInvalidTokenSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_auth_invalid_token_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#35-qsdmsecurityinvalidtokenspike",
+      "description": "**Alert**: `QSDMSecurityInvalidTokenSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_auth_invalid_token_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#35-qsdmsecurityinvalidtokenspike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -371,7 +371,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityTokenRevokedHit`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_security_token_revoked_hits_total[15m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#36-qsdmsecuritytokenrevokedhit",
+      "description": "**Alert**: `QSDMSecurityTokenRevokedHit`\n\n**Severity**: `critical`\n\n**Trigger**: `increase(qsdm_security_token_revoked_hits_total[15m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#36-qsdmsecuritytokenrevokedhit",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -436,7 +436,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityRequestSignatureFailureSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_request_signature_failed_total[5m]) > 0.1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#37-qsdmsecurityrequestsignaturefailurespike",
+      "description": "**Alert**: `QSDMSecurityRequestSignatureFailureSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_request_signature_failed_total[5m]) > 0.1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#37-qsdmsecurityrequestsignaturefailurespike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -501,7 +501,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityRequestTimeoutSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_request_timeout_total[5m]) > 0.5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#38-qsdmsecurityrequesttimeoutspike",
+      "description": "**Alert**: `QSDMSecurityRequestTimeoutSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_request_timeout_total[5m]) > 0.5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#38-qsdmsecurityrequesttimeoutspike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -566,7 +566,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMSecurityCORSRejectionSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_cors_rejections_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#39-qsdmsecuritycorsrejectionspike",
+      "description": "**Alert**: `QSDMSecurityCORSRejectionSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_security_cors_rejections_total[5m]) > 1.0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SECURITY_INCIDENT.md#39-qsdmsecuritycorsrejectionspike",
       "fieldConfig": {
         "defaults": {
           "color": {

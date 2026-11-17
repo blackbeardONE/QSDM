@@ -4,7 +4,7 @@
 
   Project lead, sole founder: Joedel Lopez Dalioan (Blackbeard)
   GitHub:                     https://github.com/blackbeardONE
-  Project:                    https://github.com/blackbeardONE/QSDM
+  Project:                    https://github.com/qsdm-tech/QSDM
   Location:                   Manila, Philippines
 
   AI pair-programming partner: Cursor / Claude (sessions 60+ — every

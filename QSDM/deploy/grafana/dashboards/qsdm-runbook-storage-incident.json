@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMStorageWriteErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_storage_op_total{op=\"store_transaction\",result=\"error\"}[5m]) * 60 > 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst",
+      "description": "**Alert**: `QSDMStorageWriteErrorBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_storage_op_total{op=\"store_transaction\",result=\"error\"}[5m]) * 60 > 1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#31-mode-a--qsdmstoragewriteerrorburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMStorageReadyFailing`\n\n**Severity**: `critical`\n\n**Trigger**: `rate(qsdm_storage_op_total{op=\"ready\",result=\"error\"}[5m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing",
+      "description": "**Alert**: `QSDMStorageReadyFailing`\n\n**Severity**: `critical`\n\n**Trigger**: `rate(qsdm_storage_op_total{op=\"ready\",result=\"error\"}[5m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/STORAGE_INCIDENT.md#32-mode-b--qsdmstoragereadyfailing",
       "fieldConfig": {
         "defaults": {
           "color": {

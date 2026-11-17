@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMPeerAttesterAbsent`\n\n**Severity**: `warning`\n\n**Trigger**: `up{job=~\"qsdm-peer-attester-.+\"} == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/DEPLOYMENT_TOPOLOGY.md#mode-a--qsdmpeerattesterabsent",
+      "description": "**Alert**: `QSDMPeerAttesterAbsent`\n\n**Severity**: `warning`\n\n**Trigger**: `up{job=~\"qsdm-peer-attester-.+\"} == 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/DEPLOYMENT_TOPOLOGY.md#mode-a--qsdmpeerattesterabsent",
       "fieldConfig": {
         "defaults": {
           "color": {

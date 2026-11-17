@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMTrustNoAttestationsAccepted`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(rate(qsdm_ngc_proof_ingest_accepted_total[20m])) == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#31-mode-a--qsdmtrustnoattestationsaccepted",
+      "description": "**Alert**: `QSDMTrustNoAttestationsAccepted`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(rate(qsdm_ngc_proof_ingest_accepted_total[20m])) == 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#31-mode-a--qsdmtrustnoattestationsaccepted",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMTrustIngestRejectRateElevated`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(rate(qsdm_ngc_proof_ingest_rejected_total[10m])) > 1 + sum(rate(qsdm_ngc_proof_ingest_accepted_total[10m]))`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#32-mode-b--qsdmtrustingestrejectrateelevated",
+      "description": "**Alert**: `QSDMTrustIngestRejectRateElevated`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(rate(qsdm_ngc_proof_ingest_rejected_total[10m])) > 1 + sum(rate(qsdm_ngc_proof_ingest_accepted_total[10m]))`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#32-mode-b--qsdmtrustingestrejectrateelevated",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -176,7 +176,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMTrustAttestationsBelowFloor`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_attested < 2`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#33-mode-c--qsdmtrustattestationsbelowfloor",
+      "description": "**Alert**: `QSDMTrustAttestationsBelowFloor`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_attested < 2`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#33-mode-c--qsdmtrustattestationsbelowfloor",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -241,7 +241,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMTrustNGCServiceDegraded`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_ngc_service_healthy == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#34-mode-d--qsdmtrustngcservicedegraded",
+      "description": "**Alert**: `QSDMTrustNGCServiceDegraded`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_ngc_service_healthy == 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#34-mode-d--qsdmtrustngcservicedegraded",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -306,7 +306,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMTrustLastAttestedStale`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_last_attested_seconds > 0 and (time() - qsdm_trust_last_attested_seconds) > 1800`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#35-mode-e--qsdmtrustlastattestedstale",
+      "description": "**Alert**: `QSDMTrustLastAttestedStale`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_last_attested_seconds > 0 and (time() - qsdm_trust_last_attested_seconds) > 1800`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#35-mode-e--qsdmtrustlastattestedstale",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -371,7 +371,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMTrustAggregatorStale`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_last_checked_seconds > 0 and (time() - qsdm_trust_last_checked_seconds) > 120`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#36-mode-f--qsdmtrustaggregatorstale",
+      "description": "**Alert**: `QSDMTrustAggregatorStale`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_trust_warm == 1 and qsdm_trust_last_checked_seconds > 0 and (time() - qsdm_trust_last_checked_seconds) > 120`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/TRUST_INCIDENT.md#36-mode-f--qsdmtrustaggregatorstale",
       "fieldConfig": {
         "defaults": {
           "color": {

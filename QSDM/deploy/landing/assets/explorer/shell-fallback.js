@@ -24,7 +24,7 @@
       footer.innerHTML =
         '<div class="shell-fallback-inner"><span>QSDM · CELL</span>' +
         '<nav aria-label="Footer"><a href="/docs/">Docs</a><a href="/api.html">API</a><a href="/audit.html">Audit</a>' +
-        '<a href="/.well-known/security.txt">Security</a><a href="https://github.com/blackbeardONE/QSDM" rel="noopener noreferrer">GitHub ↗</a></nav></div>';
+        '<a href="/.well-known/security.txt">Security</a><a href="https://github.com/qsdm-tech/QSDM" rel="noopener noreferrer">GitHub ↗</a></nav></div>';
     }
   }
 

@@ -66,7 +66,7 @@ content-security-policy: default-src 'self'; img-src 'self' data: https://raw.gi
 $ curl -s https://qsdm.tech/ | grep -oE 'href="[^"]+"' | head
 (expect Download, Wallet, Capabilities, Mining, Docs, Explorer, Audit, Trust)
 $ curl -sI -H 'Origin: https://qsdm.tech' \
-    https://raw.githubusercontent.com/blackbeardONE/QSDM/main/QSDM/docs/docs/QUICK_START.md \
+    https://raw.githubusercontent.com/qsdm-tech/QSDM/main/QSDM/docs/docs/QUICK_START.md \
   | grep -iE 'access-control-allow-origin|content-type'
 content-type: text/plain; charset=utf-8
 access-control-allow-origin: *

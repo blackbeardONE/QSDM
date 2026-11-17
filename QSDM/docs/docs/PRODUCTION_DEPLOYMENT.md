@@ -37,7 +37,7 @@ This guide provides step-by-step instructions for deploying QSDM in a production
 
 ```bash
 # Clone repository
-git clone https://github.com/blackbeardONE/QSDM.git
+git clone https://github.com/qsdm-tech/QSDM.git
 cd QSDM
 
 # Build Docker image
@@ -488,7 +488,7 @@ sudo ufw status  # Linux
 
 ### Getting Help
 
-- **GitHub Issues:** https://github.com/blackbeardONE/QSDM/issues
+- **GitHub Issues:** https://github.com/qsdm-tech/QSDM/issues
 - **Community:** [To be defined]
 
 ---

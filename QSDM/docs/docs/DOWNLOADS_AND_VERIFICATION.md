@@ -80,7 +80,7 @@ If any step fails, Hive does not install the update.
 | Key | QSDM Hive release key **v2** |
 | Algorithm | ML-DSA-87 (NIST FIPS 204) |
 | `key_id` | `4081bf2c4755f4c5c1565b4fac75e14a7e0b52042ac3d34bf8a7f525866c64a9` |
-| Public key | [`QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json`](https://github.com/blackbeardONE/QSDM/blob/main/QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json) |
+| Public key | [`QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json`](https://github.com/qsdm-tech/QSDM/blob/main/QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json) |
 | In use since | Hive 1.4.21 (October 2026) |
 | Previous key | `10ab9c57…07a1`, **rotated** in October 2026; it no longer signs new releases |
 
@@ -97,7 +97,7 @@ You need Python 3 and `qsdmcli` (built from this repository, `QSDM/source/cmd/qs
 ```bash
 # 1. The signed manifest and the release public key
 curl -fsSLO https://qsdm.tech/downloads/hive-v2/qsdm-hive-release-linux-v2.json
-curl -fsSL https://raw.githubusercontent.com/blackbeardONE/QSDM/main/QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json \
+curl -fsSL https://raw.githubusercontent.com/qsdm-tech/QSDM/main/QSDM/deploy/release-trust/qsdm-hive-release-key-v2.json \
   -o qsdm-hive-release-key-v2.json
 
 # 2. Split the envelope and print the key ids
@@ -129,7 +129,7 @@ Windows installers are **not Authenticode-signed** yet, so Windows may show
 The ML-DSA-87 release signature above protects updates inside Hive, but it does
 not give Windows a verified publisher. Check the SHA-256, then choose
 **More info → Run anyway**. See the
-[code signing policy](https://github.com/blackbeardONE/QSDM/blob/main/CODE_SIGNING_POLICY.md)
+[code signing policy](https://github.com/qsdm-tech/QSDM/blob/main/CODE_SIGNING_POLICY.md)
 for the plan.
 
 QSDM will never ask you to install a root certificate, disable antivirus, or run
@@ -138,4 +138,4 @@ a download that is not linked from qsdm.tech.
 ## Report a bad download
 
 If a hash or signature does not match, do not run the file. Report it as
-described in the [security policy](https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md).
+described in the [security policy](https://github.com/qsdm-tech/QSDM/blob/main/SECURITY.md).

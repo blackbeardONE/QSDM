@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningRegistryEmpty`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_enrollment_active_count == 0 and qsdm_process_uptime_seconds > 600`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#31-mode-a--qsdmminingregistryempty",
+      "description": "**Alert**: `QSDMMiningRegistryEmpty`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_enrollment_active_count == 0 and qsdm_process_uptime_seconds > 600`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#31-mode-a--qsdmminingregistryempty",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningRegistryShrinkingFast`\n\n**Severity**: `warning`\n\n**Trigger**: `( (qsdm_enrollment_active_count offset 1h) - qsdm_enrollment_active_count ) / (qsdm_enrollment_active_count offset 1h) > 0.25 and (qsdm_enrollment_active_count offset 1h) >= 4`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#32-mode-b--qsdmminingregistryshrinkingfast",
+      "description": "**Alert**: `QSDMMiningRegistryShrinkingFast`\n\n**Severity**: `warning`\n\n**Trigger**: `( (qsdm_enrollment_active_count offset 1h) - qsdm_enrollment_active_count ) / (qsdm_enrollment_active_count offset 1h) > 0.25 and (qsdm_enrollment_active_count offset 1h) >= 4`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#32-mode-b--qsdmminingregistryshrinkingfast",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -176,7 +176,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningPendingUnbondMajority`\n\n**Severity**: `warning`\n\n**Trigger**: `( qsdm_enrollment_pending_unbond_count / (qsdm_enrollment_active_count + qsdm_enrollment_pending_unbond_count) ) > 0.5 and (qsdm_enrollment_active_count + qsdm_enrollment_pending_unbond_count) >= 4`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#33-mode-c--qsdmminingpendingunbondmajority",
+      "description": "**Alert**: `QSDMMiningPendingUnbondMajority`\n\n**Severity**: `warning`\n\n**Trigger**: `( qsdm_enrollment_pending_unbond_count / (qsdm_enrollment_active_count + qsdm_enrollment_pending_unbond_count) ) > 0.5 and (qsdm_enrollment_active_count + qsdm_enrollment_pending_unbond_count) >= 4`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#33-mode-c--qsdmminingpendingunbondmajority",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -241,7 +241,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningEnrollmentRejectionsBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_enrollment_rejected_total[10m])) >= 20`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#34-mode-d--qsdmminingenrollmentrejectionsburst",
+      "description": "**Alert**: `QSDMMiningEnrollmentRejectionsBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_enrollment_rejected_total[10m])) >= 20`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#34-mode-d--qsdmminingenrollmentrejectionsburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -306,7 +306,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningBondedDustDropped`\n\n**Severity**: `warning`\n\n**Trigger**: `(qsdm_enrollment_bonded_dust offset 30m) - qsdm_enrollment_bonded_dust > 5e10 and (qsdm_enrollment_bonded_dust offset 30m) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#35-mode-e--qsdmminingbondeddustdropped",
+      "description": "**Alert**: `QSDMMiningBondedDustDropped`\n\n**Severity**: `warning`\n\n**Trigger**: `(qsdm_enrollment_bonded_dust offset 30m) - qsdm_enrollment_bonded_dust > 5e10 and (qsdm_enrollment_bonded_dust offset 30m) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/ENROLLMENT_INCIDENT.md#35-mode-e--qsdmminingbondeddustdropped",
       "fieldConfig": {
         "defaults": {
           "color": {

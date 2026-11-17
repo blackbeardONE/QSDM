@@ -17,7 +17,7 @@ no longer updated. This repository took over on 22 April 2026.
 | 2025-05-11 | Phase 1, in Go: **Proof-of-Entanglement** consensus, which checks each transaction against parent cells; **CRYSTALS-Dilithium** signatures, the scheme NIST standardised as ML-DSA (FIPS 204); libp2p networking; SQLite storage. |
 | 2025-05-16 to 05-18 | Phases 2 and 3: dynamic submeshes, a WASM SDK, governance voting, 3D mesh validation with CUDA, quarantines and a reputation system. |
 | 2025-12-13 | Last commit to the first repository. A larger version was built under the name **QSDM+**; its repository is no longer online. |
-| 2026-04-22 | **The Major Update.** QSDM+ took back the name QSDM, its coin became **Cell (CELL)**, and the code moved to this repository ([6bc7c5d](https://github.com/blackbeardONE/QSDM/commit/6bc7c5d), "QSDM: initial public import"). The plan is kept in [Major Update (executed)](history/MAJOR_UPDATE_EXECUTED.md), and the renames in [Rebrand notes](REBRAND_NOTES.md). |
+| 2026-04-22 | **The Major Update.** QSDM+ took back the name QSDM, its coin became **Cell (CELL)**, and the code moved to this repository ([6bc7c5d](https://github.com/qsdm-tech/QSDM/commit/6bc7c5d), "QSDM: initial public import"). The plan is kept in [Major Update (executed)](history/MAJOR_UPDATE_EXECUTED.md), and the renames in [Rebrand notes](REBRAND_NOTES.md). |
 | 2026-05-06 23:37 | Block 0 of the public pilot chain that runs today. |
 | 2026-05-11 to 05-19 | Releases v0.3.0 to v0.4.3: the first tagged releases as QSDM, and signed transfers from self-custody wallets (v0.4.0). |
 | 2026-09-22 to 09-27 | The chain was stopped, then restarted with the same release and a single block producer. Hardened mining code ran as a one-miner canary from 26 September. |

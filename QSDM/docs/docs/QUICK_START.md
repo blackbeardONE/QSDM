@@ -60,5 +60,5 @@ has not had an independent external audit. Read the
 ## Building the node from source
 
 Developers who want to build and run the Go node locally should start with the
-repository [README](https://github.com/blackbeardONE/QSDM/blob/main/QSDM/README.md)
+repository [README](https://github.com/qsdm-tech/QSDM/blob/main/QSDM/README.md)
 and the [Operator guide](OPERATOR_GUIDE.md).

@@ -5,7 +5,7 @@ from scripts.report_hive_release_feed_incident import reconcile_incident
 
 
 REPOSITORY = "blackbeardONE/QSDM"
-RUN_URL = "https://github.com/blackbeardONE/QSDM/actions/runs/123"
+RUN_URL = "https://github.com/qsdm-tech/QSDM/actions/runs/123"
 CHECKED_AT = "2026-08-08T03:45:00Z"
 
 

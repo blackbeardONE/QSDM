@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningSlashApplied`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_slash_applied_total[15m])) >= 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#31-mode-a--qsdmminingslashapplied",
+      "description": "**Alert**: `QSDMMiningSlashApplied`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_slash_applied_total[15m])) >= 1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#31-mode-a--qsdmminingslashapplied",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningSlashedDustBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `sum(increase(qsdm_slash_drained_dust_total[15m])) > 5e10`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#32-mode-b--qsdmminingslasheddustburst",
+      "description": "**Alert**: `QSDMMiningSlashedDustBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `sum(increase(qsdm_slash_drained_dust_total[15m])) > 5e10`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#32-mode-b--qsdmminingslasheddustburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -176,7 +176,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningSlashRejectionsBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_slash_rejected_total[10m])) >= 10`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#33-mode-c--qsdmminingslashrejectionsburst",
+      "description": "**Alert**: `QSDMMiningSlashRejectionsBurst`\n\n**Severity**: `warning`\n\n**Trigger**: `sum(increase(qsdm_slash_rejected_total[10m])) >= 10`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#33-mode-c--qsdmminingslashrejectionsburst",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -241,7 +241,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMMiningAutoRevokeBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `sum(increase(qsdm_slash_auto_revoked_total[15m])) >= 3`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#34-mode-d--qsdmminingautorevokeburst",
+      "description": "**Alert**: `QSDMMiningAutoRevokeBurst`\n\n**Severity**: `critical`\n\n**Trigger**: `sum(increase(qsdm_slash_auto_revoked_total[15m])) >= 3`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/SLASHING_INCIDENT.md#34-mode-d--qsdmminingautorevokeburst",
       "fieldConfig": {
         "defaults": {
           "color": {

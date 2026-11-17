@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMGovAuthorityVoteRecorded`\n\n**Severity**: `info`\n\n**Trigger**: `increase(qsdm_gov_authority_voted_total[24h]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#31-mode-a--qsdmgovauthorityvoterecorded",
+      "description": "**Alert**: `QSDMGovAuthorityVoteRecorded`\n\n**Severity**: `info`\n\n**Trigger**: `increase(qsdm_gov_authority_voted_total[24h]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#31-mode-a--qsdmgovauthorityvoterecorded",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMGovAuthorityThresholdCrossed`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_gov_authority_crossed_total[24h]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#32-mode-b--qsdmgovauthoritythresholdcrossed",
+      "description": "**Alert**: `QSDMGovAuthorityThresholdCrossed`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_gov_authority_crossed_total[24h]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#32-mode-b--qsdmgovauthoritythresholdcrossed",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -176,7 +176,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMGovAuthorityCountTooLow`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_gov_authority_count < 2`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#33-mode-c--qsdmgovauthoritycounttoolow",
+      "description": "**Alert**: `QSDMGovAuthorityCountTooLow`\n\n**Severity**: `critical`\n\n**Trigger**: `qsdm_gov_authority_count < 2`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/GOVERNANCE_AUTHORITY_INCIDENT.md#33-mode-c--qsdmgovauthoritycounttoolow",
       "fieldConfig": {
         "defaults": {
           "color": {

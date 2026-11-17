@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMNvidiaLockHTTPBlocksSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_nvidia_lock_http_blocks_total[5m]) > 0.5`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#31-mode-a--qsdmnvidialockhttpblocksspike",
+      "description": "**Alert**: `QSDMNvidiaLockHTTPBlocksSpike`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_nvidia_lock_http_blocks_total[5m]) > 0.5`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#31-mode-a--qsdmnvidialockhttpblocksspike",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMNvidiaLockP2PRejects`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_nvidia_lock_p2p_rejects_total[15m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#32-mode-b--qsdmnvidialockp2prejects",
+      "description": "**Alert**: `QSDMNvidiaLockP2PRejects`\n\n**Severity**: `warning`\n\n**Trigger**: `increase(qsdm_nvidia_lock_p2p_rejects_total[15m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#32-mode-b--qsdmnvidialockp2prejects",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -176,7 +176,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMNoTransactionsStored`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_transactions_stored_total[30m]) == 0 and rate(qsdm_transactions_processed_total[30m]) > 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#34-mode-d--qsdmnotransactionsstored",
+      "description": "**Alert**: `QSDMNoTransactionsStored`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_transactions_stored_total[30m]) == 0 and rate(qsdm_transactions_processed_total[30m]) > 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#34-mode-d--qsdmnotransactionsstored",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -241,7 +241,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMAttestHashrateOutOfBand`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_hashrate_rejected_total[5m]) > 0.05`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#33-mode-c--qsdmattesthashrateoutofband",
+      "description": "**Alert**: `QSDMAttestHashrateOutOfBand`\n\n**Severity**: `warning`\n\n**Trigger**: `rate(qsdm_attest_hashrate_rejected_total[5m]) > 0.05`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/OPERATOR_HYGIENE_INCIDENT.md#33-mode-c--qsdmattesthashrateoutofband",
       "fieldConfig": {
         "defaults": {
           "color": {

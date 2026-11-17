@@ -274,7 +274,7 @@ command-line miner binaries ship in-tree — pick one:
 
 Either way:
 
-1. `git clone https://github.com/blackbeardONE/QSDM.git && cd
+1. `git clone https://github.com/qsdm-tech/QSDM.git && cd
    QSDM/source`.
 2. `go build -o qsdmminer-console ./cmd/qsdmminer-console` (or swap
    in `./cmd/qsdmminer` for the reference binary).

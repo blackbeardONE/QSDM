@@ -156,9 +156,9 @@ def align_docs_index() -> None:
     html = inject_fonts(html)
     if 'href="/">Home' not in html:
         html = html.replace(
-            '<a class="docs-link" href="https://github.com/blackbeardONE/QSDM"',
+            '<a class="docs-link" href="https://github.com/qsdm-tech/QSDM"',
             '<a class="docs-link" href="/">Home</a>\n      '
-            '<a class="docs-link" href="https://github.com/blackbeardONE/QSDM"',
+            '<a class="docs-link" href="https://github.com/qsdm-tech/QSDM"',
         )
     html = html.replace(
         "Knowledge base for QSDM, QSDM Hive, CELL, integrations, NVIDIA-attested mining, CPU shared edge participation, and operator runbooks.",

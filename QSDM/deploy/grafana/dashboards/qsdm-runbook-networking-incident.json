@@ -46,7 +46,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMP2PNoPeers`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_p2p_peers_connected{provider=\"live\"} == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers",
+      "description": "**Alert**: `QSDMP2PNoPeers`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_p2p_peers_connected{provider=\"live\"} == 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#31-mode-a--qsdmp2pnopeers",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,7 +111,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMP2PGossipIngressStalled`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_p2p_peers_connected{provider=\"live\"} > 0 and on(instance) rate(qsdm_p2p_messages_total{direction=\"in\"}[10m]) == 0`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled",
+      "description": "**Alert**: `QSDMP2PGossipIngressStalled`\n\n**Severity**: `warning`\n\n**Trigger**: `qsdm_p2p_peers_connected{provider=\"live\"} > 0 and on(instance) rate(qsdm_p2p_messages_total{direction=\"in\"}[10m]) == 0`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#32-mode-b--qsdmp2pgossipingressstalled",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -176,7 +176,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "**Alert**: `QSDMP2PWalletIngressDedupeBurst`\n\n**Severity**: `info`\n\n**Trigger**: `rate(qsdm_p2p_wallet_ingress_dedupe_skip_total[5m]) > 1`\n\n**Runbook**: https://github.com/blackbeardONE/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst",
+      "description": "**Alert**: `QSDMP2PWalletIngressDedupeBurst`\n\n**Severity**: `info`\n\n**Trigger**: `rate(qsdm_p2p_wallet_ingress_dedupe_skip_total[5m]) > 1`\n\n**Runbook**: https://github.com/qsdm-tech/QSDM/blob/main/QSDM/docs/docs/runbooks/NETWORKING_INCIDENT.md#33-mode-c--qsdmp2pwalletingressdedupeburst",
       "fieldConfig": {
         "defaults": {
           "color": {

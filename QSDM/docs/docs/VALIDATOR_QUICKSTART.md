@@ -82,7 +82,7 @@ in the output.
 > yourself:
 >
 > ```bash
-> git clone https://github.com/blackbeardONE/QSDM.git
+> git clone https://github.com/qsdm-tech/QSDM.git
 > cd QSDM
 > docker build -f QSDM/Dockerfile.validator -t qsdm/validator:local QSDM/
 > ```

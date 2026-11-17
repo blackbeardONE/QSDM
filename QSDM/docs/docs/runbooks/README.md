@@ -26,4 +26,4 @@ The remaining files in this folder describe an earlier design of the node's aler
 - `SUBMESH_POLICY_INCIDENT.md`: submesh policy
 - `WALLET_INCIDENT.md`: wallet API
 
-To report a security issue, see the [security policy](https://github.com/blackbeardONE/QSDM/blob/main/SECURITY.md).
+To report a security issue, see the [security policy](https://github.com/qsdm-tech/QSDM/blob/main/SECURITY.md).

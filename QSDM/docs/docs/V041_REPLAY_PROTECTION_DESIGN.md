@@ -41,7 +41,7 @@
 > **Status**: SHIPPED + DEPLOYED across Sessions 99–100
 > (2026-05-13 → 2026-05-14). All client + server + tooling
 > components landed, `v0.4.1` tag pushed,
-> [`release-container.yml` run 25855056638](https://github.com/blackbeardONE/QSDM/actions/runs/25855056638)
+> [`release-container.yml` run 25855056638](https://github.com/qsdm-tech/QSDM/actions/runs/25855056638)
 > 10/10 green, 53 cosign-signed assets attached, and the production
 > validator binary swapped to v0.4.1 (sha256
 > `e7fa04b0657c5793f79f2fce06562fe67ea9191e04c09657c1e6b5274c213cfb`)

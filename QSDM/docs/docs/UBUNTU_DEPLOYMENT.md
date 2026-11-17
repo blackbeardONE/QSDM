@@ -96,7 +96,7 @@ sudo apt install -y \
 
 ```bash
 cd ~
-git clone https://github.com/blackbeardONE/QSDM.git
+git clone https://github.com/qsdm-tech/QSDM.git
 cd QSDM
 ```
 
@@ -536,7 +536,7 @@ Set up alerts for:
 For issues or questions:
 - Check logs: `sudo journalctl -u qsdm`
 - Review documentation: `docs/`
-- GitHub Issues: [QSDM Issues](https://github.com/blackbeardONE/QSDM/issues)
+- GitHub Issues: [QSDM Issues](https://github.com/qsdm-tech/QSDM/issues)
 
 ---
 
