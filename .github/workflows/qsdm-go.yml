@@ -314,7 +314,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: QSDM/liboqs_install
-          key: liboqs-install-${{ runner.os }}-${{ hashFiles('QSDM/scripts/rebuild_liboqs.sh') }}
+          key: liboqs-install-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ hashFiles('QSDM/scripts/rebuild_liboqs.sh') }}
 
       - name: Build liboqs
         if: steps.liboqs-cache.outputs.cache-hit != 'true'
@@ -397,7 +397,7 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: QSDM/liboqs_install
-          key: liboqs-install-${{ runner.os }}-${{ hashFiles('QSDM/scripts/rebuild_liboqs.sh') }}
+          key: liboqs-install-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ hashFiles('QSDM/scripts/rebuild_liboqs.sh') }}
 
       - name: Build liboqs
         if: steps.liboqs-cache.outputs.cache-hit != 'true'
