@@ -19,7 +19,7 @@ require (
 )
 
 require (
-	github.com/cloudflare/circl v1.6.3
+	github.com/cloudflare/circl v1.6.5
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/libp2p/go-yamux/v5 v5.1.0
