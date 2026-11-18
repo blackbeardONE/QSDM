@@ -6,23 +6,25 @@ GPU, or RAM participation. Agent, Relay, and Edge Control programs run in the
 background or help with local setup. They are not alternative QSDM clients and
 do not hold a user wallet.
 
-## Current version: Hive 1.4.23
+## Current version: Hive 1.4.24
 
-- Hive 1.4.23 is the current release for Windows x64 and Linux x86-64
-  (published 15 November 2026). It is published on the hive-v2 release
+- New in Hive 1.4.24: one-click pool mining with PULSE, the **QSDM Pool Miner** task
+  ([PULSE](PULSE.md), [qsdm.tech/pool](https://qsdm.tech/pool)).
+- Hive 1.4.24 is the current release for Windows x64 and Linux x86-64
+  (published 18 November 2026). It is published on the hive-v2 release
   channel,
   `https://qsdm.tech/downloads/hive-v2/`, and its release records are signed
   with QSDM's v2 release key. The earlier release key was rotated in October
   2026.
 - Because of the key rotation, Hive 1.4.20 (Windows) and 1.4.17 (Linux) cannot
-  update themselves to 1.4.23. Install 1.4.23 once by hand from the
+  update themselves to 1.4.24. Install 1.4.24 once by hand from the
   [download page](https://qsdm.tech/download.html); your wallet and settings
   are kept. Check the file first as described in
   [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).
 - Edge Control ships with Hive.
 - Since 1.4.22, Hive adds [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md)
   parents to every transfer, which the network requires since block 816,600.
-  Hive 1.4.20 users must install 1.4.23 by hand before 19 December 2026.
+  Hive 1.4.20 users must install 1.4.24 by hand before 19 December 2026.
 - Hive signs mining proofs automatically with your wallet (the miner
   operator signature). The wallet must be unlocked in Hive to mine; a locked
   wallet shows "Unlock your QSDM wallet in Hive to mine."
@@ -240,7 +242,7 @@ Hive uses local services for the desktop app and node monitor. Public reachabili
 
 - [Download QSDM Hive](https://qsdm.tech/download.html)
 - [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md)
-- [Mining today (Hive 1.4.23)](MINING_TODAY.md)
+- [Mining today (Hive 1.4.24)](MINING_TODAY.md)
 - [CELL tokenomics](CELL_TOKENOMICS.md)
 - [Sky Fang official website](https://skyfang.xyz/)
 - [Sky Fang integration notes](https://skyfang.xyz/docs)

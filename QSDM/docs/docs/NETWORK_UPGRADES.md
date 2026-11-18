@@ -18,6 +18,7 @@ upgrades harden that pilot network; they do not change its stage. See
 
 | Date (UTC) | Height | Upgrade | Do you need to act? |
 |---|---|---|---|
+| 2026-11-18 | Hive release | QSDM Hive 1.4.24 | No (Hive 1.4.21 and newer update themselves; 1.4.20 / 1.4.17 install by hand) |
 | About 2026-11-26 (scheduled) | 1,210,000 | The PULSE rule: non-custodial mining pools settle on chain ([Consensus rules](CONSENSUS_RULES.md#the-pulse-rule-from-block-1210000), [PULSE](PULSE.md)) | **Yes**, full-node operators: run fullnode-rc1114 or newer before this height |
 | About 2026-11-29 (scheduled) | 1,230,000 | The rc1113 rule: a task catalog entry can be registered only for a task ID that holds no stake and no pool ([Consensus rules](CONSENSUS_RULES.md#the-rc1113-rule-from-block-1230000)) | **Yes**, full-node operators: run fullnode-rc1113 or newer before this height |
 | 2026-11-15 | Hive release | QSDM Hive 1.4.23 | No (Hive 1.4.21 and newer update themselves; 1.4.20 / 1.4.17 install by hand) |
@@ -56,9 +57,23 @@ upgrades harden that pilot network; they do not change its stage. See
 | 2026-10-10 | Hive release | QSDM Hive 1.4.22 | **Yes**, Hive 1.4.20 / 1.4.17 users install by hand |
 | Before October 2026 | 625,000 | Signed task actions and transaction content root | No |
 
+## 2026-11-18: QSDM Hive 1.4.24
+
+- **What changed:** Hive 1.4.24 for Windows x64 and Linux x86-64 is the current
+  release. It adds the **QSDM Pool Miner** task: one-click mining with the QSDM
+  pool ([PULSE](PULSE.md)); the network pays every block from an escrow nobody can
+  spend, the pool fee is 1 % (capped by the network at 3 %), and before block
+  1,210,000 the task mines solo. `qsdmcli` and the miner are built from this
+  release's source (pool mode and signing); the wallet host and Edge Control 1.3.7
+  are the same files as in Hive 1.4.23.
+- **What you must do:** nothing on Hive 1.4.21 or 1.4.23: the update arrives in
+  Hive. Hive 1.4.20 (Windows) and 1.4.17 (Linux) cannot update themselves:
+  install 1.4.24 by hand. Check the download first:
+  [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).
+
 ## 2026-11-15: QSDM Hive 1.4.23
 
-- **What changed:** Hive 1.4.23 for Windows x64 and Linux x86-64 is the current
+- **What changed:** Hive 1.4.23 for Windows x64 and Linux x86-64 became the current
   release. It reuses a GPU's existing miner enrollment instead of failing with
   `gpu_uuid already bound`, keeps working through a qsdm.tech outage with the
   last signed release it verified (until that release's `expires_at`), follows

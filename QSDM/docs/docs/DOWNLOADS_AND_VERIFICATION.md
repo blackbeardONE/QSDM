@@ -9,13 +9,13 @@ All downloads are linked from **[qsdm.tech/download.html](https://qsdm.tech/down
 
 | Product | Version | Platform | File | Size | SHA-256 |
 |---|---|---|---|---|---|
-| QSDM Hive | 1.4.23 | Windows x64 | `qsdm-hive-1.4.23-win-x64.exe` | 128.6 MB | `9e3acc156cfc74607d35d6a8ed6d152d5431a905f04d7b3cb24ae58d9ab3c791` |
-| QSDM Hive | 1.4.23 | Linux x86-64 | `qsdm-hive-1.4.23-linux-x86_64.AppImage` | 165.7 MB | `9383375347d7662bd03c3cdfe79f3095a9c9ae27c5d9cffffdd715f838913e05` |
-| QSDM Hive | 1.4.23 | Linux x86-64 | `qsdm-hive-1.4.23-linux-x64.tar.gz` | 156.8 MB | `5d0fa427aaf1016b65a413efc2f13545e7b5da83842b05b817f21b0cdfe79320` |
+| QSDM Hive | 1.4.24 | Windows x64 | `qsdm-hive-1.4.24-win-x64.exe` | 128.8 MB | `f1160ec019696d60a31a881cb8a26f16c11dd0d52d928b64844115f9adfa8273` |
+| QSDM Hive | 1.4.24 | Linux x86-64 | `qsdm-hive-1.4.24-linux-x86_64.AppImage` | 166.6 MB | `dbd6c539385db65b65caebddfa21b9d3fb90edb356cac99341644b65d581e343` |
+| QSDM Hive | 1.4.24 | Linux x86-64 | `qsdm-hive-1.4.24-linux-x64.tar.gz` | 157.6 MB | `bd9fc69084c69ae23be77478a5b7e8913384f06ee5fb8dde7ada430a28449d16` |
 
-Hive 1.4.23 (published 15 November 2026) is served from the release channel
+Hive 1.4.24 (published 18 November 2026) is served from the release channel
 `https://qsdm.tech/downloads/hive-v2/`, together with checksum files
-(`SHA256SUMS-win.txt`, `qsdm-hive-1.4.23-linux-SHA256SUMS.txt`) and the signed
+(`SHA256SUMS-win.txt`, `qsdm-hive-1.4.24-linux-SHA256SUMS.txt`) and the signed
 release manifests (`qsdm-hive-release-windows-v2.json`,
 `qsdm-hive-release-linux-v2.json`).
 
@@ -34,9 +34,9 @@ the producer's exact `qsdm`. The one-command installer,
 needs 6 GB of RAM. See [Run a full node](RUN_A_FULL_NODE.md).
 
 > [!IMPORTANT]
-> **Upgrading from Hive 1.4.20 (Windows) or 1.4.17 (Linux):** install 1.4.23 by
+> **Upgrading from Hive 1.4.20 (Windows) or 1.4.17 (Linux):** install 1.4.24 by
 > hand once. Those versions trust the previous release key, which was rotated, so
-> they cannot verify 1.4.23 on their own. Your wallet and settings are kept.
+> they cannot verify 1.4.24 on their own. Your wallet and settings are kept.
 > Hive 1.4.17 stopped working after 9 November 2026; 1.4.20 stops after
 > 19 December 2026.
 
@@ -48,14 +48,14 @@ not match, delete the file and download it again from qsdm.tech.
 **Windows (PowerShell):**
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\qsdm-hive-1.4.23-win-x64.exe
+Get-FileHash -Algorithm SHA256 .\qsdm-hive-1.4.24-win-x64.exe
 ```
 
 **Linux:**
 
 ```bash
-curl -fsSLO https://qsdm.tech/downloads/hive-v2/qsdm-hive-1.4.23-linux-SHA256SUMS.txt
-sha256sum -c --ignore-missing qsdm-hive-1.4.23-linux-SHA256SUMS.txt
+curl -fsSLO https://qsdm.tech/downloads/hive-v2/qsdm-hive-1.4.24-linux-SHA256SUMS.txt
+sha256sum -c --ignore-missing qsdm-hive-1.4.24-linux-SHA256SUMS.txt
 ```
 
 ## What Hive checks for you
