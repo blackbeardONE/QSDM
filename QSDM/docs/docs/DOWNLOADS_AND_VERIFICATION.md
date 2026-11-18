@@ -28,6 +28,10 @@ Developer ID (team `2YUCLJRGYL`) and notarized by Apple. It has no QSDM-native
 release manifest: macOS checks the Apple signature and the notarization when
 you open it, and Hive does not update itself on a Mac.
 
+It needs macOS 12 Monterey or newer. On macOS 11 Big Sur or older, use the
+[web wallet](https://qsdm.tech/wallet.html) in an up-to-date browser such as Firefox: it
+sends, receives and keeps your keys in the browser. Mining is available on Windows and Linux.
+
 Other packages on the download page (browser wallet extension, Edge Agent, Core
 validator and home gateway builds) come with their own `SHA256SUMS` files.
 
