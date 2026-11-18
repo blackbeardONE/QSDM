@@ -618,13 +618,36 @@ describe('qsdmSystemTasks', () => {
     );
   });
 
+  it('without the chain catalog lists only the miners as verified and active', () => {
+    // QSDM Core unreachable: no catalog records, so every system task uses its defaults.
+    const listed = mergeQsdmSystemTasks([])
+      .filter((task) => task.is_allowlisted && task.is_active)
+      .map((task) => task.task_id);
+
+    expect(listed).toContain(QSDM_MINER_SYSTEM_TASK_ID);
+    expect(listed).not.toContain(QSDM_EDGE_WORKER_SYSTEM_TASK_ID);
+    expect(listed).not.toContain(QSDM_SKYFANG_LINK_SYSTEM_TASK_ID);
+    expect(listed.some((id) => id.startsWith('qsdm-edge-worker'))).toBe(false);
+  });
+
+  it('lets the chain catalog list an edge worker task it allowlists', () => {
+    const merged = mergeQsdmSystemTasks([
+      createQsdmEdgeWorkerSystemTask({ is_allowlisted: true, is_active: true }),
+    ]);
+    const edge = merged.find(
+      (task) => task.task_id === QSDM_EDGE_WORKER_SYSTEM_TASK_ID
+    );
+    expect(edge?.is_allowlisted).toBe(true);
+  });
+
   it('creates a CPU-only QSDM edge worker task shape accepted by Hive task lists', () => {
     const task = createQsdmEdgeWorkerSystemTask();
 
     expect(task.task_id).toBe(QSDM_EDGE_WORKER_SYSTEM_TASK_ID);
     expect(task.task_name).toBe('QSDM Edge Worker CPU');
     expect(task.task_metadata).toBe(QSDM_EDGE_WORKER_SYSTEM_TASK_METADATA_ID);
-    expect(task.is_allowlisted).toBe(true);
+    // operator-only: listed only when the on-chain catalog allowlists it
+    expect(task.is_allowlisted).toBe(false);
     expect(task.is_active).toBe(true);
     expect(task.minimum_stake_amount).toBe(QSDM_EDGE_WORKER_MIN_STAKE_AMOUNT);
     expect(task.total_bounty_amount).toBe(
@@ -902,10 +925,10 @@ describe('qsdmSystemTasks', () => {
     const task = createQsdmSkyFangLinkSystemTask();
 
     expect(task.task_id).toBe(QSDM_SKYFANG_LINK_SYSTEM_TASK_ID);
-    expect(task.task_name).toBe('QSDM Sky Fang Link');
+    expect(task.task_name).toBe('QSDM Sky Fang Link (retired)');
     expect(task.task_metadata).toBe(QSDM_SKYFANG_LINK_SYSTEM_TASK_METADATA_ID);
-    expect(task.is_allowlisted).toBe(true);
-    expect(task.is_active).toBe(true);
+    expect(task.is_allowlisted).toBe(false);
+    expect(task.is_active).toBe(false);
     expect(task.minimum_stake_amount).toBe(QSDM_SKYFANG_LINK_MIN_STAKE_AMOUNT);
     expect(task.total_bounty_amount).toBe(
       QSDM_SKYFANG_LINK_REWARD_POOL_TARGET_CELL
@@ -1038,7 +1061,7 @@ describe('qsdmSystemTasks', () => {
     ]);
     expect(
       getQsdmSystemTaskById(QSDM_SKYFANG_LINK_SYSTEM_TASK_ID)?.task_name
-    ).toBe('QSDM Sky Fang Link');
+    ).toBe('QSDM Sky Fang Link (retired)');
     expect(skyFangLinkMetadata?.repositoryUrl).toBe(
       'https://github.com/blackbeardONE/QSDM/tree/main/apps'
     );
