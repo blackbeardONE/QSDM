@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -189,7 +190,9 @@ func TestPoolMode_SharesReceiptsAndNetworkProof(t *testing.T) {
 		pool.mu.Lock()
 		s, p := pool.shares, len(pool.proofs)
 		pool.mu.Unlock()
-		if s >= 6 && p >= 1 {
+		// The pool counts a share before the miner has written its receipt; wait for the receipts on disk too, or a
+		// slow runner can stop the miner between the two (CI on #240: "5 receipts kept for 6 shares").
+		if s >= 6 && p >= 1 && countLines(receipts) >= 6 {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -326,4 +329,13 @@ func TestPoolMode_NeedsTheWalletKey(t *testing.T) {
 	if pm, err := newPoolMiner(Config{}, nil, &http.Client{}); pm != nil || err != nil {
 		t.Fatal("solo mode (no pool_url) must not build a pool miner")
 	}
+}
+
+// countLines returns the number of lines in a file, 0 when it does not exist yet.
+func countLines(path string) int {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	return bytes.Count(b, []byte("\n"))
 }

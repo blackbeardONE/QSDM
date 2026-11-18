@@ -388,6 +388,10 @@ func TestPulseHistoricalReplayMatchesLive(t *testing.T) {
 	join := f.pulseTx(f.m1, PulseAction{Op: "join", Pool: pool})
 	f.must(join)
 	txs = append(txs, join)
+	// Every weight owner must be a member (2026-11-18): m2 joins too.
+	join2 := f.pulseTx(f.m2, PulseAction{Op: "join", Pool: pool})
+	f.must(join2)
+	txs = append(txs, join2)
 	rw := f.reward(PulseEscrowAddress(pool, m1), 2, "h1", "h2")
 	f.rewardOK(PulseEscrowAddress(pool, m1), 2, "h1", "h2")
 	txs = append(txs, rw)

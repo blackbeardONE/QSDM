@@ -26,6 +26,7 @@ import (
 
 type pulseStateProvider interface {
 	MemberPool(owner string) (string, bool)
+	Members(pool string) []string
 	EscrowedProofs(pool string) map[string]chain.PulseEscrowView
 	Owed(pool string) map[string]uint64
 	LastSeq(pool string) uint64
@@ -161,7 +162,9 @@ func (h *Handlers) QSDMPulseStateHandler(w http.ResponseWriter, r *http.Request)
 			proofs = append(proofs, map[string]any{"proof_id": k, "owner": v.Owner, "dust": v.Dust, "height": v.Height})
 		}
 		po := map[string]any{"id": id, "last_seq": prov.LastSeq(id), "escrowed": proofs,
-			"escrowed_dust": total, "owed": prov.Owed(id)}
+			"escrowed_dust": total, "owed": prov.Owed(id),
+			// The pool's members: a settlement may name only these as weight owners (2026-11-18).
+			"members": prov.Members(id)}
 		// The pool signs its settle txs from its own account: its next nonce.
 		if probe := currentMiningAccountProbe(); probe != nil {
 			_, nonce, present := probe.BalanceOf(id)
