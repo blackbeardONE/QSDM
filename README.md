@@ -79,7 +79,7 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   owner-signed (ML-DSA-87 `operator_sig`) proofs; each window's configuration
   decides whether the signature is required, and since 2026-10-19 it is
   required for every proof.
-- **Hive:** 1.4.23 for Windows and Linux, from
+- **Hive:** 1.4.24 for Windows and Linux, from
   [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/). Hive
   1.4.21 and newer sign mining proofs with the unlocked Hive wallet
   automatically, and 1.4.22 adds Proof-of-Entanglement parents to every

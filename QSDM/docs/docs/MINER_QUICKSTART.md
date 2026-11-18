@@ -1,7 +1,7 @@
 # MINER_QUICKSTART — Mine CELL on the QSDM pilot network (v2 NVIDIA-locked)
 
 > [!IMPORTANT]
-> **Using QSDM Hive?** Follow [Mining today (Hive 1.4.23)](MINING_TODAY.md)
+> **Using QSDM Hive?** Follow [Mining today (Hive 1.4.24)](MINING_TODAY.md)
 > instead of this page. **Mining is open to every enrolled miner** (since
 > 19 October 2026), in 7-day windows that renew automatically; enrollment
 > reopened on 17 October 2026. Check [Network status](NETWORK_STATUS.md) for
@@ -39,7 +39,7 @@
 > Both miner binaries refuse to start a v1 mining loop against a
 > v2-active validator unless `--allow-v1` is explicitly passed.
 
-> **Compute backend:** Hive 1.4.23 runs the packaged NVIDIA CUDA solver and
+> **Compute backend:** Hive 1.4.24 runs the packaged NVIDIA CUDA solver and
 > fails closed instead of falling back to CPU. For the proof-of-work rules see
 > [Mining protocol v2](MINING_PROTOCOL_V2.md).
 
@@ -855,7 +855,7 @@ If the validator's `/api/v1/mining/challenge` endpoint is unreachable (503, netw
 |---|---|---|
 | `[preflight] REFUSING TO MINE` at startup | Validator advertises v2 active but binary was launched in v1 mode (no `--protocol=v2`, or `cmd/qsdmminer` against the live network). | Pass `--protocol=v2` with full v2 config; OR for local audit only, pass `--allow-v1`. |
 | `v2 prepare: enrollment not active` | The `/api/v1/mining/enrollment/{node_id}` poller sees `phase != active`. | Run `qsdmcli enrollment-status <node-id>`; if `not_found`, your enroll tx hasn't mined; if `pending_unbond` / `revoked`, re-enroll. |
-| Enrollment refused: `gpu_uuid already bound to an active enrollment` | One GPU can back only one active enrollment, and this GPU already has one. Hive 1.4.22 and older made a new node ID after a Windows reinstall, a new PC name, a lost `.qsdm` folder or another wallet, and the chain refuses the second enrollment. | Update to Hive 1.4.23: it finds and reuses the enrollment by itself when Hive holds the wallet that owns it. An enrollment owned by another wallet can be ended only by that wallet (unenroll). After an unenroll the GPU can enroll again at once; the old bond is held for 201,600 blocks (about 23 days) and then returns to its owner. |
+| Enrollment refused: `gpu_uuid already bound to an active enrollment` | One GPU can back only one active enrollment, and this GPU already has one. Hive 1.4.22 and older made a new node ID after a Windows reinstall, a new PC name, a lost `.qsdm` folder or another wallet, and the chain refuses the second enrollment. | Update to Hive 1.4.24: it finds and reuses the enrollment by itself when Hive holds the wallet that owns it. An enrollment owned by another wallet can be ended only by that wallet (unenroll). After an unenroll the GPU can enroll again at once; the old bond is held for 201,600 blocks (about 23 days) and then returns to its owner. |
 | `attestation_stale` rejections from `/api/v1/mining/submit` | Local clock skew >60 s (the `FreshnessWindow`), or validator's `/challenge` endpoint is stalling. | Re-sync NTP; check the `challenge=Ns ago` figure in the live panel. |
 | `attestation_invalid` rejections | HMAC key mismatch — your enrollment record holds a different key than the file `--hmac-key-path` points at. | Verify `sha256sum $HOME/.qsdm/hmac.key` matches the enrollment record; re-enroll if mis-keyed. |
 | `self-test FAILED: solve: context deadline exceeded` | `--self-test-difficulty` is too high for this CPU. | Re-run with `--self-test-difficulty=2` (default). |

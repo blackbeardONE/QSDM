@@ -22,7 +22,7 @@ a wallet and choose a strong passphrase. Your ML-DSA-87 key is generated and
 encrypted on your device. Download the encrypted backup and keep it safe.
 More: [Web wallet](WEB_WALLET.md).
 
-**On the desktop:** install QSDM Hive 1.4.23 for Windows or Linux from the
+**On the desktop:** install QSDM Hive 1.4.24 for Windows or Linux from the
 [download page](https://qsdm.tech/download.html), check the file hash
 ([how](DOWNLOADS_AND_VERIFICATION.md)), then open **Settings → Wallet → Create
 New Wallet** and write down the 24 recovery words.

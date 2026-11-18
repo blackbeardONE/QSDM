@@ -28,7 +28,7 @@ Terms are in alphabetical order. Links go to the page with the details.
 | **Follower** | A node that replays and checks every block from the producer but does not produce blocks itself. |
 | **Full node** | A follower that anyone can run: it keeps the whole chain, checks every block itself, runs with node role `validator` and follows the chain over HTTPS. See **Follower** and [Run a full node](RUN_A_FULL_NODE.md). |
 | **Halving** | The block reward halves at the end of each halving epoch. The next halving is at height 12,623,041. |
-| **Hive (QSDM Hive)** | The QSDM desktop app for Windows and Linux: CELL wallet, NVIDIA mining, signed tasks and pooled edge work. The current version is 1.4.23. See [QSDM Hive](QSDM_HIVE.md). |
+| **Hive (QSDM Hive)** | The QSDM desktop app for Windows and Linux: CELL wallet, NVIDIA mining, signed tasks and pooled edge work. The current version is 1.4.24. See [QSDM Hive](QSDM_HIVE.md). |
 | **ML-DSA-87** | The NIST post-quantum signature scheme (FIPS 204, security category 5) used for wallet transfers, task actions, consensus messages, Relay proofs and Hive release manifests. |
 | **Mother Hive** | The role a QSDM Hive takes while it coordinates a paired Relay and owns the CELL wallet for that group of Agents. It is a role, not another app. |
 | **Nonce** | A per-sender counter in every signed transfer. Each transfer must use the next nonce, which stops replays. |
