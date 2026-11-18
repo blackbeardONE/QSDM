@@ -1858,6 +1858,11 @@ func main() {
 	if v2WireErr != nil {
 		log.Fatalf("v2 mining wiring failed: %v", v2WireErr)
 	}
+	// The signed enrollment routes are wired (Wire installs the enrollment
+	// mempool), so an accepted enrollment can reach a local block: the I7
+	// audit (H8 (a) and the canary Ledger) admits qsdm/enroll/v2 instead of
+	// latching the mining guard FROZEN on it (2026-11-18 report).
+	hl1Boot.Families = legacymining.TxFamilyPolicy{Enrollment: v2Wired.EnrollmentState != nil}
 	// Governance activates only when authorities are configured. Log the
 	// posture explicitly: a silently-disabled governance arm is exactly the
 	// failure mode that kept this subsystem unreachable in production.
@@ -2783,6 +2788,7 @@ func main() {
 		hl1Hook.ReceiptsPath = receiptsNDJSONPath
 		hl1Hook.AppendReceipts = adminReceipts.AppendBlockNDJSON
 	}
+	hl1Hook.Families = hl1Boot.Families
 	if hl1Mining.enabled() {
 		hl1Hook.Ledger = hl1Mining.ledger
 		hl1Hook.Guard = hl1Mining.guard
@@ -4448,7 +4454,7 @@ func hl1NewCanary(boot hl1BootConfig, producerRole bool, accounts *chain.Account
 		hl1Logger().Error("hl1: "+c.reason, "dir", boot.Env.LegacyDir())
 		return c
 	}
-	ledger, err := legacymining.NewLedger(legacymining.LedgerConfig{Store: store, Guard: guard, Accounts: accounts})
+	ledger, err := legacymining.NewLedger(legacymining.LedgerConfig{Store: store, Guard: guard, Accounts: accounts, Families: boot.Families})
 	if err != nil {
 		c.reason = "legacy-mining ledger refused; mining closed: " + err.Error()
 		hl1Logger().Error("hl1: " + c.reason)
