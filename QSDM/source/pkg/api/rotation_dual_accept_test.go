@@ -220,11 +220,13 @@ func TestRequestSigner_DualAccept_PrimaryAndSecondary_BothVerify(t *testing.T) {
 	}
 
 	// Sign + verify under the NEW key — counter MUST NOT bump.
-	sigNew, err := rsNew.SignRequest(body, ts, nonce)
+	// A fresh nonce: since 2026-11-18 a verified nonce cannot be used again inside its window.
+	nonceNew := nonce + "-new-key"
+	sigNew, err := rsNew.SignRequest(body, ts, nonceNew)
 	if err != nil {
 		t.Fatalf("SignRequest(new): %v", err)
 	}
-	if err := rsNew.VerifyRequest(body, ts, nonce, sigNew); err != nil {
+	if err := rsNew.VerifyRequest(body, ts, nonceNew, sigNew); err != nil {
 		t.Fatalf("VerifyRequest with new-key signature must succeed: %v", err)
 	}
 	if hits := monitoring.RequestSignatureSecondaryKeyHitsCount(); hits != 1 {

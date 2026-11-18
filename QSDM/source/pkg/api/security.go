@@ -353,6 +353,44 @@ type RequestSigner struct {
 	// the cutover. SignRequest NEVER reads this field — new signatures
 	// are always primary-only.
 	hmacFallbackSecondary []byte
+
+	// nonceSeen remembers each nonce of a verified request until its timestamp window has closed (2026-11-18 report:
+	// the nonce was signed but never checked, so a captured request could be replayed for five minutes). Guarded by
+	// nonceMu; bounded by requestNonceCap.
+	nonceMu   sync.Mutex
+	nonceSeen map[string]int64 // nonce -> unix time after which it may be forgotten
+}
+
+// requestSignatureWindow is how far a signed request's timestamp may be from now, in seconds.
+const requestSignatureWindow = 300
+
+// requestNonceCap bounds the remembered nonces. Only requests that carry a valid signature are remembered, so filling
+// it needs the signing key; a full store refuses new requests rather than forgetting live nonces.
+const requestNonceCap = 100_000
+
+// useNonce records nonce for a verified request at time now and reports whether it was fresh. A nonce is kept for two
+// windows: any request carrying it has a timestamp within one window of the moment it was first seen.
+func (rs *RequestSigner) useNonce(nonce string, now int64) error {
+	rs.nonceMu.Lock()
+	defer rs.nonceMu.Unlock()
+	if rs.nonceSeen == nil {
+		rs.nonceSeen = make(map[string]int64)
+	}
+	if exp, ok := rs.nonceSeen[nonce]; ok && exp >= now {
+		return errors.New("request nonce already used")
+	}
+	if len(rs.nonceSeen) >= requestNonceCap {
+		for n, exp := range rs.nonceSeen {
+			if exp < now {
+				delete(rs.nonceSeen, n)
+			}
+		}
+		if len(rs.nonceSeen) >= requestNonceCap {
+			return errors.New("too many recent signed requests")
+		}
+	}
+	rs.nonceSeen[nonce] = now + 2*requestSignatureWindow
+	return nil
 }
 
 // NewRequestSigner creates a new request signer. hmacFallbackSecret
@@ -510,11 +548,14 @@ func (rs *RequestSigner) VerifyRequest(body []byte, timestamp int64, nonce strin
 
 	// Check timestamp (prevent replay attacks)
 	now := time.Now().Unix()
-	if abs(now-timestamp) > 300 { // 5 minute window
+	if abs(now-timestamp) > requestSignatureWindow { // 5 minute window
 		return errors.New("request timestamp out of window")
 	}
-
-	return nil
+	if nonce == "" {
+		return errors.New("request nonce required")
+	}
+	// The same signed request sent again is a replay: refused while its window is open.
+	return rs.useNonce(nonce, now)
 }
 
 // abs returns absolute value

@@ -30,6 +30,7 @@ import (
 
 	"github.com/blackbeardONE/QSDM/pkg/chain"
 	"github.com/blackbeardONE/QSDM/pkg/mempool"
+	"github.com/blackbeardONE/QSDM/pkg/mining/enrollment"
 )
 
 // LedgerConfig holds the dependencies of NewLedger.
@@ -48,6 +49,10 @@ type LedgerConfig struct {
 	// driver's rewardCellForHeight. PreSeal refuses a larger rewardCell, and
 	// I3 uses it as the schedule. Nil means DefaultRewardCell.
 	RewardCell func(height uint64) float64
+	// Families is the I7 policy OnDurableBlock audits with. The zero value is
+	// the strict audit; cmd/qsdm sets Enrollment when the signed enrollment
+	// routes are wired, the same policy as the H8 (a) audit.
+	Families TxFamilyPolicy
 }
 
 // DefaultRewardCell is the d7 driver's float reward at height under
@@ -82,7 +87,34 @@ func DefaultRewardCell(height uint64) float64 {
 // accounts, the pool's carry account and members, never the funder. Without
 // this case a node's own PULSE settlement would FREEZE mining, as a task action
 // did before task actions were admitted.
+//
+// AuditTxFamilies is the strict audit (TxFamilyPolicy{}); see
+// AuditTxFamiliesWith for the enrollment family.
 func AuditTxFamilies(blk *chain.Block) []FamilyViolation {
+	return AuditTxFamiliesWith(blk, TxFamilyPolicy{})
+}
+
+// TxFamilyPolicy widens I7. The zero value is the strict audit of
+// AuditTxFamilies.
+type TxFamilyPolicy struct {
+	// Enrollment admits signed enrollment txs (enrollment.SignedContractID,
+	// "qsdm/enroll/v2": enroll and unenroll). cmd/qsdm sets it when the
+	// signed enrollment routes are wired: without it, one accepted
+	// enrollment in a local block latched the mining guard FROZEN on a
+	// producer built from this source (2026-11-18 report). The unsigned v1
+	// contract stays a violation.
+	//
+	// Enrollment txs keep the section 4.3 fingerprint properties: every
+	// applied one bumps its sender's nonce, and a failed one leaves no trace,
+	// because EnrollmentApplier validates (state, nonce, balance) before it
+	// charges. They cannot touch the funder: the sender of a signed v2 tx is
+	// hex(sha256(ML-DSA key)), never "qsdm-system-funder", and an enrollment
+	// tx that did touch it would still fail I5 ("unknown accounting").
+	Enrollment bool
+}
+
+// AuditTxFamiliesWith is AuditTxFamilies under policy.
+func AuditTxFamiliesWith(blk *chain.Block, policy TxFamilyPolicy) []FamilyViolation {
 	if blk == nil {
 		return nil
 	}
@@ -97,6 +129,7 @@ func AuditTxFamilies(blk *chain.Block) []FamilyViolation {
 		case tx.ContractID == chain.WalletTransferContractID:
 		case tx.ContractID == chain.TaskContractID:
 		case tx.ContractID == chain.PulseContractID:
+		case policy.Enrollment && tx.ContractID == enrollment.SignedContractID:
 		default:
 			out = append(out, FamilyViolation{TxID: tx.ID, ContractID: tx.ContractID})
 		}
@@ -115,6 +148,7 @@ type PayoutLedger struct {
 	guard      Guard
 	accounts   AccountReader
 	rewardCell func(uint64) float64
+	families   TxFamilyPolicy
 
 	mu          sync.Mutex
 	initialized bool
@@ -179,6 +213,7 @@ func NewLedger(cfg LedgerConfig) (*PayoutLedger, error) {
 		guard:      cfg.Guard,
 		accounts:   cfg.Accounts,
 		rewardCell: rc,
+		families:   cfg.Families,
 		entries:    make(map[ProofID]*ledgerEntry),
 		paid:       make(map[ProofID]uint64),
 		ownerCount: make(map[string]int),
@@ -680,7 +715,7 @@ func (l *PayoutLedger) OnDurableBlock(blk *chain.Block, local bool) error {
 	}
 
 	viol = append(viol, l.checkFunderLocked(blk)...)
-	for _, v := range AuditTxFamilies(blk) {
+	for _, v := range AuditTxFamiliesWith(blk, l.families) {
 		viol = append(viol, ledgerViolation{7, CauseTxFamily, fmt.Sprintf("tx %s contract %q", v.TxID, v.ContractID)})
 	}
 

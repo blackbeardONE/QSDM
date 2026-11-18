@@ -821,3 +821,21 @@ func TestTaskStateStore_ApplyEconomicTx_RejectsOverWithdraw(t *testing.T) {
 		t.Fatalf("task state mutated after over-withdraw: %+v", state)
 	}
 }
+
+func TestTaskStateStore_LastActionNonce(t *testing.T) {
+	var nilStore *TaskStateStore
+	if nilStore.LastActionNonce("alice") != 0 {
+		t.Fatal("nil store")
+	}
+	store := NewTaskStateStore()
+	if store.LastActionNonce("alice") != 0 {
+		t.Fatal("empty store")
+	}
+	if err := store.ApplyAction(TaskAction{ID: "n37", Sender: "alice", TaskID: "task-1", Action: "stake", Amount: 1, Nonce: 37,
+		Timestamp: "2026-11-18T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if store.LastActionNonce("alice") != 37 || store.LastActionNonce("bob") != 0 {
+		t.Fatalf("alice %d bob %d", store.LastActionNonce("alice"), store.LastActionNonce("bob"))
+	}
+}

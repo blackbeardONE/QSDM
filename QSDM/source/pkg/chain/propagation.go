@@ -109,10 +109,15 @@ type BlockPropagator struct {
 	waiting           map[string]*Block    // verified, ahead of the tip (bounded)
 	held              blockHolds           // verified, refused: held back for a round
 	now               func() time.Time     // nil: time.Now (tests use a fake clock)
-	stats             BlockPropagationStats
-	mu                sync.Mutex
-	ctx               context.Context
-	cancel            context.CancelFunc
+	// requireSigned refuses a gossiped block without a producer signature at ANY height (2026-11-18 report: below the
+	// signed-block activation height an unsigned block was authenticated only by its in-band ProducerID string, so a
+	// P2P-only follower could be given a forged block or a forged genesis). History below that height comes from the
+	// HTTPS chain sync, which pins the genesis hash. NewBlockPropagator sets it; it changes no consensus rule.
+	requireSigned bool
+	stats         BlockPropagationStats
+	mu            sync.Mutex
+	ctx           context.Context
+	cancel        context.CancelFunc
 }
 
 // BlockPropagationStats counts what happened to the blocks received from
@@ -198,6 +203,7 @@ func NewBlockPropagator(net BlockTopicJoiner, nodeID string, handler BlockHandle
 		maxResponseBlocks: defaultBlockResponseLimit,
 		budget:            newResponseBudget(),
 		seen:              make(map[string]time.Time),
+		requireSigned:     true,
 		ctx:               ctx,
 		cancel:            cancel,
 	}
@@ -708,6 +714,9 @@ func (bp *BlockPropagator) validateBlock(block *Block) bool {
 
 	recomputed := recomputeHash(block)
 	if recomputed != block.Hash {
+		return false
+	}
+	if bp.requireSigned && !block.ProducerAuth.Signed() {
 		return false
 	}
 	return VerifyBlockSignature(block) == nil

@@ -104,10 +104,13 @@ jobs:
         include:
           - image: qsdm
             dockerfile: QSDM/Dockerfile
+            bin: qsdm
           - image: qsdm-validator
             dockerfile: QSDM/Dockerfile.validator
+            bin: qsdm-validator
           - image: qsdm-miner
             dockerfile: QSDM/Dockerfile.miner
+            bin: /usr/local/bin/qsdm-miner
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -132,6 +135,20 @@ jobs:
           tags: ${{ matrix.image }}:scan
           cache-from: type=gha,scope=${{ matrix.image }}-scan
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-scan
+
+      - name: Smoke-test the image's binary (its shared libraries resolve)
+        # The miner image is distroless since 2026-11-19 (no shell, no wget): a missing shared library would only
+        # show at run time, so run the binary's --version here, without a GPU. The healthcheck helper must start
+        # too; with no node listening it exits 1, which is the expected result here.
+        run: |
+          docker run --rm --entrypoint "${{ matrix.bin }}" "${{ matrix.image }}:scan" --version
+          if [ "${{ matrix.image }}" = qsdm-miner ]; then
+            set +e
+            docker run --rm --entrypoint /usr/local/bin/qsdm-healthcheck qsdm-miner:scan
+            rc=$?
+            set -e
+            [ "$rc" = 1 ] || { echo "qsdm-healthcheck exited $rc, want 1 (it could not start)"; exit 1; }
+          fi
 
       - name: Scan image for OS + Go vulnerabilities (Trivy)
         # Same severity / ignore-unfixed / exit-code as the matching
@@ -169,7 +186,7 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab
         if: steps.build.outcome == 'success'
-        uses: github/codeql-action/upload-sarif@02c5e83432fe5497fd85b873b6c9f16a8578e1d9 # v3
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: trivy-${{ matrix.image }}.sarif
           # category disambiguates the three matrix cells in the

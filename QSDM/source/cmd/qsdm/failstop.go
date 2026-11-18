@@ -173,6 +173,9 @@ func (f *hl1FailStopper) Stop(code int, cause string) {
 type hl1BootConfig struct {
 	Env    legacymining.Env
 	Config legacymining.Config // valid whenever Canary()
+	// Families is the I7 policy of the Ledger: the zero value is the strict
+	// audit; main sets Enrollment once the signed enrollment routes are wired.
+	Families legacymining.TxFamilyPolicy
 }
 
 // Canary reports whether legacy mining is on: ModeCanary or (HL2 WP-D)

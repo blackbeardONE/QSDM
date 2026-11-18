@@ -70,7 +70,9 @@ RUN cd source && CGO_ENABLED=1 \
 # every rebuild without a Dockerfile bump.
 FROM alpine:3.23
 
-RUN apk update && apk add --no-cache \
+# `apk upgrade` pulls packages fixed after the alpine:3.23 base image was cut (2026-11-19: zlib 1.4-r0 for
+# CVE-2026-4738, reported by the Trivy scan), the same way Dockerfile.miner runs `apt-get upgrade`.
+RUN apk update && apk upgrade --no-cache && apk add --no-cache \
     ca-certificates \
     sqlite \
     libstdc++ \
