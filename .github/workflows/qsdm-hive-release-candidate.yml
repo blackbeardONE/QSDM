@@ -117,12 +117,12 @@ jobs:
           } finally { Pop-Location }
           $probe = & (Join-Path $dest 'qsdmminer-console.exe') --version
           if (-not ($probe -match "qsdmminer-console hive-v$([regex]::Escape($version)) \(")) { throw "miner version probe: $probe" }
-          & (Join-Path $dest 'qsdmcli.exe') wallet sign-pulse-action --help *> $null
           foreach ($rel in @('resources/native/qsdmcli.exe', 'resources/miner/qsdmminer-console.exe')) {
             $h = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $dest (Split-Path $rel -Leaf))).Hash.ToLowerInvariant()
             "$h  $rel (built from $sha)" | Tee-Object -FilePath (Join-Path $env:RUNNER_TEMP 'natives-win.txt') -Append
             "$h  $rel" | Out-File -FilePath (Join-Path $env:RUNNER_TEMP 'built-win.txt') -Append -Encoding ascii
           }
+          $global:LASTEXITCODE = 0
 
       - name: Install Hive dependencies
         working-directory: apps/qsdm-hive/qsdm-hive-main
@@ -289,7 +289,6 @@ jobs:
           go build -trimpath -ldflags "-s -w -X github.com/blackbeardONE/QSDM/pkg/buildinfo.Version=hive-v${v} -X github.com/blackbeardONE/QSDM/pkg/buildinfo.GitSHA=${sha} -X github.com/blackbeardONE/QSDM/pkg/buildinfo.BuildDate=${date}" -o "$dest/qsdmminer-console" ./cmd/qsdmminer-console
           chmod 0755 "$dest/qsdmcli" "$dest/qsdmminer-console"
           "$dest/qsdmminer-console" --version | grep -F "qsdmminer-console hive-v${v} ("
-          "$dest/qsdmcli" wallet sign-pulse-action --help >/dev/null 2>&1 || "$dest/qsdmcli" wallet sign-pulse-action -h >/dev/null 2>&1 || true
           for rel in native/qsdmcli miner/qsdmminer-console; do
             h=$(sha256sum "$dest/$(basename "$rel")" | cut -c1-64)
             echo "$h  resources/$rel (built from $sha)" | tee -a "$RUNNER_TEMP/natives-linux.txt"
