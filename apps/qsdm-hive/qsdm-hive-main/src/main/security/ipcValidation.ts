@@ -367,12 +367,32 @@ const validateTaskCatalogManage = (endpoint: string, payload: unknown) => {
   }
 };
 
+// A QSDM wallet address: 64 lowercase or uppercase hex characters.
+const ensureWalletAddress = (
+  endpoint: string,
+  object: JsonObject,
+  key: string
+) => {
+  const value = ensureString(endpoint, object, key, { min: 64, max: 64 });
+  if (!/^[0-9a-fA-F]{64}$/.test(value)) {
+    invalid(endpoint, `${key} must be a 64-character hex address`);
+  }
+  return value;
+};
+
+// Create, import and restore may name the new wallet and ask to make it active.
+const ensureNewWalletOptions = (endpoint: string, object: JsonObject) => {
+  ensureOptionalString(endpoint, object, 'label', { max: 40 });
+  ensureOptionalBoolean(endpoint, object, 'makeActive');
+};
+
 const validateSignerImport = (endpoint: string, payload: unknown) => {
   const object = ensureObject(endpoint, payload);
   const keystoreJson = ensureString(endpoint, object, 'keystoreJson', {
     max: MAX_KEYSTORE_JSON,
   });
   ensureString(endpoint, object, 'passphrase', { max: 4096 });
+  ensureNewWalletOptions(endpoint, object);
 
   try {
     const parsed = JSON.parse(keystoreJson);
@@ -387,6 +407,7 @@ const validateSignerImport = (endpoint: string, payload: unknown) => {
 const validateSignerCreate = (endpoint: string, payload: unknown) => {
   const object = ensureObject(endpoint, payload);
   ensureString(endpoint, object, 'passphrase', { min: 12, max: 4096 });
+  ensureNewWalletOptions(endpoint, object);
 };
 
 const validateSignerRestore = (endpoint: string, payload: unknown) => {
@@ -403,6 +424,7 @@ const validateSignerRestore = (endpoint: string, payload: unknown) => {
   ensureOptionalString(endpoint, object, 'recoveryType', {
     pattern: /^(native|legacy)$/,
   });
+  ensureNewWalletOptions(endpoint, object);
 };
 
 const validateSignerUnlock = (endpoint: string, payload: unknown) => {
@@ -532,6 +554,35 @@ export const validateIpcPayload = (
     case Endpoints.UNLOCK_QSDM_SIGNER_WALLET:
       validateSignerUnlock(endpoint, payload);
       break;
+    case Endpoints.ACTIVATE_QSDM_WALLET: {
+      const object = ensureObject(endpoint, payload);
+      ensureWalletAddress(endpoint, object, 'address');
+      break;
+    }
+    case Endpoints.RENAME_QSDM_WALLET: {
+      const object = ensureObject(endpoint, payload);
+      ensureWalletAddress(endpoint, object, 'address');
+      ensureString(endpoint, object, 'label', { min: 1, max: 40 });
+      break;
+    }
+    case Endpoints.FORGET_QSDM_WALLET: {
+      const object = ensureObject(endpoint, payload);
+      ensureWalletAddress(endpoint, object, 'address');
+      ensureWalletAddress(endpoint, object, 'confirmAddress');
+      break;
+    }
+    case Endpoints.RECOVER_QSDM_WALLET: {
+      const object = ensureObject(endpoint, payload);
+      const backupFile = ensureString(endpoint, object, 'backupFile', {
+        min: 1,
+        max: 64,
+      });
+      if (!/^wallet\.json\.bak-\d{10,}$/.test(backupFile)) {
+        invalid(endpoint, 'backupFile must name a wallet.json.bak-<time> file');
+      }
+      ensureOptionalString(endpoint, object, 'label', { max: 40 });
+      break;
+    }
     case Endpoints.EXPORT_QSDM_SIGNER_RECOVERY_WORDS: {
       const object = ensureObject(endpoint, payload);
       ensureString(endpoint, object, 'passphrase', { min: 1, max: 4096 });
@@ -608,6 +659,7 @@ export const validateIpcPayload = (
       break;
     }
     case Endpoints.EXPORT_QSDM_SIGNER_WALLET_BACKUP:
+    case Endpoints.LIST_QSDM_WALLETS:
     case Endpoints.GET_QSDM_WALLET_PROVIDER_PERMISSIONS:
     case Endpoints.SET_QSDM_MINER_REWARD_ADDRESS_TO_SIGNER:
     case Endpoints.GET_QSDM_REFERRAL_REWARD_POOL_STATUS:

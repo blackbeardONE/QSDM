@@ -132,10 +132,67 @@ export interface QsdmTaskActionSignerStatus {
 export interface QsdmSignerWalletImportRequest {
   keystoreJson: string;
   passphrase: string;
+  // Since 1.4.25 an import adds the wallet; it becomes active only when Hive has no wallet yet or makeActive is true.
+  label?: string;
+  makeActive?: boolean;
 }
 
 export interface QsdmSignerWalletCreateRequest {
   passphrase: string;
+  label?: string;
+  makeActive?: boolean;
+}
+
+export type QsdmStoredWalletSource =
+  | 'created'
+  | 'imported'
+  | 'restored'
+  | 'migrated'
+  | 'recovered';
+
+export interface QsdmStoredWallet {
+  address: string;
+  label: string;
+  addedAt: string;
+  source: QsdmStoredWalletSource;
+}
+
+export interface QsdmRecoverableWallet {
+  address: string;
+  backupFile: string;
+  backedUpAt: string;
+  hasPassphraseBackup: boolean;
+}
+
+export interface QsdmWalletListResponse {
+  active: string;
+  wallets: QsdmStoredWallet[];
+  recoverable: QsdmRecoverableWallet[];
+  minerRunning: boolean;
+}
+
+export interface QsdmWalletActivateRequest {
+  address: string;
+}
+
+export interface QsdmWalletActivateResponse {
+  address: string;
+  unlocked: boolean;
+}
+
+export interface QsdmWalletRenameRequest {
+  address: string;
+  label: string;
+}
+
+export interface QsdmWalletForgetRequest {
+  address: string;
+  confirmAddress: string;
+}
+
+export interface QsdmWalletRecoverRequest {
+  backupFile: string;
+  label?: string;
 }
 
 export interface QsdmSignerWalletUnlockRequest {
@@ -148,12 +205,16 @@ export interface QsdmSignerWalletImportResponse {
   keystorePath: string;
   passphraseFile: string;
   recoveryWords?: string;
+  // false: added to the wallet list, the previous wallet stays active
+  active?: boolean;
 }
 
 export interface QsdmSignerWalletRecoveryRequest {
   recoveryWords: string;
   passphrase: string;
   recoveryType?: 'native' | 'legacy';
+  label?: string;
+  makeActive?: boolean;
 }
 
 export interface QsdmSignerLegacyRecoveryEnableRequest {

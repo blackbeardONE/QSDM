@@ -30,6 +30,8 @@ import {
 } from 'renderer/services';
 import { isValidWalletAddress } from 'renderer/utils';
 
+import { QsdmWalletList } from './QsdmWalletList';
+
 const formatAddress = (address?: string) => {
   if (!address) return 'Not configured';
   return address.length > 24
@@ -77,8 +79,6 @@ export function QsdmWalletPanel() {
   >('native');
   const [restorePassphrase, setRestorePassphrase] = useState('');
   const [restoreConfirmPassphrase, setRestoreConfirmPassphrase] = useState('');
-  const [restoreReplacementAcknowledged, setRestoreReplacementAcknowledged] =
-    useState(false);
   const [restoreMessage, setRestoreMessage] = useState('');
   const [importMessage, setImportMessage] = useState('');
   const [unlockMessage, setUnlockMessage] = useState('');
@@ -88,6 +88,8 @@ export function QsdmWalletPanel() {
   const [legacyRecoveryPassphrase, setLegacyRecoveryPassphrase] = useState('');
   const [legacyRecoveryMessage, setLegacyRecoveryMessage] = useState('');
   const [transferMessage, setTransferMessage] = useState('');
+  // With a wallet already in Hive, a new one is added beside it; it becomes active only when this is ticked.
+  const [switchToNewWallet, setSwitchToNewWallet] = useState(false);
 
   const {
     data: coreStatus,
@@ -143,15 +145,25 @@ export function QsdmWalletPanel() {
 
   const canImportSigner = !!keystoreJson.trim() && !!passphrase;
   const canUnlockSigner = !!signer?.keystorePath && !!unlockPassphrase;
+  const hasWallet = !!signer?.keystorePath;
+  const makeActive = !hasWallet || switchToNewWallet;
+  const addedMessage = (
+    verb: string,
+    result: { address: string; active?: boolean }
+  ) =>
+    result.active === false
+      ? `${verb} ${formatAddress(
+          result.address
+        )} and added it to your wallets. Your active wallet is unchanged.`
+      : `${verb} ${formatAddress(
+          result.address
+        )}. It is now your active wallet.`;
   const canCreateSigner =
-    !signer?.ready &&
-    newPassphrase.length >= 12 &&
-    newPassphrase === confirmPassphrase;
+    newPassphrase.length >= 12 && newPassphrase === confirmPassphrase;
   const canRestoreSigner =
     restoreRecoveryWords.trim().split(/\s+/).length === 24 &&
     restorePassphrase.length >= 12 &&
-    restorePassphrase === restoreConfirmPassphrase &&
-    (!signer?.ready || restoreReplacementAcknowledged);
+    restorePassphrase === restoreConfirmPassphrase;
 
   useEffect(() => {
     if (!signer?.ready && signer?.keystorePath) {
@@ -165,21 +177,25 @@ export function QsdmWalletPanel() {
     mutate: createSigner,
     isLoading: creatingSigner,
     error: createSignerError,
-  } = useMutation(() => createQsdmSignerWallet({ passphrase: newPassphrase }), {
-    onSuccess: async (result) => {
-      setNewPassphrase('');
-      setConfirmPassphrase('');
-      setCreatedRecoveryWords(result.recoveryWords || '');
-      setCreateMessage(
-        `Created ${formatAddress(
-          result.address
-        )}. Write down the 24 recovery words before leaving this screen.`
-      );
-      await refresh();
-      await queryClient.invalidateQueries([QueryKeys.AccountBalance]);
-      await queryClient.invalidateQueries([QueryKeys.MainAccountBalance]);
-    },
-  });
+  } = useMutation(
+    () => createQsdmSignerWallet({ passphrase: newPassphrase, makeActive }),
+    {
+      onSuccess: async (result) => {
+        setNewPassphrase('');
+        setConfirmPassphrase('');
+        setCreatedRecoveryWords(result.recoveryWords || '');
+        setCreateMessage(
+          `${addedMessage(
+            'Created',
+            result
+          )} Write down the 24 recovery words before leaving this screen.`
+        );
+        await refresh();
+        await queryClient.invalidateQueries([QueryKeys.AccountBalance]);
+        await queryClient.invalidateQueries([QueryKeys.MainAccountBalance]);
+      },
+    }
+  );
 
   const {
     mutate: restoreSigner,
@@ -191,14 +207,14 @@ export function QsdmWalletPanel() {
         recoveryWords: restoreRecoveryWords,
         passphrase: restorePassphrase,
         recoveryType: restoreRecoveryType,
+        makeActive,
       }),
     {
       onSuccess: async (result) => {
         setRestoreRecoveryWords('');
         setRestorePassphrase('');
         setRestoreConfirmPassphrase('');
-        setRestoreReplacementAcknowledged(false);
-        setRestoreMessage(`Restored ${formatAddress(result.address)}`);
+        setRestoreMessage(addedMessage('Restored', result));
         await refresh();
         await queryClient.invalidateQueries([QueryKeys.AccountBalance]);
         await queryClient.invalidateQueries([QueryKeys.MainAccountBalance]);
@@ -263,13 +279,14 @@ export function QsdmWalletPanel() {
       importQsdmSignerWallet({
         keystoreJson,
         passphrase,
+        makeActive,
       }),
     {
       onSuccess: async (result) => {
         setKeystoreJson('');
         setKeystoreFileName('');
         setPassphrase('');
-        setImportMessage(`Imported ${formatAddress(result.address)}`);
+        setImportMessage(addedMessage('Imported', result));
         await refresh();
         await queryClient.invalidateQueries([QueryKeys.AccountBalance]);
         await queryClient.invalidateQueries([QueryKeys.MainAccountBalance]);
@@ -380,6 +397,7 @@ export function QsdmWalletPanel() {
   );
 
   const refresh = async () => {
+    await queryClient.invalidateQueries([QueryKeys.QsdmWalletList]);
     await queryClient.invalidateQueries([QueryKeys.QsdmCoreStatus]);
     await queryClient.invalidateQueries([QueryKeys.QsdmCellAccount]);
   };
@@ -593,6 +611,8 @@ export function QsdmWalletPanel() {
         </div>
       </div>
 
+      <QsdmWalletList />
+
       <div className="mt-5 border-t border-qsdm-border pt-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -715,6 +735,24 @@ export function QsdmWalletPanel() {
           Import Existing Wallet
         </button>
       </div>
+
+      {hasWallet && walletSetupMode !== 'unlock' && (
+        <div className="pt-3">
+          <div className="text-xs text-finnieGray-secondary">
+            This adds another wallet to Hive. Your current wallet and its files
+            stay; switch between wallets any time in the Wallets list above.
+          </div>
+          <label className="mt-2 flex items-center gap-2 text-xs text-white">
+            <input
+              type="checkbox"
+              checked={switchToNewWallet}
+              onChange={(event) => setSwitchToNewWallet(event.target.checked)}
+              className="h-4 w-4 accent-finnieTeal-100"
+            />
+            <span>Switch to the new wallet now</span>
+          </label>
+        </div>
+      )}
 
       {walletSetupMode === 'create' && (
         <div className="pt-3">
@@ -844,23 +882,6 @@ export function QsdmWalletPanel() {
             className="mt-1 w-full resize-none rounded-lg border border-qsdm-border bg-black/25 p-3 font-mono text-sm text-white transition focus:border-qsdm-teal outline-none"
             placeholder="Enter all 24 words, separated by spaces"
           />
-          {signer?.ready && (
-            <label className="mt-3 flex items-start gap-2 text-xs text-finnieOrange">
-              <input
-                type="checkbox"
-                checked={restoreReplacementAcknowledged}
-                onChange={(event) =>
-                  setRestoreReplacementAcknowledged(event.target.checked)
-                }
-                className="mt-0.5 h-4 w-4 accent-finnieTeal-100"
-              />
-              <span>
-                Replace the active signer on this device. CELL, stakes, and task
-                ownership remain with the old address and are not moved
-                automatically.
-              </span>
-            </label>
-          )}
           <div className="grid grid-cols-1 gap-3 pt-3 md:grid-cols-[1fr_1fr_170px]">
             <div>
               <label

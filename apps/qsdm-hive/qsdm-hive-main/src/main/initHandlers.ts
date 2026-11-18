@@ -81,6 +81,11 @@ const endpointToControllerMap: Record<
   [Endpoints.RESTORE_QSDM_SIGNER_WALLET]: controllers.restoreQsdmSignerWallet,
   [Endpoints.IMPORT_QSDM_SIGNER_WALLET]: controllers.importQsdmSignerWallet,
   [Endpoints.UNLOCK_QSDM_SIGNER_WALLET]: controllers.unlockQsdmSignerWallet,
+  [Endpoints.LIST_QSDM_WALLETS]: controllers.listQsdmWalletsController,
+  [Endpoints.ACTIVATE_QSDM_WALLET]: controllers.activateQsdmWalletController,
+  [Endpoints.RENAME_QSDM_WALLET]: controllers.renameQsdmWalletController,
+  [Endpoints.FORGET_QSDM_WALLET]: controllers.forgetQsdmWalletController,
+  [Endpoints.RECOVER_QSDM_WALLET]: controllers.recoverQsdmWalletController,
   [Endpoints.EXPORT_QSDM_SIGNER_WALLET_BACKUP]:
     controllers.exportQsdmSignerWalletBackup,
   [Endpoints.EXPORT_QSDM_SIGNER_RECOVERY_WORDS]:
