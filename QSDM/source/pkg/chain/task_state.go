@@ -495,6 +495,17 @@ func DecodeTaskActionTx(tx *mempool.Tx) (TaskAction, error) {
 	return action, nil
 }
 
+// LastActionNonce returns the highest nonce applied for sender's task actions (0: none). A new action from sender
+// must carry a larger nonce (ErrTaskActionNonceReplay); the API's task-action log uses the same check.
+func (s *TaskStateStore) LastActionNonce(sender string) uint64 {
+	if s == nil {
+		return 0
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.senderNonce[sender]
+}
+
 func (s *TaskStateStore) GetTask(taskID string) (TaskState, bool) {
 	if s == nil {
 		return TaskState{}, false
