@@ -249,7 +249,7 @@ func (h *Handlers) AuditSummaryHandler(w http.ResponseWriter, r *http.Request) {
 					Category: string(it.Category),
 					Severity: string(it.Severity),
 					Status:   string(it.Status),
-					Title:    it.Title,
+					Title:    audit.ScrubHostPaths(it.Title),
 				})
 			}
 		}
@@ -352,7 +352,8 @@ func (h *Handlers) AuditItemsHandler(w http.ResponseWriter, r *http.Request) {
 		if rawStatus != "" && string(it.Status) != rawStatus {
 			continue
 		}
-		out = append(out, it)
+		// Public view: absolute server paths in the free text are replaced (2026-11-18 report).
+		out = append(out, it.PublicView())
 	}
 
 	// Preserve the canonical defaultItems() insertion order

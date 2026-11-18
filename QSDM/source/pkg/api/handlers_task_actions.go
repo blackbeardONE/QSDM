@@ -254,7 +254,31 @@ func inspectQSDMTaskActionLogLocked(path string, env QSDMTaskActionEnvelope) (qs
 	if _, ok := ids[env.ID]; ok {
 		result.Duplicate = true
 	}
+	// 2026-11-18 report: NonceReplay was never set, so the log's own replay guard was dead code. It now uses the
+	// chain's check (chain.ErrTaskActionNonceReplay): a nonce must be larger than the sender's last applied one.
+	if env.Nonce > 0 {
+		if ns, ok := currentTaskStateProvider().(qsdmTaskNonceSource); ok {
+			result.LastNonce = ns.LastActionNonce(env.Sender)
+			result.NonceReplay = result.LastNonce >= env.Nonce
+		}
+	}
 	return result, nil
+}
+
+// qsdmTaskNonceSource is the part of the chain's task state the log's nonce check reads (chain.TaskStateStore).
+type qsdmTaskNonceSource interface {
+	LastActionNonce(sender string) uint64
+}
+
+func qsdmTaskActionNonceReplayResponse(env QSDMTaskActionEnvelope, last uint64) QSDMTaskActionSubmitResponse {
+	return QSDMTaskActionSubmitResponse{
+		ActionID:  env.ID,
+		Status:    "nonce_replay",
+		Sender:    env.Sender,
+		TaskID:    env.TaskID,
+		Action:    env.Action,
+		LastNonce: last,
+	}
 }
 
 func inspectQSDMTaskActionLog(path string, env QSDMTaskActionEnvelope) (qsdmTaskActionAppendResult, error) {
@@ -414,6 +438,10 @@ func (h *Handlers) QSDMTaskActionSubmitSignedHandler(w http.ResponseWriter, r *h
 		})
 		return
 	}
+	if preflightResult.NonceReplay {
+		writeJSONResponse(w, http.StatusConflict, qsdmTaskActionNonceReplayResponse(env, preflightResult.LastNonce))
+		return
+	}
 
 	mempoolSubmitted, mempoolStatus, mempoolError := submitQSDMTaskActionToMempool(env)
 	if !mempoolSubmitted && mempoolStatus == "id_taken" {
@@ -467,6 +495,10 @@ func (h *Handlers) QSDMTaskActionSubmitSignedHandler(w http.ResponseWriter, r *h
 			TaskID:   env.TaskID,
 			Action:   env.Action,
 		})
+		return
+	}
+	if appendResult.NonceReplay {
+		writeJSONResponse(w, http.StatusConflict, qsdmTaskActionNonceReplayResponse(env, appendResult.LastNonce))
 		return
 	}
 

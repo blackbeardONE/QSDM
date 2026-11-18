@@ -331,9 +331,11 @@ type hl1PersistHook struct {
 	AppendReceipts func(path string, height uint64) (int, error) // H5; nil skips
 
 	LocalSeal *atomic.Bool // set by the block driver around ProduceBlock
-	Canary    bool
-	Ledger    legacymining.Ledger // canary only
-	Guard     legacymining.Guard  // canary only
+	// Families is the H8 (a) I7 policy; the zero value is the strict audit.
+	Families legacymining.TxFamilyPolicy
+	Canary   bool
+	Ledger   legacymining.Ledger // canary only
+	Guard    legacymining.Guard  // canary only
 
 	Durable    *hl1DurableTip
 	PublishPol func(*chain.Block) // H10
@@ -626,7 +628,7 @@ func (h *hl1PersistHook) pruneGenerations(keep uint64) {
 func (h *hl1PersistHook) h8(blk *chain.Block) {
 	local := h.LocalSeal != nil && h.LocalSeal.Load()
 	if local {
-		if v := legacymining.AuditTxFamilies(blk); len(v) > 0 {
+		if v := legacymining.AuditTxFamiliesWith(blk, h.Families); len(v) > 0 {
 			h.metrics().unexpected.Add(uint64(len(v)))
 			for _, fv := range v {
 				h.log().Error("hl1: I7: unexpected tx family in a local block",
