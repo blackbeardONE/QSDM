@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [1.4.24]
+
+- Pool mining (PULSE): a new task, **QSDM Pool Miner**, mines with the QSDM pool at [qsdm.tech/pool](https://qsdm.tech/pool) with one Start button. The first start unlocks the wallet, enrolls the GPU if needed, and asks once to join the pool (rewards collect in an escrow nobody can spend, the network pays every block, 1% pool fee, capped by the network at 3%; leave at any time and take unsettled rewards back after about a day). Later starts are one click. Before the network's PULSE rule is active (block 1,210,000), the task says so and mines solo. If the pool cannot be reached for 5 minutes, it mines solo and returns to the pool by itself. Only one miner task runs at a time.
+- The QSDM Miner task gains an optional "QSDM pool (PULSE)" panel (off by default) with join, leave and reclaim; solo mining stays the default.
+- Native programs: `qsdmcli` (new `wallet sign-pulse-action` for pool join, leave and reclaim) and the miner (`qsdmminer-console`, pool mode with per-share receipts) are built from this release's source. The wallet host, the CUDA solver and the Edge programs (1.3.7) are the same files, byte for byte, as in Hive 1.4.23.
+
 ## [1.4.23]
 
 - Browser wallet extension: the extension files that Hive carries for its install flow are now version 0.6.0, the version on the download page (Hive 1.4.22 carried 0.5.1).

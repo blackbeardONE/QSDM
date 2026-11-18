@@ -855,6 +855,8 @@ describe('qsdmSystemTasks', () => {
 
     expect(merged.map((task) => task.task_id)).toEqual([
       QSDM_MINER_SYSTEM_TASK_ID,
+      // QSDM Pool Miner (PULSE, one button), right after QSDM Miner.
+      'qsdm-system-pool-miner',
       QSDM_EDGE_WORKER_SYSTEM_TASK_ID,
       QSDM_EDGE_WORKER_GPU_SYSTEM_TASK_ID,
       QSDM_EDGE_WORKER_RAM_SYSTEM_TASK_ID,
@@ -864,11 +866,13 @@ describe('qsdmSystemTasks', () => {
     ]);
     expect(merged[0].task_name).toBe('Core Provided Miner');
     expect(merged[0].minimum_stake_amount).toBe(0);
-    expect(merged[1].task_name).toBe('Core Provided Edge Worker');
-    expect(merged[2].task_name).toBe('QSDM Edge Worker GPU');
-    expect(merged[3].task_name).toBe('QSDM Edge Worker RAM');
-    expect(merged[4].task_name).toBe('Mother Hive Task');
-    expect(merged[5].task_name).toBe('Core Provided Sky Fang Link');
+    expect(merged[1].task_name).toBe('QSDM Pool Miner');
+    expect(merged[1].minimum_stake_amount).toBe(0);
+    expect(merged[2].task_name).toBe('Core Provided Edge Worker');
+    expect(merged[3].task_name).toBe('QSDM Edge Worker GPU');
+    expect(merged[4].task_name).toBe('QSDM Edge Worker RAM');
+    expect(merged[5].task_name).toBe('Mother Hive Task');
+    expect(merged[6].task_name).toBe('Core Provided Sky Fang Link');
   });
 
   it('does not allow legacy catalog types to overwrite system tasks as KOII', () => {

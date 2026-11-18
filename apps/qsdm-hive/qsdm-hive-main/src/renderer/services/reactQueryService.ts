@@ -26,6 +26,7 @@ export enum QueryKeys {
   QsdmCoreStatus = 'QsdmCoreStatus',
   QsdmCellAccount = 'QsdmCellAccount',
   QsdmMinerRewardStatus = 'QsdmMinerRewardStatus',
+  QsdmPulsePool = 'QsdmPulsePool',
   QsdmMotherHiveStatus = 'QsdmMotherHiveStatus',
   QsdmVirtualComputeResources = 'QsdmVirtualComputeResources',
   QsdmVirtualComputeJobs = 'QsdmVirtualComputeJobs',

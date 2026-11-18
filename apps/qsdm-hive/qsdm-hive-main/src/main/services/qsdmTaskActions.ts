@@ -763,3 +763,133 @@ export const submitQsdmTaskActionIntent = async ({
     return response;
   });
 };
+
+// ---------------------------------------------------------------------------
+// PULSE pool membership (join, leave, reclaim). These are member transactions
+// on the chain (POST /pulse/submit-signed), signed by qsdmcli with the unlocked
+// wallet. They bump the same account nonce as task actions, so they share the
+// per-sender queue and nonce reservation above.
+
+export type QsdmPulseAction =
+  | { op: 'join'; pool: string }
+  | { op: 'leave' }
+  | { op: 'reclaim'; proofs: string[] };
+
+export type QsdmPulseEnvelope = {
+  sender: string;
+  nonce: number;
+  fee: number;
+  payload: unknown;
+  public_key: string;
+  signature: string;
+};
+
+export type QsdmPulseSubmitResult = {
+  tx_id?: string;
+  status?: string;
+  nonce: number;
+};
+
+const HEX64 = /^[0-9a-f]{64}$/;
+
+export const validateQsdmPulseAction = (action: QsdmPulseAction) => {
+  if (action.op === 'join') {
+    if (!HEX64.test(action.pool || '')) {
+      throw new Error('PULSE join needs the pool ID (64 lowercase hex)');
+    }
+    return;
+  }
+  if (action.op === 'leave') return;
+  if (action.op === 'reclaim') {
+    const proofs = action.proofs || [];
+    if (proofs.length === 0 || proofs.length > 256) {
+      throw new Error('PULSE reclaim needs 1-256 escrowed proof IDs');
+    }
+    if (new Set(proofs).size !== proofs.length) {
+      throw new Error('PULSE reclaim proof IDs must be distinct');
+    }
+    return;
+  }
+  throw new Error('unknown PULSE action');
+};
+
+export const signQsdmPulseActionWithCli = async (request: {
+  sender: string;
+  nonce: number;
+  fee: number;
+  action: QsdmPulseAction;
+}): Promise<QsdmPulseEnvelope> => {
+  assertCliSignerConfigured();
+  validateQsdmPulseAction(request.action);
+  const stdout = await runQsdmCli({
+    args: buildWalletArgs('sign-pulse-action', [
+      '--request-file',
+      '-',
+      '--passphrase-file',
+      getQsdmTaskActionPassphraseFile(),
+    ]),
+    stdin: JSON.stringify(request),
+    timeoutMessage: 'qsdmcli PULSE signing timed out',
+  });
+  return JSON.parse(stdout.trim()) as QsdmPulseEnvelope;
+};
+
+export const submitQsdmPulseAction = async (
+  action: QsdmPulseAction
+): Promise<QsdmPulseSubmitResult> => {
+  validateQsdmPulseAction(action);
+  const sender = getQsdmTaskActionSender();
+  if (!sender) {
+    throw new Error('Unlock or import a QSDM wallet in Hive first');
+  }
+  return runQueuedTaskActionForSender(sender, async () => {
+    await assertQsdmCanonicalChainSafety({ forceRefresh: true });
+    const nonce = reserveTaskActionNonce(
+      sender,
+      await getNextTaskActionNonce(sender)
+    );
+    if (nonce === undefined) {
+      throw new Error(
+        "Could not read this wallet's nonce from QSDM Core; try again shortly"
+      );
+    }
+    const envelope = await signQsdmPulseActionWithCli({
+      sender,
+      nonce,
+      fee: 0,
+      action,
+    });
+    const safety = await assertQsdmCanonicalChainSafety({ forceRefresh: true });
+    const apiUrl = resolveQsdmTaskActionApiUrl({
+      runtimeApiUrl: safety.effectiveApiUrl,
+      canonicalApiUrl: safety.canonicalApiUrl,
+    });
+    try {
+      const response = await axios.post<{ tx_id?: string; status?: string }>(
+        `${apiUrl}/pulse/submit-signed`,
+        envelope,
+        { timeout: 10000 }
+      );
+      await waitForTaskActionNonceCommit(sender, nonce);
+      return { ...response.data, nonce };
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        throw new Error(
+          'The PULSE pool rule is not active on the network yet; joining opens at its activation height'
+        );
+      }
+      const detail =
+        axios.isAxiosError(error) &&
+        error.response?.data &&
+        typeof error.response.data === 'object'
+          ? (error.response.data as { message?: string; error?: string })
+              .message || (error.response.data as { error?: string }).error
+          : undefined;
+      throw new Error(
+        `PULSE ${action.op} was not accepted: ${
+          detail || (error as Error).message
+        }`
+      );
+    }
+  });
+};

@@ -144,6 +144,22 @@ export const getQsdmMinerRewardStatus = async () => {
   return window.main.getQsdmMinerRewardStatus();
 };
 
+export const getQsdmPulsePool = async () => {
+  return window.main.getQsdmPulsePool();
+};
+
+export const setQsdmPulsePool = async (
+  payload: Parameters<typeof window.main.setQsdmPulsePool>[0]
+) => {
+  return window.main.setQsdmPulsePool(payload);
+};
+
+export const runQsdmPulsePoolAction = async (
+  op: 'join' | 'leave' | 'reclaim'
+) => {
+  return window.main.runQsdmPulsePoolAction({ op });
+};
+
 export const getQsdmMotherHiveStatus = async () => {
   return window.main.getQsdmMotherHiveStatus();
 };
