@@ -182,13 +182,13 @@ describe('restoreQsdmSignerWallet', () => {
 
     const result = await restoreQsdmSignerWallet({} as Event, {
       recoveryWords,
-      passphrase: 'a brand new passphrase',
+      passphrase: 'correct horse battery staple renewed',
     });
 
     expect(result.active).toBe(true);
     expect(
       fs.readFileSync(path.join(mockSignerDir, 'passphrase.safe'), 'utf-8')
-    ).toBe('protected:a brand new passphrase');
+    ).toBe('protected:correct horse battery staple renewed');
     const walletDir = path.join(mockSignerDir, 'wallets', RESTORED);
     expect(
       fs
