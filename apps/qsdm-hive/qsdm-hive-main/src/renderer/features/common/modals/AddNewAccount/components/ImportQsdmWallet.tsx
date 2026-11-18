@@ -32,6 +32,7 @@ function ImportQsdmWallet({ onClose, onImportSuccess }: PropsType) {
   const [passphrase, setPassphrase] = useState('');
   const [fileName, setFileName] = useState('');
   const [error, setError] = useState('');
+  const [makeActive, setMakeActive] = useState(false);
 
   const {
     mutate: importWallet,
@@ -42,9 +43,11 @@ function ImportQsdmWallet({ onClose, onImportSuccess }: PropsType) {
       importQsdmSignerWallet({
         keystoreJson,
         passphrase,
+        makeActive,
       }),
     {
       onSuccess: async (result) => {
+        await queryCache.invalidateQueries([QueryKeys.QsdmWalletList]);
         await queryCache.invalidateQueries([QueryKeys.QsdmCoreStatus]);
         await queryCache.invalidateQueries([QueryKeys.QsdmCellAccount]);
         await queryCache.invalidateQueries([QueryKeys.AccountBalance]);
@@ -145,6 +148,19 @@ function ImportQsdmWallet({ onClose, onImportSuccess }: PropsType) {
             }}
             placeholder="QSDM wallet passphrase"
           />
+          <div className="pt-4 text-xs text-white/70">
+            Hive adds this wallet beside any wallet it already holds; nothing is
+            replaced. Switch wallets any time in Settings, Wallets.
+          </div>
+          <label className="mt-2 flex items-center gap-2 text-sm text-white">
+            <input
+              type="checkbox"
+              checked={makeActive}
+              onChange={(event) => setMakeActive(event.target.checked)}
+              className="h-4 w-4"
+            />
+            <span>Switch to this wallet now</span>
+          </label>
         </div>
 
         <div className="w-full flex items-center justify-center flex-col gap-4 pt-2">

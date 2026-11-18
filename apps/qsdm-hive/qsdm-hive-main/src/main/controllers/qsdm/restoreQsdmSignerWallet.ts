@@ -4,15 +4,26 @@ import os from 'os';
 import path from 'path';
 
 import {
-  backupQsdmEncryptedPassphrase,
+  initializeQsdmSignerSecretStore,
   persistQsdmSignerPassphrase,
 } from 'main/services/qsdmSignerSecretStore';
 import { resolveQsdmTaskActionApiUrl } from 'main/services/qsdmTaskActions';
 import {
-  activateQsdmImportedSignerPaths,
   getQsdmDefaultLocalSignerPaths,
   getQsdmTaskActionCliPath,
 } from 'main/services/qsdmTaskActionSigner';
+import {
+  addQsdmWalletToStore,
+  getQsdmWalletDir,
+  isQsdmWalletInStore,
+  refreshQsdmStoredWallet,
+  reloadActiveQsdmWalletFromStore,
+} from 'main/services/qsdmWalletStore';
+
+import {
+  activateAddedQsdmWallet,
+  assertQsdmWalletSwitchAllowed,
+} from './qsdmWallets';
 
 import type { Event } from 'electron';
 import type {
@@ -31,12 +42,6 @@ const writeFilePrivate = (filePath: string, content: string) => {
     fs.chmodSync(filePath, 0o600);
   } catch {
     // Windows protects files with the current user's profile ACL.
-  }
-};
-
-const backupExistingFile = (filePath: string) => {
-  if (fs.existsSync(filePath)) {
-    fs.copyFileSync(filePath, `${filePath}.bak-${Date.now()}`);
   }
 };
 
@@ -104,6 +109,8 @@ export const restoreQsdmSignerWallet = async (
       'New QSDM wallet passphrase must be at least 12 characters'
     );
   }
+
+  assertQsdmWalletSwitchAllowed(payload.makeActive);
 
   const tmpDir = fs.mkdtempSync(
     path.join(os.tmpdir(), 'qsdm-hive-restore-signer-')
@@ -175,33 +182,61 @@ export const restoreQsdmSignerWallet = async (
       );
     }
 
-    const { signerDir, keystorePath, passphraseFile } =
-      getQsdmDefaultLocalSignerPaths();
-    fs.mkdirSync(signerDir, { recursive: true, mode: 0o700 });
-    backupExistingFile(keystorePath);
-    backupExistingFile(passphraseFile);
-    backupQsdmEncryptedPassphrase(signerDir);
-    fs.copyFileSync(tmpKeystorePath, keystorePath);
-    try {
-      fs.chmodSync(keystorePath, 0o600);
-    } catch {
-      // Windows protects files with the current user's profile ACL.
+    // 2026-11-19: restoring ADDS the wallet to Hive's wallet list instead of replacing the active wallet. Restoring a
+    // wallet that is already in Hive (a forgotten passphrase) refreshes only that wallet's files.
+    const persistPassphrase = (walletDir: string) => {
+      persistQsdmSignerPassphrase({
+        passphrase: payload.passphrase,
+        signerDir: walletDir,
+      });
+    };
+    if (isQsdmWalletInStore(tmpKeystorePath)) {
+      const refreshed = refreshQsdmStoredWallet({
+        keystorePath: tmpKeystorePath,
+        persistPassphrase,
+      });
+      if (refreshed.isActive) {
+        reloadActiveQsdmWalletFromStore();
+        const secrets = initializeQsdmSignerSecretStore();
+        return {
+          address: walletInfo.address,
+          publicKey: walletInfo.public_key,
+          keystorePath: getQsdmDefaultLocalSignerPaths().keystorePath,
+          passphraseFile:
+            (secrets as { passphraseFile?: string }).passphraseFile || '',
+          active: true,
+        };
+      }
+      return {
+        address: walletInfo.address,
+        publicKey: walletInfo.public_key,
+        keystorePath: path.join(
+          getQsdmWalletDir(refreshed.address),
+          'wallet.json'
+        ),
+        passphraseFile: '',
+        active: false,
+      };
     }
-    const storedPassphrase = persistQsdmSignerPassphrase({
-      passphrase: payload.passphrase,
-      signerDir,
+
+    const added = addQsdmWalletToStore({
+      keystorePath: tmpKeystorePath,
+      label: payload.label,
+      source: 'restored',
+      persistPassphrase,
     });
-    activateQsdmImportedSignerPaths({
-      keystorePath,
-      passphraseFile: storedPassphrase.passphraseFile,
-      sender: walletInfo.address,
+    const active = await activateAddedQsdmWallet({
+      address: added.address,
+      makeActive: payload.makeActive,
+      hadActiveWallet: added.hadActiveWallet,
     });
 
     return {
       address: walletInfo.address,
       publicKey: walletInfo.public_key,
-      keystorePath,
-      passphraseFile: storedPassphrase.passphraseFile,
+      keystorePath: active.keystorePath,
+      passphraseFile: active.passphraseFile,
+      active: active.active,
     };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

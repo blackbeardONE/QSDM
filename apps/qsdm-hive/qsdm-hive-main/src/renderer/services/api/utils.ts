@@ -22,6 +22,10 @@ import type {
   QsdmVirtualComputeCancelRequest,
   QsdmVirtualComputeSubmitRequest,
   QsdmWalletProviderRevokeRequest,
+  QsdmWalletActivateRequest,
+  QsdmWalletForgetRequest,
+  QsdmWalletRecoverRequest,
+  QsdmWalletRenameRequest,
 } from 'models/api/qsdm';
 
 /** Utils */
@@ -216,6 +220,28 @@ export const enableQsdmSignerLegacyRecovery = async (
   payload: QsdmSignerLegacyRecoveryEnableRequest
 ) => {
   return window.main.enableQsdmSignerLegacyRecovery(payload);
+};
+
+export const listQsdmWallets = async () => {
+  return window.main.listQsdmWallets();
+};
+
+export const activateQsdmWallet = async (
+  payload: QsdmWalletActivateRequest
+) => {
+  return window.main.activateQsdmWallet(payload);
+};
+
+export const renameQsdmWallet = async (payload: QsdmWalletRenameRequest) => {
+  return window.main.renameQsdmWallet(payload);
+};
+
+export const forgetQsdmWallet = async (payload: QsdmWalletForgetRequest) => {
+  return window.main.forgetQsdmWallet(payload);
+};
+
+export const recoverQsdmWallet = async (payload: QsdmWalletRecoverRequest) => {
+  return window.main.recoverQsdmWallet(payload);
 };
 
 export const importQsdmSignerWallet = async (

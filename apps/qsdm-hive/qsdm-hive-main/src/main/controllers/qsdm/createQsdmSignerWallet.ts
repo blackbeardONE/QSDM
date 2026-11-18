@@ -3,15 +3,14 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import { persistQsdmSignerPassphrase } from 'main/services/qsdmSignerSecretStore';
+import { getQsdmTaskActionCliPath } from 'main/services/qsdmTaskActionSigner';
+import { addQsdmWalletToStore } from 'main/services/qsdmWalletStore';
+
 import {
-  hasQsdmStoredPassphrase,
-  persistQsdmSignerPassphrase,
-} from 'main/services/qsdmSignerSecretStore';
-import {
-  activateQsdmImportedSignerPaths,
-  getQsdmDefaultLocalSignerPaths,
-  getQsdmTaskActionCliPath,
-} from 'main/services/qsdmTaskActionSigner';
+  activateAddedQsdmWallet,
+  assertQsdmWalletSwitchAllowed,
+} from './qsdmWallets';
 
 import type { Event } from 'electron';
 import type {
@@ -62,13 +61,7 @@ export const createQsdmSignerWallet = async (
     throw new Error('QSDM wallet passphrase must be at least 12 characters');
   }
 
-  const { signerDir, keystorePath, passphraseFile } =
-    getQsdmDefaultLocalSignerPaths();
-  if (fs.existsSync(keystorePath) || hasQsdmStoredPassphrase(signerDir)) {
-    throw new Error(
-      'A QSDM signer wallet already exists. Back it up before replacing it.'
-    );
-  }
+  assertQsdmWalletSwitchAllowed(payload.makeActive);
 
   const tmpDir = fs.mkdtempSync(
     path.join(os.tmpdir(), 'qsdm-hive-new-signer-')
@@ -145,37 +138,30 @@ export const createQsdmSignerWallet = async (
       );
     }
 
-    fs.mkdirSync(signerDir, { recursive: true, mode: 0o700 });
-    try {
-      fs.chmodSync(signerDir, 0o700);
-    } catch {
-      // Windows applies the user-profile ACL instead of POSIX directory modes.
-    }
+    // 2026-11-19: a new wallet is ADDED to Hive's wallet list; with a wallet already in Hive it becomes active only
+    // when asked (makeActive). Nothing is replaced.
+    const added = addQsdmWalletToStore({
+      keystorePath: tmpKeystorePath,
+      label: payload.label,
+      source: 'created',
+      persistPassphrase: (walletDir) => {
+        persistQsdmSignerPassphrase({ passphrase, signerDir: walletDir });
+      },
+    });
+    const active = await activateAddedQsdmWallet({
+      address: added.address,
+      makeActive: payload.makeActive,
+      hadActiveWallet: added.hadActiveWallet,
+    });
 
-    try {
-      writeFilePrivate(keystorePath, fs.readFileSync(tmpKeystorePath, 'utf-8'));
-      const storedPassphrase = persistQsdmSignerPassphrase({
-        passphrase,
-        signerDir,
-      });
-      activateQsdmImportedSignerPaths({
-        keystorePath,
-        passphraseFile: storedPassphrase.passphraseFile,
-        sender: walletInfo.address,
-      });
-
-      return {
-        address: walletInfo.address,
-        publicKey: walletInfo.public_key,
-        keystorePath,
-        passphraseFile: storedPassphrase.passphraseFile,
-        recoveryWords,
-      };
-    } catch (error) {
-      fs.rmSync(keystorePath, { force: true });
-      fs.rmSync(passphraseFile, { force: true });
-      throw error;
-    }
+    return {
+      address: walletInfo.address,
+      publicKey: walletInfo.public_key,
+      keystorePath: active.keystorePath,
+      passphraseFile: active.passphraseFile,
+      recoveryWords,
+      active: active.active,
+    };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

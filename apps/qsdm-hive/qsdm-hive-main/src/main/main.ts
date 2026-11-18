@@ -52,6 +52,7 @@ import {
   stopQsdmWalletProviderBroker,
 } from './services/qsdmWalletProviderBroker';
 import { registerQsdmWalletProviderNativeHost } from './services/qsdmWalletProviderNativeHost';
+import { ensureQsdmWalletStore } from './services/qsdmWalletStore';
 import { resolveHtmlPath, sleep } from './util';
 
 import type { Event } from 'electron';
@@ -616,6 +617,18 @@ const main = async (): Promise<void> => {
     }
   }
 
+  // 1.4.25: move the single signer wallet into the wallet list (the active wallet does not change).
+  try {
+    const walletStore = ensureQsdmWalletStore();
+    console.log('QSDM wallet list ready', {
+      wallets: walletStore.wallets.length,
+    });
+  } catch (error) {
+    console.warn(
+      'QSDM wallet list could not be prepared; the active wallet keeps working.',
+      (error as Error)?.message
+    );
+  }
   const signerSecretStatus = initializeQsdmSignerSecretStore();
   console.log('QSDM signer secret storage initialized', {
     configured: signerSecretStatus.configured,

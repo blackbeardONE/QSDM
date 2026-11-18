@@ -1,22 +1,21 @@
+import { spawnSync } from 'child_process';
 import { Event } from 'electron';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { spawnSync } from 'child_process';
 
-import {
-  activateQsdmImportedSignerPaths,
-  getQsdmDefaultLocalSignerPaths,
-  getQsdmTaskActionCliPath,
-} from 'main/services/qsdmTaskActionSigner';
-import {
-  backupQsdmEncryptedPassphrase,
-  persistQsdmSignerPassphrase,
-} from 'main/services/qsdmSignerSecretStore';
+import { persistQsdmSignerPassphrase } from 'main/services/qsdmSignerSecretStore';
+import { getQsdmTaskActionCliPath } from 'main/services/qsdmTaskActionSigner';
+import { addQsdmWalletToStore } from 'main/services/qsdmWalletStore';
 import {
   QsdmSignerWalletImportRequest,
   QsdmSignerWalletImportResponse,
 } from 'models/api/qsdm';
+
+import {
+  activateAddedQsdmWallet,
+  assertQsdmWalletSwitchAllowed,
+} from './qsdmWallets';
 
 type WalletShowResult = {
   address?: string;
@@ -36,13 +35,6 @@ const getSpawnError = (result: ReturnType<typeof spawnSync>) => {
 
 const writeFilePrivate = (filePath: string, content: string) => {
   fs.writeFileSync(filePath, content, { mode: 0o600 });
-};
-
-const backupExistingFile = (filePath: string) => {
-  if (!fs.existsSync(filePath)) return;
-
-  const backupPath = `${filePath}.bak-${Date.now()}`;
-  fs.copyFileSync(filePath, backupPath);
 };
 
 const runQsdmCli = (args: string[]) =>
@@ -73,6 +65,8 @@ export const importQsdmSignerWallet = async (
   ) {
     throw new Error('Selected file is not a QSDM keystore JSON');
   }
+
+  assertQsdmWalletSwitchAllowed(payload.makeActive);
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qsdm-hive-signer-'));
   const tmpKeystorePath = path.join(tmpDir, 'wallet.json');
@@ -124,29 +118,31 @@ export const importQsdmSignerWallet = async (
       );
     }
 
-    const { signerDir, keystorePath, passphraseFile } =
-      getQsdmDefaultLocalSignerPaths();
-    fs.mkdirSync(signerDir, { recursive: true, mode: 0o700 });
-    backupExistingFile(keystorePath);
-    backupExistingFile(passphraseFile);
-    backupQsdmEncryptedPassphrase(signerDir);
-    writeFilePrivate(keystorePath, payload.keystoreJson);
-    const storedPassphrase = persistQsdmSignerPassphrase({
-      passphrase: payload.passphrase,
-      signerDir,
+    // 2026-11-19: an import ADDS the wallet to Hive's wallet list; it never replaces the active wallet (Hive 1.4.24
+    // overwrote it and kept only a .bak copy). It becomes active only when Hive has no wallet yet or when asked.
+    const added = addQsdmWalletToStore({
+      keystorePath: tmpKeystorePath,
+      label: payload.label,
+      source: 'imported',
+      persistPassphrase: (walletDir) => {
+        persistQsdmSignerPassphrase({
+          passphrase: payload.passphrase,
+          signerDir: walletDir,
+        });
+      },
     });
-
-    activateQsdmImportedSignerPaths({
-      keystorePath,
-      passphraseFile: storedPassphrase.passphraseFile,
-      sender: walletInfo.address,
+    const active = await activateAddedQsdmWallet({
+      address: added.address,
+      makeActive: payload.makeActive,
+      hadActiveWallet: added.hadActiveWallet,
     });
 
     return {
       address: walletInfo.address,
       publicKey: walletInfo.public_key,
-      keystorePath,
-      passphraseFile: storedPassphrase.passphraseFile,
+      keystorePath: active.keystorePath,
+      passphraseFile: active.passphraseFile,
+      active: active.active,
     };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });

@@ -25,6 +25,7 @@ export enum QueryKeys {
   GetNetworkUrl = 'GetNetworkUrl',
   QsdmCoreStatus = 'QsdmCoreStatus',
   QsdmCellAccount = 'QsdmCellAccount',
+  QsdmWalletList = 'QsdmWalletList',
   QsdmMinerRewardStatus = 'QsdmMinerRewardStatus',
   QsdmPulsePool = 'QsdmPulsePool',
   QsdmMotherHiveStatus = 'QsdmMotherHiveStatus',

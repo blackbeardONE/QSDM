@@ -178,6 +178,61 @@ describe('QSDM Hive IPC validation', () => {
     ).toThrow(/valid JSON/);
   });
 
+  it('validates the wallet list calls', () => {
+    expect(() =>
+      validateIpcPayload(Endpoints.LIST_QSDM_WALLETS, [])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.ACTIVATE_QSDM_WALLET, [
+        { address: validAddress },
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.ACTIVATE_QSDM_WALLET, [
+        { address: '../wallet' },
+      ])
+    ).toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.RENAME_QSDM_WALLET, [
+        { address: validAddress, label: 'x'.repeat(41) },
+      ])
+    ).toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.FORGET_QSDM_WALLET, [
+        { address: validAddress, confirmAddress: validAddress },
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.FORGET_QSDM_WALLET, [
+        { address: validAddress },
+      ])
+    ).toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.RECOVER_QSDM_WALLET, [
+        { backupFile: 'wallet.json.bak-1795029829858' },
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.RECOVER_QSDM_WALLET, [
+        { backupFile: '../../wallet.json.bak-1795029829858' },
+      ])
+    ).toThrow(/backupFile/);
+    expect(() =>
+      validateIpcPayload(Endpoints.CREATE_QSDM_SIGNER_WALLET, [
+        {
+          passphrase: 'correct horse battery staple',
+          label: 'Savings',
+          makeActive: true,
+        },
+      ])
+    ).not.toThrow();
+    expect(() =>
+      validateIpcPayload(Endpoints.CREATE_QSDM_SIGNER_WALLET, [
+        { passphrase: 'correct horse battery staple', makeActive: 'yes' },
+      ])
+    ).toThrow(/makeActive/);
+  });
+
   it('requires a strong-enough passphrase for new QSDM wallets', () => {
     expect(() =>
       validateIpcPayload(Endpoints.CREATE_QSDM_SIGNER_WALLET, [

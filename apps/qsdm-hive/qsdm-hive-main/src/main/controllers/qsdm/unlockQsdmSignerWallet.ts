@@ -13,6 +13,7 @@ import {
   getQsdmDefaultLocalSignerPaths,
   getQsdmTaskActionCliPath,
 } from 'main/services/qsdmTaskActionSigner';
+import { syncActiveQsdmWalletIntoStore } from 'main/services/qsdmWalletStore';
 import {
   QsdmSignerWalletImportResponse,
   QsdmSignerWalletUnlockRequest,
@@ -106,6 +107,12 @@ export const unlockQsdmSignerWallet = async (
       passphraseFile: storedPassphrase.passphraseFile,
       sender: walletInfo.address,
     });
+    // Keep the wallet list's copy of the active wallet current (its new passphrase entry).
+    try {
+      syncActiveQsdmWalletIntoStore();
+    } catch {
+      // The active slot is unlocked either way; the copy is refreshed again on the next switch.
+    }
 
     return {
       address: walletInfo.address,
