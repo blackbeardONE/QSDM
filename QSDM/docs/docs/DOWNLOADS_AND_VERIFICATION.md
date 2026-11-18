@@ -12,12 +12,21 @@ All downloads are linked from **[qsdm.tech/download.html](https://qsdm.tech/down
 | QSDM Hive | 1.4.24 | Windows x64 | `qsdm-hive-1.4.24-win-x64.exe` | 128.8 MB | `f1160ec019696d60a31a881cb8a26f16c11dd0d52d928b64844115f9adfa8273` |
 | QSDM Hive | 1.4.24 | Linux x86-64 | `qsdm-hive-1.4.24-linux-x86_64.AppImage` | 166.6 MB | `dbd6c539385db65b65caebddfa21b9d3fb90edb356cac99341644b65d581e343` |
 | QSDM Hive | 1.4.24 | Linux x86-64 | `qsdm-hive-1.4.24-linux-x64.tar.gz` | 157.6 MB | `bd9fc69084c69ae23be77478a5b7e8913384f06ee5fb8dde7ada430a28449d16` |
+| QSDM Hive | 1.4.24 | macOS 12+ (Apple silicon and Intel) | `qsdm-hive-1.4.24-mac-universal.dmg` | 244.1 MB | `32d57e7829f63b7c87c55f167f5a8557eeffac14da0ae8825eb81eb8cb2b1712` |
+| QSDM Hive | 1.4.24 | macOS 12+ (Apple silicon and Intel) | `qsdm-hive-1.4.24-mac-universal.zip` | 243.5 MB | `c2ea2e7af0cceacaa91e5e520519100bf425d60e142ef2e023d3e794071429c6` |
 
 Hive 1.4.24 (published 18 November 2026) is served from the release channel
 `https://qsdm.tech/downloads/hive-v2/`, together with checksum files
 (`SHA256SUMS-win.txt`, `qsdm-hive-1.4.24-linux-SHA256SUMS.txt`) and the signed
 release manifests (`qsdm-hive-release-windows-v2.json`,
 `qsdm-hive-release-linux-v2.json`).
+
+Hive 1.4.24 for macOS (published 18 November 2026) is the GitHub release
+[`hive-macos-v1.4.24`](https://github.com/qsdm-tech/QSDM/releases/tag/hive-macos-v1.4.24),
+with the checksum file `SHA256SUMS-mac.txt`. It is signed with QSDM's Apple
+Developer ID (team `2YUCLJRGYL`) and notarized by Apple. It has no QSDM-native
+release manifest: macOS checks the Apple signature and the notarization when
+you open it, and Hive does not update itself on a Mac.
 
 Other packages on the download page (browser wallet extension, Edge Agent, Core
 validator and home gateway builds) come with their own `SHA256SUMS` files.
@@ -56,6 +65,12 @@ Get-FileHash -Algorithm SHA256 .\qsdm-hive-1.4.24-win-x64.exe
 ```bash
 curl -fsSLO https://qsdm.tech/downloads/hive-v2/qsdm-hive-1.4.24-linux-SHA256SUMS.txt
 sha256sum -c --ignore-missing qsdm-hive-1.4.24-linux-SHA256SUMS.txt
+```
+
+**macOS (Terminal):**
+
+```bash
+shasum -a 256 qsdm-hive-1.4.24-mac-universal.dmg
 ```
 
 ## What Hive checks for you
@@ -134,6 +149,19 @@ for the plan.
 
 QSDM will never ask you to install a root certificate, disable antivirus, or run
 a download that is not linked from qsdm.tech.
+
+## macOS Gatekeeper
+
+QSDM Hive for macOS is signed with a Developer ID and notarized, so macOS opens
+it without a warning. To check it yourself after you copy it to Applications:
+
+```bash
+spctl -a -vvv "/Applications/QSDM Hive.app"
+```
+
+It must say `accepted`, `source=Notarized Developer ID`, and an `origin` that
+ends in `(2YUCLJRGYL)`. If macOS says the app is damaged or cannot be checked, do
+not open it: delete it and download it again from the link on qsdm.tech.
 
 ## Report a bad download
 

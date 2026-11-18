@@ -16,6 +16,11 @@ do not hold a user wallet.
   `https://qsdm.tech/downloads/hive-v2/`, and its release records are signed
   with QSDM's v2 release key. The earlier release key was rotated in October
   2026.
+- Hive 1.4.24 for macOS 12 or newer (one app for Apple silicon and Intel) was
+  published on 18 November 2026 as the GitHub release
+  [`hive-macos-v1.4.24`](https://github.com/qsdm-tech/QSDM/releases/tag/hive-macos-v1.4.24).
+  It is signed with QSDM's Apple Developer ID and notarized by Apple. On a Mac,
+  Hive is the wallet and runs tasks; it does not mine. See [macOS](#macos).
 - Because of the key rotation, Hive 1.4.20 (Windows) and 1.4.17 (Linux) cannot
   update themselves to 1.4.24. Install 1.4.24 once by hand from the
   [download page](https://qsdm.tech/download.html); your wallet and settings
@@ -118,6 +123,26 @@ Signed task actions use limited retries for temporary network and HTTP 5xx
 failures. Every retry reuses the same signed action ID, nonce, and payload; a
 validator duplicate response confirms the earlier submission instead of
 creating a second stake or transfer.
+
+## macOS
+
+Hive for macOS needs macOS 12 (Monterey) or newer. One app runs on Apple
+silicon and Intel Macs. Download the `.dmg` from the
+[download page](https://qsdm.tech/download.html) or the GitHub release
+[`hive-macos-v1.4.24`](https://github.com/qsdm-tech/QSDM/releases/tag/hive-macos-v1.4.24),
+open it and drag **QSDM Hive** to **Applications**. The app is signed with
+QSDM's Apple Developer ID (team `2YUCLJRGYL`) and notarized by Apple, so it opens
+with a double-click. Check the file first as described in
+[Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).
+
+On a Mac, Hive is the wallet and runs tasks. It does not mine: mining needs
+Windows or Linux with an NVIDIA GPU, so the Mac app has no miner, CUDA solver
+or Edge tools, and the GPU Edge Worker does not start. The QSDM Hive Wallet
+browser extension cannot reach Hive on a Mac yet.
+
+Hive does not update itself on a Mac. When the signed release names a newer
+Hive version, Hive shows the update screen with a link to the download page;
+install the new version over the old one. Your wallet and settings are kept.
 
 ## Task Studio
 

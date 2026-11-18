@@ -1,6 +1,6 @@
 # QSDM Code Signing Policy
 
-This policy covers public QSDM Hive releases for Windows. It complements the
+This policy covers public QSDM Hive releases for Windows and macOS. It complements the
 [build and release guidelines](QSDM/docs/docs/BUILD_AND_RELEASE_GUIDELINES.md)
 and the [security policy](SECURITY.md).
 
@@ -26,6 +26,24 @@ Authenticode, timestamping, or SmartScreen reputation.
 
 QSDM will not substitute a self-signed certificate or install a private root
 certificate on consumer computers to imitate public Windows trust.
+
+## macOS
+
+QSDM Hive for macOS is signed with QSDM's Apple Developer ID Application
+certificate (team `2YUCLJRGYL`) and notarized by Apple. The `QSDM Hive macOS`
+workflow builds and signs it on GitHub-hosted macOS runners, only from the
+protected `main` branch and only when the release owner starts it. Every
+executable in the app, `qsdmcli` included, is signed with the hardened runtime
+and a secure timestamp. The app and the disk image are notarized and stapled,
+and the workflow fails unless Gatekeeper accepts both as "Notarized Developer
+ID" on Apple silicon and on Intel. The certificate, its password and the
+notarization credentials are GitHub repository secrets set by the Apple account
+holder and used only by that release job; the public build log masks the
+certificate holder's name.
+
+A Mac release is published as a GitHub release (`hive-macos-v<version>`) with a
+SHA-256 checksum file. It has no QSDM-native ML-DSA release manifest, and Hive
+does not update itself on a Mac.
 
 ## Project and roles
 
@@ -126,6 +144,18 @@ value must match QSDM's immutable release manifest. For current unsigned indie
 releases, `Get-AuthenticodeSignature` is expected to report `NotSigned`; users
 must verify SHA-256 and understand that a checksum detects changed bytes but
 does not establish Microsoft-recognized publisher identity.
+
+On a Mac, check the app after copying it to Applications, and the disk image's
+SHA-256:
+
+```bash
+spctl -a -vvv "/Applications/QSDM Hive.app"
+shasum -a 256 qsdm-hive-<version>-mac-universal.dmg
+```
+
+The app must be `accepted` with `source=Notarized Developer ID` and an origin
+that ends in `(2YUCLJRGYL)`, and the SHA-256 must match the release's
+`SHA256SUMS-mac.txt`.
 
 ## Privacy and incident response
 

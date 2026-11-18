@@ -43,6 +43,6 @@ It needs five repository secrets, set by the Apple account's holder and never wr
 
 The job stops before it builds anything when a secret is missing, or when the `.p12` is not a Developer ID Application certificate of that team.
 
-Hive does not update itself on a Mac: hive-v2 has no signed Mac release. A Mac build checks its version against the signed Linux release; when that release names another version, Hive shows the update screen with a link to the download page. The release host does not publish Mac builds yet.
+Hive does not update itself on a Mac: hive-v2 has no signed Mac release. A Mac build checks its version against the signed Linux release; when that release names another version, Hive shows the update screen with a link to the download page. The release host does not publish Mac builds: a Mac release is the GitHub release `hive-macos-v<version>` (the `.dmg`, the `.zip` and `SHA256SUMS-mac.txt` of the release artifact), linked from the download page.
 
 The `QSDM Hive macOS` workflow (`.github/workflows/qsdm-hive-macos.yml`) runs for pull requests that touch Hive. On an Apple silicon and an Intel runner it builds the universal app, runs the macOS specs, starts the packaged app (the smoke test, then a normal start with a screenshot) and keeps the `.dmg` and `.zip` as the `qsdm-hive-macos-<commit>` artifact.
