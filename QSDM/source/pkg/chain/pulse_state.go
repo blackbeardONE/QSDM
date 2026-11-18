@@ -185,6 +185,24 @@ func (s *PulseStateStore) MemberPool(owner string) (string, bool) {
 	return p, ok
 }
 
+// Members returns the owners that have joined pool, sorted. A pool signs settlements only for these owners: the
+// chain refuses a batch with any other weight owner.
+func (s *PulseStateStore) Members(pool string) []string {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []string{}
+	for owner, p := range s.members {
+		if p == pool {
+			out = append(out, owner)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Stats returns the counters.
 func (s *PulseStateStore) Stats() PulseStats {
 	s.mu.RLock()
