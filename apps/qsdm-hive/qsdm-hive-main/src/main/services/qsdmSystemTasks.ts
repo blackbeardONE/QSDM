@@ -452,7 +452,9 @@ const createQsdmResourceWorkerSystemTask = (
     task_id: definition.taskId,
     task_name: definition.name,
     task_manager: definition.manager,
-    is_allowlisted: true,
+    // Paid resource work is an operator-only test: the on-chain catalog decides whether it is listed. Without the
+    // catalog (QSDM Core unreachable), these defaults keep it out of Available Tasks instead of showing it as verified.
+    is_allowlisted: false,
     is_active: true,
     task_audit_program: definition.taskId,
     stake_pot_account: definition.stakePot,
@@ -598,10 +600,12 @@ export const createQsdmSkyFangLinkSystemTask = (
 ): RawTaskData => {
   const task: RawTaskData = {
     task_id: QSDM_SKYFANG_LINK_SYSTEM_TASK_ID,
-    task_name: 'QSDM Sky Fang Link',
+    // Retired (the on-chain catalog says is_active false). Without the catalog (QSDM Core unreachable), these defaults
+    // keep it out of Available Tasks; existing stakes stay visible in My Node and can still be withdrawn.
+    task_name: 'QSDM Sky Fang Link (retired)',
     task_manager: QSDM_SKYFANG_LINK_MANAGER,
-    is_allowlisted: true,
-    is_active: true,
+    is_allowlisted: false,
+    is_active: false,
     task_audit_program: QSDM_SKYFANG_LINK_SYSTEM_TASK_ID,
     stake_pot_account: QSDM_SKYFANG_LINK_STAKE_POT,
     total_bounty_amount: QSDM_SKYFANG_LINK_REWARD_POOL_TARGET_CELL,
