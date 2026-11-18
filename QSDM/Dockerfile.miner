@@ -13,9 +13,15 @@
 #   device mapping) when running the container.
 #
 # Notes:
-#   - Base is NVIDIA's official CUDA 12.x devel image on Ubuntu 22.04; this
-#     is significantly larger than the validator image (~4-6 GB) but that is
-#     the cost of shipping the CUDA runtime.
+#   - The builder is NVIDIA's official CUDA 12.3 devel image on Ubuntu 22.04.
+#     Since 2026-11-19 the runtime stage is distroless (gcr.io/distroless/cc-debian12,
+#     nonroot): glibc, libstdc++ and OpenSSL from Debian plus only the shared
+#     libraries the miner binary links (liboqs, the mesh3d CUDA kernels,
+#     libcudart). No shell, package manager, wget, tar, perl or login tools, so
+#     the Trivy scan no longer reports the ~30 unfixable Ubuntu 22.04 package
+#     CVEs of the old CUDA runtime base. The host driver (libcuda) is injected
+#     by nvidia-container-toolkit, as before; the CUDA toolchain (12.3) and the
+#     GPUs it supports are unchanged.
 #   - The `mining_enabled` environment variable is set to true by default;
 #     the startup guard (pkg/mining/roleguard) will refuse role=validator
 #     with mining_enabled=true.
@@ -90,63 +96,54 @@ RUN cd source && CGO_ENABLED=1 \
     go build -tags "miner cuda" \
         -o ../qsdm-miner ./cmd/qsdm
 
+# Healthcheck helper for the shell-less runtime (replaces `wget` in HEALTHCHECK).
+COPY deploy/docker/healthcheck /tmp/healthcheck
+RUN cd /tmp/healthcheck && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /app/qsdm-healthcheck .
+
+# Stage the runtime tree for the distroless image: the miner, its healthcheck, the `qsdm` alias, /app/data, and
+# every shared library the binary resolves that the distroless cc base does not ship. glibc, libgcc_s, libstdc++
+# and OpenSSL (libssl/libcrypto) come from the base image's tracked Debian packages, so the scanner keeps seeing
+# them; the CUDA driver (libcuda) is injected by nvidia-container-toolkit at run time and is not copied.
+RUN set -eu; \
+    mkdir -p /out/usr/local/bin /out/usr/local/lib /out/app/data; \
+    cp /app/qsdm-miner /app/qsdm-healthcheck /out/usr/local/bin/; \
+    ln -s qsdm-miner /out/usr/local/bin/qsdm; \
+    ldd /app/qsdm-miner | awk '/=> \//{print $1" "$3}' | while read -r soname path; do \
+      case "$soname" in \
+        linux-vdso*|ld-linux*|libc.so*|libm.so*|libdl.so*|libpthread.so*|librt.so*|libresolv.so*) continue ;; \
+        libgcc_s.so*|libstdc++.so*|libssl.so*|libcrypto.so*|libcuda.so*) continue ;; \
+      esac; \
+      cp -L "$path" "/out/usr/local/lib/$soname"; \
+      echo "runtime lib: $soname <- $path"; \
+    done; \
+    if ldd /app/qsdm-miner | grep -v 'libcuda' | grep -q 'not found'; then ldd /app/qsdm-miner; exit 1; fi
+
 # ---- runtime stage ---------------------------------------------------------
-FROM nvidia/cuda:12.3.2-runtime-ubuntu22.04
+# Distroless (2026-11-19): no shell, package manager, wget, tar, perl or login tools in the shipped image. The old
+# nvidia/cuda:12.3.2-runtime-ubuntu22.04 base carried ~30 Ubuntu 22.04 package CVEs with no fix available.
+FROM gcr.io/distroless/cc-debian12:nonroot
 
-ENV DEBIAN_FRONTEND=noninteractive
-# `apt-get upgrade` pulls the Ubuntu 22.04 security pocket on every
-# build so base-image CVEs that land BETWEEN NVIDIA CUDA base bumps
-# (e.g. the GnuPG OOB-write family CVE-2025-68973 found by the
-# periodic Trivy scan -- see .github/workflows/security-scan-containers.yml)
-# get patched into outgoing miner images without waiting for an
-# upstream nvidia/cuda:*-runtime-ubuntu22.04 refresh. The validator
-# and legacy images run on Alpine 3.23.4 and do not need this; this
-# is specific to the CUDA-runtime Ubuntu base.
-RUN apt-get update \
-    && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends \
-       ca-certificates \
-       libsqlite3-0 \
-       libssl3 \
-       wget \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /usr/local/lib/liboqs.so* /usr/local/lib/
-# Ship the nvcc-built mesh3d kernel .so next to liboqs. The Go binary
-# links against it (`-lmesh3d_kernels` in pkg/mesh3d/cuda.go) and will
-# dlopen it at startup; libcudart.so itself is provided by the CUDA
-# runtime base image.
-COPY --from=builder /usr/local/lib/libmesh3d_kernels.so /usr/local/lib/
-COPY --from=builder /app/qsdm-miner /usr/local/bin/qsdm-miner
-RUN ldconfig
-
-# Convenience symlink so operators running legacy scripts that
-# expect a `qsdm` entrypoint continue to work against the role-
-# scoped miner image. (The rebrand commit's search-and-replace
-# left a duplicate symlink line here that aborted the docker
-# build with "File exists" — collapsed back to a single ln.)
-RUN ln -s /usr/local/bin/qsdm-miner /usr/local/bin/qsdm
+COPY --from=builder /out/usr/local/ /usr/local/
+COPY --from=builder --chown=65532:65532 /out/app/ /app/
 
 WORKDIR /app
 
 # libp2p, API, dashboard, log viewer.
 EXPOSE 4001 8080 8081 9000
 
-ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda/lib64
+ENV LD_LIBRARY_PATH=/usr/local/lib
 ENV QSDM_NODE_ROLE=miner
 ENV QSDM_MINING_ENABLED=true
-# Surface NVIDIA visible devices so nvidia-container-toolkit wires them in.
+# Surface NVIDIA visible devices so nvidia-container-toolkit wires them in (the nvidia/cuda base used to set these).
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV NVIDIA_REQUIRE_CUDA=cuda>=12.3
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-  CMD wget -q -O- http://127.0.0.1:8080/api/v1/health/live > /dev/null || exit 1
+  CMD ["/usr/local/bin/qsdm-healthcheck"]
 
-# Run as a dedicated non-root user. Miner processes do not need root; they
-# only need /dev/nvidia* device access which is provided by the container
-# toolkit with appropriate cgroup permissions.
-RUN groupadd -r qsdm && useradd -r -g qsdm -m -d /home/qsdm qsdm && \
-    mkdir -p /app/data && chown -R qsdm:qsdm /app /home/qsdm
-USER qsdm
+# The :nonroot base runs as uid/gid 65532. Miner processes do not need root; they only need /dev/nvidia* device
+# access, which the container toolkit provides.
+USER 65532:65532
 
-CMD ["qsdm-miner"]
+CMD ["/usr/local/bin/qsdm-miner"]
