@@ -4,9 +4,9 @@
 post-quantum (ML-DSA-87) wallet signatures and a two-tier node model —
 CPU-only validators are designed to run the PoE + BFT consensus, and miners run an additive, Mesh3D-tied Proof-of-Work that
 mints the native coin, **Cell (CELL)**. Consumers use **QSDM Hive**
-(Windows/Linux) for wallets, signed tasks, NVIDIA mining, and Mother Hive
-edge pools. Operators use Core plus optional home gateway, tray monitor,
-and attestation sidecars.
+(Windows, Linux and macOS) for wallets and signed tasks, and on Windows and
+Linux also for NVIDIA mining and Mother Hive edge pools. Operators use Core
+plus optional home gateway, tray monitor, and attestation sidecars.
 
 Wallet transactions are signed with **ML-DSA-87** (NIST FIPS 204, via
 Cloudflare CIRCL) — the standardised post-quantum signature scheme. It is
@@ -80,7 +80,10 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   decides whether the signature is required, and since 2026-10-19 it is
   required for every proof.
 - **Hive:** 1.4.24 for Windows and Linux, from
-  [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/). Hive
+  [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/), and
+  for macOS 12 or newer (wallet and tasks; no mining), signed with QSDM's Apple
+  Developer ID and notarized by Apple, from the GitHub release
+  [`hive-macos-v1.4.24`](https://github.com/qsdm-tech/QSDM/releases/tag/hive-macos-v1.4.24). Hive
   1.4.21 and newer sign mining proofs with the unlocked Hive wallet
   automatically, and 1.4.22 adds Proof-of-Entanglement parents to every
   transfer. Moving from 1.4.20 (Windows) or 1.4.17 (Linux) is a one-time
@@ -178,3 +181,11 @@ SignPath-signed unless a future paid or Foundation subscription signs that
 exact artifact and the final verification gates pass.
 See the [code signing policy](CODE_SIGNING_POLICY.md) for roles, provenance,
 approval, verification, and incident-response requirements.
+
+## macOS signing
+
+QSDM Hive for macOS is signed with QSDM's Apple Developer ID (team `2YUCLJRGYL`)
+and notarized by Apple. The `QSDM Hive macOS` workflow signs it only on
+`main`, when the release owner starts it, and fails unless Gatekeeper accepts
+the app and the disk image as notarized. See the
+[code signing policy](CODE_SIGNING_POLICY.md#macos).
