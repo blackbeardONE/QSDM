@@ -79,7 +79,7 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   owner-signed (ML-DSA-87 `operator_sig`) proofs; each window's configuration
   decides whether the signature is required, and since 2026-10-19 it is
   required for every proof.
-- **Hive:** 1.4.24 for Windows and Linux, from
+- **Hive:** 1.4.25 for Windows and Linux, from
   [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/), and
   for macOS 12 or newer (wallet and tasks; no mining), signed with QSDM's Apple
   Developer ID and notarized by Apple, from the GitHub release

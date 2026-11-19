@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > **Historical build-from-source notes.** This page predates QSDM Hive 1.4.21
 > and is not how most people mine today. Hive ships the miner and CUDA solver
-> for you: follow [Mining today (Hive 1.4.24)](MINING_TODAY.md). Mining is open
+> for you: follow [Mining today (Hive 1.4.25)](MINING_TODAY.md). Mining is open
 > to every enrolled miner (since 19 October 2026), in 7-day windows that renew
 > automatically.
 
