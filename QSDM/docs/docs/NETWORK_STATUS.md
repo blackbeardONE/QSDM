@@ -205,7 +205,7 @@ The [explorer](https://qsdm.tech/explorer.html) and the
   by itself; mining reopened on 2026-11-01 07:33 UTC after an audit of the
   window (PASS, no findings). Since then each 7-day mining window renews
   automatically.
-- **QSDM Hive 1.4.24** for Windows and Linux from
+- **QSDM Hive 1.4.25** for Windows and Linux from
   [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/), signed
   with the rotated v2 release key. See
   [Downloads & verification](DOWNLOADS_AND_VERIFICATION.md).

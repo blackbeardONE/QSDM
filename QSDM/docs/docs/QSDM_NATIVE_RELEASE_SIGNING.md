@@ -91,7 +91,7 @@ pins the v2 key.
 
 Because Hive 1.4.20 (Windows) and 1.4.17 (Linux) trust only the previous key,
 they cannot verify 1.4.21 or newer on their own. Updating to the current
-release (Hive 1.4.24) is a one-time manual
+release (Hive 1.4.25) is a one-time manual
 install from the [download page](https://qsdm.tech/download.html); wallet and
 settings are kept. The previous `/downloads/` channel stays online, so Hive
 1.4.20 keeps working until 19 December 2026. Hive 1.4.17 stopped working
