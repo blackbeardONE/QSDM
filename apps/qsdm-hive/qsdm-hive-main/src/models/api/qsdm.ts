@@ -1,4 +1,5 @@
 import type { QsdmCoreConnectionMode } from '../../config/qsdm';
+import type { QsdmBountyLedger } from '../../utils/qsdmBountyLedger';
 import type { RawTaskData } from '../task';
 
 export type QsdmCanonicalChainState =
@@ -932,4 +933,12 @@ export interface QsdmPulseActionResult {
   tx_id?: string;
   status?: string;
   nonce: number;
+}
+
+export interface QsdmBountyLedgerStatus {
+  /** The last good ledger: live, or the cached copy when qsdm.tech did not answer. */
+  ledger: QsdmBountyLedger | null;
+  source: 'live' | 'cache' | 'none';
+  error?: string;
+  checkedAt: string;
 }

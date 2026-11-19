@@ -116,6 +116,7 @@ import {
   pairQsdmMotherHive,
 } from './pairQsdmMotherHive';
 import { getRunnedPrivateTasks, setRunnedPrivateTasks } from './privateTasks';
+import { getQsdmBountyLedger } from './qsdmBountyLedger';
 import {
   getQsdmPulsePool,
   runQsdmPulsePoolAction,
@@ -218,6 +219,7 @@ export default {
   getQsdmPulsePool,
   setQsdmPulsePool,
   runQsdmPulsePoolAction,
+  getQsdmBountyLedger,
   getQsdmMotherHiveStatus,
   pairQsdmMotherHive,
   disconnectQsdmMotherHive,
