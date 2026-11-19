@@ -83,7 +83,7 @@ QSDM is a **public pilot network (pre-mainnet)**. Today:
   [qsdm.tech/downloads/hive-v2/](https://qsdm.tech/downloads/hive-v2/), and
   for macOS 12 or newer (wallet and tasks; no mining), signed with QSDM's Apple
   Developer ID and notarized by Apple, from the GitHub release
-  [`hive-macos-v1.4.24`](https://github.com/qsdm-tech/QSDM/releases/tag/hive-macos-v1.4.24). Hive
+  [`hive-macos-v1.4.25`](https://github.com/qsdm-tech/QSDM/releases/tag/hive-macos-v1.4.25). Hive
   1.4.21 and newer sign mining proofs with the unlocked Hive wallet
   automatically, and 1.4.22 adds Proof-of-Entanglement parents to every
   transfer. Moving from 1.4.20 (Windows) or 1.4.17 (Linux) is a one-time
