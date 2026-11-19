@@ -31,7 +31,8 @@ jobs:
     # ubuntu-24.04, not ubuntu-latest: nvcc below is Ubuntu 24.04's CUDA 12.0, which needs g++-12 as its host
     # compiler, and the newer ubuntu-latest image has no g++-12 ("g++-12: No such file or directory", 2026-11-02).
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # 90, not 45: without a cached CUDA download (below) apt alone has taken ~40 minutes (2026-11-19, #246).
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -78,10 +79,27 @@ jobs:
           chmod 0755 ../../apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdm-edge-control
           chmod 0755 ../../apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdmminer-console
 
+      # apt's CUDA toolkit packages (~1.5 GB) are kept per runner image: a slow Ubuntu mirror made this download
+      # take ~40 minutes twice on 2026-11-19. A new image restores the older files and apt downloads only what changed.
+      - name: Name the runner image
+        id: image
+        run: echo "id=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the CUDA toolkit packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/apt-cuda-debs
+          key: apt-cuda-${{ runner.os }}-${{ steps.image.outputs.id }}
+          restore-keys: |
+            apt-cuda-${{ runner.os }}-
+
       - name: Install CUDA compiler and build Linux GPU helper
         run: |
+          mkdir -p ~/apt-cuda-debs/partial
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends nvidia-cuda-toolkit xvfb
+          sudo apt-get install -y --no-install-recommends -o Dir::Cache::archives="$HOME/apt-cuda-debs" nvidia-cuda-toolkit xvfb
+          sudo rm -rf ~/apt-cuda-debs/partial ~/apt-cuda-debs/lock
+          sudo chown -R "$(id -u):$(id -g)" ~/apt-cuda-debs
           nvcc -O3 -std=c++17 -arch=sm_75 -ccbin g++-12 \
             QSDM/source/cmd/qsdm-edge-gpu-helper/main.cu \
             -o apps/qsdm-hive/qsdm-hive-main/native/linux/x64/qsdm-edge-gpu-helper

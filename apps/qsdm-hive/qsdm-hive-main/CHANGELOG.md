@@ -1,9 +1,10 @@
-## [Unreleased]
+## [1.4.25]
 
 - Several wallets in one Hive. **Create**, **Import** and **Restore with 24 Words** now ADD a wallet; they never replace or delete one. Up to 1.4.24, importing or restoring a wallet replaced the active wallet and kept the old one only as a `wallet.json.bak-<time>` file. Settings > Wallet lists every wallet with its name and address, marks the active one, and has **Use This Wallet**, **Rename** and **Remove**. With a wallet already in Hive, a new one becomes active only when **Switch to the new wallet now** is ticked. The QSDM Miner, the QSDM Pool Miner, Transfer and connected sites use the active wallet; switching is refused while a miner task runs. **Remove** needs the full address typed again, cannot remove the active wallet, and moves the wallet's files to a trash folder instead of deleting them. Each wallet keeps its own OS-protected passphrase entry.
 - On first start, Hive copies the existing wallet into the new wallet list without changing the active wallet, and offers wallets that an older Hive set aside (`wallet.json.bak-<time>`) under **Recovered wallets** with an **Add Back** button (with their saved passphrase entry, when one was kept beside them).
 - Restoring a wallet that is already in Hive with its 24 words (for example after a forgotten passphrase) renews only that wallet's passphrase entry and keeps its previous files beside it.
 - Task list: without the chain catalog (for example while QSDM Core restarts), Hive lists only tasks a user can run (#239).
+- Native programs: `qsdmcli` and the miner are rebuilt from this release's source (golang.org/x/crypto 0.59.0, #242); the wallet host, the CUDA solver and the Edge programs (1.3.7) are the same files as in Hive 1.4.24.
 
 ## [1.4.24]
 
