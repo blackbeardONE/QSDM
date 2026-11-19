@@ -14,8 +14,8 @@
 #
 # Notes:
 #   - The builder is NVIDIA's official CUDA 12.3 devel image on Ubuntu 22.04.
-#     Since 2026-11-19 the runtime stage is distroless (gcr.io/distroless/cc-debian12,
-#     nonroot): glibc, libstdc++ and OpenSSL from Debian plus only the shared
+#     Since 2026-11-19 the runtime stage is distroless (gcr.io/distroless/cc-debian13,
+#     nonroot; Debian 12 until the same day): glibc, libstdc++ and OpenSSL from Debian plus only the shared
 #     libraries the miner binary links (liboqs, the mesh3d CUDA kernels,
 #     libcudart). No shell, package manager, wget, tar, perl or login tools, so
 #     the Trivy scan no longer reports the ~30 unfixable Ubuntu 22.04 package
@@ -118,20 +118,15 @@ RUN set -eu; \
     done; \
     if ldd /app/qsdm-miner | grep -v 'libcuda' | grep -q 'not found'; then ldd /app/qsdm-miner; exit 1; fi
 
-# ---- OpenSSL from Debian security ------------------------------------------
-# The distroless base can lag behind Debian security updates for libssl3 (2026-11-19: 3.0.20 in the image, the
-# CVE-2026-84782 fix in 3.0.22). Unpack the current bookworm libssl3 package and its dpkg record so the shipped
-# library is current AND still tracked by the scanner (distroless keeps one record per package in status.d).
-FROM debian:12-slim AS openssl
-RUN set -eu;     apt-get update;     cd /tmp; apt-get download libssl3;     mkdir -p /x/var/lib/dpkg/status.d;     dpkg-deb -x libssl3_*.deb /x;     dpkg-deb -f libssl3_*.deb > /x/var/lib/dpkg/status.d/libssl3;     rm -rf /x/usr/share /var/lib/apt/lists/*;     cat /x/var/lib/dpkg/status.d/libssl3 | sed -n '1,4p'
-
 # ---- runtime stage ---------------------------------------------------------
 # Distroless (2026-11-19): no shell, package manager, wget, tar, perl or login tools in the shipped image. The old
 # nvidia/cuda:12.3.2-runtime-ubuntu22.04 base carried ~30 Ubuntu 22.04 package CVEs with no fix available.
-FROM gcr.io/distroless/cc-debian12:nonroot
+# Debian 13 (trixie) since the same day: the Debian 12 base carried ~70 open Trivy findings in libc6, libssl3 and
+# the GCC 12 runtime libraries, most without a bookworm fix; trixie ships glibc 2.41, OpenSSL 3.5 and GCC 14
+# runtimes (the builder's Ubuntu 22.04 glibc 2.35 / OpenSSL 3.0 ABI runs on them), so the separate libssl3 refresh
+# stage is no longer needed.
+FROM gcr.io/distroless/cc-debian13:nonroot
 
-COPY --from=openssl /x/usr/lib/ /usr/lib/
-COPY --from=openssl /x/var/lib/dpkg/status.d/libssl3 /var/lib/dpkg/status.d/libssl3
 COPY --from=builder /out/usr/local/ /usr/local/
 COPY --from=builder --chown=65532:65532 /out/app/ /app/
 

@@ -77,6 +77,16 @@ on:
 
   workflow_dispatch:
 
+  # 2026-11-19: also on a push to main that changes a release Dockerfile or this workflow, so the Security tab is
+  # re-scanned right after a fix merges (the old alerts close at once instead of at the next scheduled run).
+  push:
+    branches: [main]
+    paths:
+      - "QSDM/Dockerfile"
+      - "QSDM/Dockerfile.miner"
+      - "QSDM/Dockerfile.validator"
+      - ".github/workflows/security-scan-containers.yml"
+
   pull_request:
     paths:
       - "QSDM/Dockerfile"
