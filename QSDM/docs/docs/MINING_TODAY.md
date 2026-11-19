@@ -1,4 +1,4 @@
-# Mining today (QSDM Hive 1.4.24)
+# Mining today (QSDM Hive 1.4.25)
 
 How CELL mining works on the pilot network right now, for people using the QSDM
 Hive desktop app. For the protocol details see
@@ -21,7 +21,7 @@ see the [command-line miner](MINER_QUICKSTART.md).
 | | |
 |---|---|
 | Hardware | NVIDIA GPU, Turing or newer (compute capability 7.5 or higher): GeForce RTX 20/30/40/50 series and newer data-center GPUs |
-| Software | QSDM Hive 1.4.24 for Windows x64 or Linux x86-64 |
+| Software | QSDM Hive 1.4.25 for Windows x64 or Linux x86-64 |
 | Driver | A current NVIDIA driver with a working `nvidia-smi`. You do not need the CUDA Toolkit; Hive bundles what it needs. |
 | Linux extras | glibc 2.34 or newer; GTK 3 for the AppImage |
 | Bond | 10 CELL per enrolled GPU, paid up front or taken from your first rewards |
@@ -31,10 +31,10 @@ see the [command-line miner](MINER_QUICKSTART.md).
 GPU mining is NVIDIA-only today. Every proof must carry an NVIDIA attestation;
 the network rejects proofs without one.
 
-## 1. Install Hive 1.4.24
+## 1. Install Hive 1.4.25
 
 1. Download Hive from the [download page](https://qsdm.tech/download.html).
-   Version 1.4.24 is served from the release channel
+   Version 1.4.25 is served from the release channel
    `https://qsdm.tech/downloads/hive-v2/`. It also adds
    [Proof-of-Entanglement](PROOF_OF_ENTANGLEMENT.md) parents to every
    transfer, which the network requires since block 816,600.
@@ -45,10 +45,10 @@ the network rejects proofs without one.
 
 > [!NOTE]
 > **Coming from Hive 1.4.20 (Windows) or 1.4.17 (Linux)?** Those versions
-> cannot update themselves to 1.4.24 because the release signing key was
-> rotated. Install 1.4.24 once by hand; your wallet and settings are kept.
+> cannot update themselves to 1.4.25 because the release signing key was
+> rotated. Install 1.4.25 once by hand; your wallet and settings are kept.
 > Hive 1.4.17 stopped working after 9 November 2026, and 1.4.20 stops after
-> 19 December 2026: install 1.4.24 by hand.
+> 19 December 2026: install 1.4.25 by hand.
 
 ## 2. Create or restore your wallet
 
@@ -62,7 +62,7 @@ This wallet is your mining address: rewards are paid to it and it owns your
 enrollment. Wallet transactions are signed with ML-DSA-87. See
 [Wallet recovery](WALLET_RECOVERY.md) for backups.
 
-**Keep the wallet unlocked while you mine.** Hive 1.4.24 signs every mining
+**Keep the wallet unlocked while you mine.** Hive 1.4.25 signs every mining
 proof with your wallet automatically (the owner signature). If the wallet is
 locked, Hive shows "Unlock your QSDM wallet in Hive to mine." and does not
 start the miner.
@@ -144,7 +144,7 @@ Each proof says which NVIDIA attestation it carries:
 | Enrollment fails with `gpu_uuid already bound to an active enrollment` | One GPU can back only one active enrollment, and this GPU already has one. Hive 1.4.23 and newer find and reuse that enrollment by itself when Hive holds the wallet that owns it (Hive 1.4.22 and older made a new node ID after a Windows reinstall, a new PC name, a lost `.qsdm` folder or another wallet). An enrollment owned by another wallet can be ended only by that wallet (unenroll). After an unenroll the GPU can enroll again at once; the old bond is held for 201,600 blocks (about 23 days) and then returns to its owner. |
 | Miner reports `mining_unavailable` (HTTP 503) | Mining is paused, for example while the producer restarts. Windows renew automatically, so mining reopens by itself; check [Network status](NETWORK_STATUS.md). |
 | Many `429` responses in the miner log | You hit the per-IP rate limit, for example with several rigs behind one internet address. Run fewer rigs per address. |
-| 1.4.20 / 1.4.17 does not offer 1.4.24 | Expected. Install 1.4.24 by hand once. |
+| 1.4.20 / 1.4.17 does not offer 1.4.25 | Expected. Install 1.4.25 by hand once. |
 
 More help: [Hive app guide](QSDM_HIVE.md) and
 [Troubleshooting](TROUBLESHOOTING.md).
