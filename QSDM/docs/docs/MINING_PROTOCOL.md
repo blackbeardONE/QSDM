@@ -346,7 +346,7 @@ Using the emission-schedule defaults (`target_block_time = 10 s`, `M = 60480` bl
 |---|---|
 | Blocks per 24 h | 8 640 |
 | Mining epochs per emission epoch (4 yr) | ≈ 208.7 |
-| First-emission-epoch block reward | 3.56490987 CELL/block (per `pkg/chain/emission` tests) |
+| First-emission-epoch block reward | 3.56490987 CELL/block (per `pkg/chain/emission` tests) until block 1,210,000, then 4.56 CELL split 85 % miner, 8 % Operations, 5 % Play Rewards, 2 % Security ([Genesis Policy v1.2](GENESIS_POLICY_v1.2.md)) |
 | Cell issued per day in epoch 0 | ≈ 30 800 CELL |
 | Cell issued per mining epoch (≈ 7 days) in epoch 0 | ≈ 215 700 CELL |
 

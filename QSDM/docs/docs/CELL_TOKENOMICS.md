@@ -1,6 +1,7 @@
 # Cell (CELL) — Tokenomics
 
-> **Status:** [Genesis Policy v1.1](GENESIS_POLICY_v1.1.md): **ratified by
+> **Status:** [Genesis Policy v1.2](GENESIS_POLICY_v1.2.md) (2026-11-20): from block 1,210,000 the reward is 4.56 CELL, split 85 % miner, 8 % Operations, 5 % Play Rewards, 2 % Security (§3). Earlier:
+> [Genesis Policy v1.1](GENESIS_POLICY_v1.1.md): **ratified by
 > owner 2026-10-16 and approved in writing 2026-10-19; v1.1 (2026-11-01) drops the counsel review.** Maximum supply
 > 90,000,000 CELL, all from mining; no genesis treasury (the earlier
 > 10,000,000 CELL treasury proposal is withdrawn); transaction fees are burned
@@ -106,68 +107,65 @@ history as pilot data.
 
 ## 3. Emission schedule
 
-Assumes a target block time of **10 seconds** (matches the current
-`pkg/chain` default; see §3.2 for the sensitivity analysis if this changes).
-Blocks per 4-year epoch = 12,623,040 (= 4 × 365.25 × 86400 / 10, using the
-Julian year so leap years are absorbed uniformly).
+Target block time **10 seconds**. The cap is **90,000,000 CELL**, and the epoch allocations do not change: 45,000,000
+CELL for epoch 0, then half of the previous epoch's each time. All amounts are computed in integer dust (1 CELL =
+10^8 dust) by `pkg/chain/emission.go` and `pkg/chain/network_rewards.go`. The schedule changed at block 1,210,000
+([Genesis Policy v1.2](GENESIS_POLICY_v1.2.md), published 20 November 2026).
 
-The per-block reward is computed as `floor(epoch_allocation_dust /
-blocks_per_epoch)` using integer math — these are the EXACT values
-returned by `pkg/chain.EmissionSchedule.BlockRewardDust` at each epoch
-boundary, not rounded display values. See `pkg/chain/emission.go` and its
-unit tests for the exact token definition.
+### 3.1 Before block 1,210,000
 
-| Epoch | Years | Epoch allocation (CELL) | Block reward (dust) | Block reward (CELL) | Cumulative (CELL, approx) | % of mining cap |
-|---|---|---:|---:|---:|---:|---:|
-| 0 | 0–4 | 45,000,000 | 356,490,987 | 3.56490987 | 44,999,999.88 | 50.00% |
-| 1 | 4–8 | 22,500,000 | 178,245,493 | 1.78245493 | 67,499,999.80 | 75.00% |
-| 2 | 8–12 | 11,250,000 | 89,122,746 | 0.89122746 | 78,749,999.74 | 87.50% |
-| 3 | 12–16 | 5,625,000 | 44,561,373 | 0.44561373 | 84,374,999.68 | 93.75% |
-| 4 | 16–20 | 2,812,500 | 22,280,686 | 0.22280686 | 87,187,499.62 | 96.875% |
-| 5 | 20–24 | 1,406,250 | 11,140,343 | 0.11140343 | 88,593,749.56 | 98.4375% |
-| 6 | 24–28 | 703,125 | 5,570,171 | 0.05570171 | 89,296,874.50 | 99.2188% |
-| 7+ | 28+ | halves every 4y | halves | halves | → 90,000,000 asymptotically | → 100% |
+Epochs last 4 years: 12,623,040 blocks. The reward is `floor(epoch_allocation / 12,623,040)`, which is
+**3.56490987 CELL** in epoch 0 (`EmissionSchedule.BlockRewardDust`). Blocks below 1,210,000 always keep this schedule,
+including when they are replayed. About 4,313,537 CELL are issued below that block.
 
-The small (~0.12 CELL per epoch) cumulative shortfall versus the nominal
-"50% / 75% / 87.5% / ..." percentages is the integer-division truncation
-residue described in §3.1. It is deterministic, unavoidable in exact
-integer arithmetic, and bounded — `ConvergenceCheck` verifies the total
-shortfall across all epochs stays under 0.00001 % of the 90 M CELL cap.
+### 3.2 From block 1,210,000: 4.56 CELL, halving by allocation
 
-### 3.1 Invariants enforced by `pkg/chain/emission` (Phase 3.3)
+- The reward is **4.56 CELL** (456,000,000 dust) from block 1,210,000.
+- It halves when the current epoch's allocation has been issued, counting the blocks before 1,210,000.
+- The block that completes an allocation pays exactly the remainder. Each epoch therefore issues **exactly** its
+  allocation, and nothing is lost to rounding (`EmissionSchedule.RewardDustAt`, `CumulativeDustAt`).
+- When the halved reward reaches 0 dust (after 29 halvings), issuance ends, about 0.17 CELL short of the cap.
 
-The emission calculator in `pkg/chain/emission.go` is the single source of
-truth for runtime. It is pure Go (no CGO), deterministic, and exercised by
-the Phase 3.3 unit tests that verify:
+At 10-second blocks:
 
-1. The sum of per-block rewards over epochs 1..N, extended to N → ∞,
-   converges to exactly **9,000,000,000,000,000 dust** (= 90 M CELL).
-2. The per-block reward is computed from integer math only (no floating
-   point), so two validators on different architectures always agree.
-3. The transition block between epochs is well-defined and matches the
-   schedule above.
-4. If the target block time is re-configured before genesis, the schedule
-   re-derives but the total cap stays exactly 90 M CELL.
+| Epoch | Allocation (CELL) | Reward (CELL) | Heights | Lasts | Ends (years from genesis) | Issued (CELL) | % of cap |
+|---|---:|---:|---|---:|---:|---:|---:|
+| 0 | 45,000,000 | 4.56 | 1,210,000 – 10,132,469 | 2.83 y | 3.21 | 45,000,000 | 50 % |
+| 1 | 22,500,000 | 2.28 | 10,132,470 – 20,000,891 | 3.13 y | 6.34 | 67,500,000 | 75 % |
+| 2 | 11,250,000 | 1.14 | 20,000,892 – 29,869,313 | 3.13 y | 9.47 | 78,750,000 | 87.5 % |
+| 3 | 5,625,000 | 0.57 | 29,869,314 – 39,737,735 | 3.13 y | 12.59 | 84,375,000 | 93.75 % |
+| 4 | 2,812,500 | 0.285 | 39,737,736 – 49,606,157 | 3.13 y | 15.72 | 87,187,500 | 96.875 % |
+| 5 | 1,406,250 | 0.1425 | 49,606,158 – 59,474,579 | 3.13 y | 18.85 | 88,593,750 | 98.44 % |
+| 6 | 703,125 | 0.07125 | 59,474,580 – 69,343,001 | 3.13 y | 21.97 | 89,296,875 | 99.22 % |
+| 7+ | halves | halves | … | 3.13 y each | … | → 90,000,000 | → 100 % |
 
-### 3.2 Sensitivity to block-time changes
+(Epoch 0 starts at genesis; its row shows the part from block 1,210,000.)
 
-If target block time changes, the per-block reward changes but the total
-cap does not: the calculator computes per-block reward as
-`epoch_allocation_dust / blocks_per_epoch` where `blocks_per_epoch` is
-derived from the target block time. Operators changing block time
-post-genesis are effectively changing inflation per unit time; the hard-cap
-invariant is preserved.
+### 3.3 Who receives each reward (from block 1,210,000)
 
-### 3.3 First-halving verification
+| Share | Receiver | Notes |
+|---|---|---|
+| 85 % | the miner | Also receives the rounding remainder (each fund share is rounded down to the dust). Deferred bonds fill from this share only. For a PULSE pool member it goes into the member's pool escrow, as before. |
+| 8 % | Operations fund `13d786706accfbe77c5ddf6fc6757e1cca07bd01aff0cad3dcf9411d92cf11c9` | Infrastructure, servers, audits, running the network. |
+| 5 % | Play Rewards fund `b8fcf6a1f352aacd5b6abf03b77c499ca9b110905809a86f631c6c72eb525dff` | For all QSDM games, one chest per game. Bannerfall is first. |
+| 2 % | Security fund `4146b9a5cdb287c46c1ce67f6e377af7d5bc0c5f83cbef7403f0346b5433e301` (the bug bounty wallet) | Goes to the miner while the fund holds 100,000 CELL or more. |
 
-The first halving is a one-way, non-reversible event. Before mainnet, the
-incentivized testnet (Major Update Phase 4, wall-clock bound) MUST run a
-compressed-time simulation of the first halving and verify:
+- These are **shares of the scheduled emission**, not extra issuance. The sum of what miners and funds receive is the
+  reward of the block, and never more.
+- What is actually issued is often less than the schedule. Each owner may earn at most 2,000 CELL per 8,640 blocks.
+  That cap counts the miner's 85 % share only.
+- The fund addresses and balances are public. A monthly report lists every payment
+  ([TREASURY_POLICY](TREASURY_POLICY.md) §7).
 
-- No validator disagreement on the exact halving block.
-- No miner accepts a stale reward (old epoch reward) for the first block
-  of the new epoch.
-- The cumulative-emission invariant holds to the dust across the boundary.
+### 3.4 Invariants (tests in `pkg/chain/network_rewards_test.go`)
+
+- Every epoch from block 1,210,000 issues exactly its allocation. The reward halves at each boundary, and the total
+  never exceeds 90,000,000 CELL. This is checked at full scale for seven activation heights, and block by block on a
+  scaled schedule for eight.
+- In 200,000 random splits, and at the edge amounts, the miner's share plus the three fund shares equals the reward to
+  the dust. Over all of them, the parts add up to the rewards with no drift.
+- With the rules off, or below block 1,210,000, the schedule, the payments and the replayed state are identical to
+  before.
 
 ---
 
@@ -224,9 +222,9 @@ published activation height.
 |---|---|---|
 | Max supply | 21,000,000 BTC | 90,000,000 CELL (all from mining) |
 | Decimals | 8 | 8 |
-| Halving period | every 210,000 blocks (~4 years at 10-min blocks) | every 12,623,040 blocks (~4 years at 10-sec blocks) |
+| Halving period | every 210,000 blocks (~4 years at 10-min blocks) | every 12,623,040 blocks (~4 years at 10-sec blocks) until block 1,210,000; from then when each epoch's allocation is issued (about 3.13 years) |
 | Block time | ~10 min | 10 sec (target) |
-| Initial reward | 50 BTC | 3.56490987 CELL |
+| Initial reward | 50 BTC | 3.56490987 CELL; 4.56 CELL from block 1,210,000 (85 % to the miner) |
 | Founder / insider allocation | 0 | 0 |
 | Treasury | none | none (no genesis treasury) |
 | Consensus | pure PoW | PoE + BFT **for consensus** (design target; today a single block producer), additive PoW **for emission only** |
@@ -302,4 +300,5 @@ and "yield" are forbidden in all project communications (see
 | 2026-10-16 | [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) ratified by owner, awaiting signature and counsel review: 90,000,000 CELL hard cap, all from mining; 10,000,000 CELL treasury proposal withdrawn; fees burned until independent validators; mainnet continues the current chain via a published migration. |
 | 2026-10-19 | [Genesis Policy v1.0](GENESIS_POLICY_v1.0.md) approved by the owner in writing; signature block filled in with the policy text's SHA-256 (`b6c18897...`). Counsel review is still pending, so `tok-01` stays `pending`. |
 | 2026-11-01 | [Genesis Policy v1.1](GENESIS_POLICY_v1.1.md): the owner decided not to engage counsel; the counsel opinion in clauses 1, 7 and 8 is replaced by the owner's written decision and `tok-01` is closed by it. Burn rule of the funder-removal migration decided: the 74 seed-faucet credits of 1,000 CELL each (74,000 CELL written straight into state in the faucet era and never moved) are burned; balances from mining rewards and signed transfers are kept. |
+| 2026-11-20 | [Genesis Policy v1.2](GENESIS_POLICY_v1.2.md): from block 1,210,000 the block reward is 4.56 CELL, halving by allocation used, and each reward is split 85 % miner, 8 % Operations, 5 % Play Rewards, 2 % Security (the Security share goes to the miner while that fund holds 100,000 CELL); the 90,000,000 CELL cap is unchanged. §3 rewritten. |
 
