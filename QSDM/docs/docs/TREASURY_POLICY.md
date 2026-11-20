@@ -13,11 +13,17 @@ Status: funding and custody policy (pilot network)
 4. Referral, onboarding, integration, and task rewards use separate wallets.
 5. Treasury balances, transfers, budgets, and policy changes are public and
    auditable. Secrets, keystores, bearer tokens, and passphrases are not.
+6. The three **network funds** (Tier N below) receive CELL only from their protocol shares of the scheduled emission
+   (Genesis Policy v1.2 clause 9). Nobody may add to them with a credit, a prefund or a state edit. Every payment
+   from them is a normal ML-DSA-signed transfer with an on-chain transaction ID, listed in the monthly report.
 
 ## 2. Wallet hierarchy
 
 | Tier | Wallet | Suggested control | Purpose |
 |---|---|---|---|
+| N1 | **Operations fund** `13d786706accfbe77c5ddf6fc6757e1cca07bd01aff0cad3dcf9411d92cf11c9` | Key held by the owner on the owner's own device | Income: 8 % of every mining reward paid, from block 1,210,000. Servers, infrastructure, audits and running costs. Every payment is listed in the monthly report. It may refill Tier 1. |
+| N2 | **Play Rewards fund** `b8fcf6a1f352aacd5b6abf03b77c499ca9b110905809a86f631c6c72eb525dff` | Key held by the owner on the owner's own device | Income: 5 % of every mining reward paid, from block 1,210,000. Player rewards for **all QSDM games**. Each game has its own chest wallet (Tier 2G, below), refilled from N2. **Bannerfall is first.** No ceiling. |
+| N3 | **Security fund** `4146b9a5cdb287c46c1ce67f6e377af7d5bc0c5f83cbef7403f0346b5433e301` | Key held by the owner on the owner's own device | Income: 2 % of every mining reward paid, from block 1,210,000, while the fund holds **less than 100,000 CELL**. Bug bounties and security work. Above the ceiling, its share goes to the miner. It is the Tier 2F bug bounty wallet: from block 1,210,000 its refill source is N3's protocol share as well as the owner's mined CELL. |
 | 1 | Operations Treasury | 2-of-3 multisig, monthly budget | Receives only existing CELL (mined CELL, governance-approved fee revenue, or disclosed sponsor funds) approved under the public budget. Refills lower tiers. |
 | 2A | Referral Payout Wallet | Isolated signer, maximum 5 CELL per payout, 30-day refill | Pays one qualified referral reward. |
 | 2B | Onboarding Payout Wallet | Separate isolated signer, maximum 1 CELL per payout, 7-day refill | Pays a one-time starter grant. |
@@ -25,6 +31,11 @@ Status: funding and custody policy (pilot network)
 | 2D | Task Reward Pools | One funded pool per task | Pays verified task submissions under task-specific policy. |
 | 2E | Pooled Compute Ecosystem Reserve | Dedicated public wallet, governance-approved sweeps | Receives the 15% ecosystem share from settled Agent/Relay workloads. |
 | 2F | Bug Bounty Payout Wallet | Isolated signer held by the owner, working balance refilled from the owner's mined CELL | Pays [bug bounty](BUG_BOUNTY.md) rewards only. Public address `4146b9a5cdb287c46c1ce67f6e377af7d5bc0c5f83cbef7403f0346b5433e301`. |
+| 2G | **Game chest wallets** | One isolated signer per game | Refills from N2 only. Pays that game's player rewards under the game's published claim rules. Bannerfall's War Chest (`743c099a…046f`) is the first. |
+
+The three Tier N addresses are consensus-bound, like Tier 2E. Every node is configured with them together with the
+activation height (`[consensus] network_rewards_*`), and a node refuses to start if one of them is missing. Changing
+an address needs a new policy version and a new activation height.
 
 Use different keystores, passphrases, bearer tokens, operating-system users,
 ports, and refill transactions for Tier 2A and Tier 2B. Never point referral and
@@ -59,10 +70,12 @@ Any future proposal to add an allocation needs a new published policy version,
 the owner's written decision and the governance process, and it may never mint CELL on a
 chain that has already launched without it.
 
-Fund programs from legitimately mined CELL, protocol fee revenue approved by
-governance (fees are burned today, so there is none until the fee destination
-changes under a new policy version), or disclosed sponsor revenue transferred
-into the Operations Treasury.
+Fund programs from:
+- legitimately mined CELL;
+- from block 1,210,000, the network funds' protocol shares of the scheduled emission. These are 8 %, 5 % and 2 % of
+  each reward paid. They are not new CELL: the 90,000,000 cap and the epoch allocations do not change;
+- protocol fee revenue approved by governance (fees are burned today);
+- disclosed sponsor revenue transferred into the Operations Treasury.
 
 Never fund a production reward with a faucet credit, an environment prefund,
 or a direct state-file edit.
@@ -110,6 +123,16 @@ checks are part of the operators' private runbooks.
 5. The signer enforces role, maximum payout, and minimum reserve; signs a normal
    transfer; and submits it through `/api/v1/wallet/submit-signed`.
 6. Core stores the returned transaction ID in the claim receipt.
+
+- **Monthly report** (first week of each month), published on qsdm.tech. For each Tier N fund it gives:
+  - the opening balance and the protocol income (from the chain);
+  - every payment, with its transaction ID and purpose;
+  - the closing balance.
+
+  For the Security fund it also says whether the ceiling was reached. For Play Rewards it gives the refills per game
+  chest.
+- The fund balances are live metrics: `qsdm_network_rewards_{ops,play,security}_fund_balance_cell` and
+  `qsdm_network_rewards_security_fund_at_ceiling`.
 
 ## 8. Existing development balances
 

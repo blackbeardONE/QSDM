@@ -20,6 +20,7 @@ upgrades harden that pilot network; they do not change its stage. See
 |---|---|---|---|
 | 2026-11-19 | Hive release | QSDM Hive 1.4.25 | No (Hive 1.4.21 and newer update themselves; 1.4.20 / 1.4.17 install by hand) |
 | 2026-11-18 | Hive release | QSDM Hive 1.4.24 | No (Hive 1.4.21 and newer update themselves; 1.4.20 / 1.4.17 install by hand) |
+| About 2026-11-26 (scheduled) | 1,210,000 | Network-funded rewards: the block reward becomes 4.56 CELL, and each reward is split 85 % miner, 8 % Operations, 5 % Play Rewards, 2 % Security ([Genesis Policy v1.2](GENESIS_POLICY_v1.2.md), [Consensus rules](CONSENSUS_RULES.md#network-funded-rewards-from-block-1210000)) | **Yes**, full-node operators: run the next full-node release before this height |
 | About 2026-11-26 (scheduled) | 1,210,000 | The PULSE rule: non-custodial mining pools settle on chain ([Consensus rules](CONSENSUS_RULES.md#the-pulse-rule-from-block-1210000), [PULSE](PULSE.md)) | **Yes**, full-node operators: run fullnode-rc1114 or newer before this height |
 | About 2026-11-29 (scheduled) | 1,230,000 | The rc1113 rule: a task catalog entry can be registered only for a task ID that holds no stake and no pool ([Consensus rules](CONSENSUS_RULES.md#the-rc1113-rule-from-block-1230000)) | **Yes**, full-node operators: run fullnode-rc1113 or newer before this height |
 | 2026-11-15 | Hive release | QSDM Hive 1.4.23 | No (Hive 1.4.21 and newer update themselves; 1.4.20 / 1.4.17 install by hand) |

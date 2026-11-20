@@ -25,7 +25,7 @@ see the [command-line miner](MINER_QUICKSTART.md).
 | Driver | A current NVIDIA driver with a working `nvidia-smi`. You do not need the CUDA Toolkit; Hive bundles what it needs. |
 | Linux extras | glibc 2.34 or newer; GTK 3 for the AppImage |
 | Bond | 10 CELL per enrolled GPU, paid up front or taken from your first rewards |
-| Reward | The current block reward (3.56490987 CELL per block, 10 second target) for accepted proofs; see [CELL tokenomics](CELL_TOKENOMICS.md) |
+| Reward | The current block reward for accepted proofs (10 second target): 3.56490987 CELL per block until block 1,210,000, then 4.56 CELL split 85 % miner, 8 % Operations, 5 % Play Rewards, 2 % Security; see [CELL tokenomics](CELL_TOKENOMICS.md) |
 | Network | Pilot network (pre-mainnet), single block producer. Mining has been open to every enrolled miner since 2026-10-19, in 7-day (168-hour) windows that renew automatically, with caps per owner per 24-hour epoch. |
 
 GPU mining is NVIDIA-only today. Every proof must carry an NVIDIA attestation;

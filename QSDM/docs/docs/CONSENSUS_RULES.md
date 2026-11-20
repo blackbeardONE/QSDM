@@ -26,6 +26,7 @@ they were produced with.
 | Signed consensus | 827,000 | 2026-10-12 18:11 | `consensus_auth.require_signed_votes`, `signed_message_activation_height`, `signed_consensus_active`, `unsigned_consensus_traffic_accepted` | Any BFT vote or consensus message without a valid ML-DSA signature |
 | Relay-only paid edge tasks | 833,800 | 2026-10-13 13:21 | `consensus_auth.edge_relay_only_activation_height`, `edge_relay_only_active` | A paid edge task settlement that does not come through an authorized settlement relay |
 | The PULSE rule | 1,210,000 | Scheduled, about 2026-11-26 | none (the release default `pulse_activation_height`; every node on rc1114 uses 1,210,000) | PULSE pool transactions (join, leave, settle, reclaim) and member rewards to keyless escrow accounts ([details](#the-pulse-rule-from-block-1210000)) |
+| Network-funded rewards | 1,210,000 | Scheduled, about 2026-11-26 | none (`tokenomics.block_reward_cell` shows 4.56 from the height; every node logs the fingerprint of the four values at boot) | A block whose rewards do not follow the 4.56 CELL schedule and the 85 / 8 / 5 / 2 split: a node without the rule computes a different state root ([details](#network-funded-rewards-from-block-1210000)) |
 | The rc1113 rule | 1,230,000 | Scheduled, about 2026-11-29 | none (the release default `rc1113_rules_activation_height`; every node on rc1113 uses 1,230,000) | A `catalog-register` for a task ID that already holds stake or a pool ([details](#the-rc1113-rule-from-block-1230000)) |
 | The rc1112 rules | 1,190,000 | Scheduled, about 2026-11-24 (the producer's admission applies them since 2026-11-15 12:23) | none (code constants: `RelaySettlementScopeActivationHeight`, `GPUUUIDFoldActivationHeight`, `CustomTaskPayActivationHeight`, `DeferredPruneActivationHeight`) | A Relay settlement on a task that is not a built-in resource task, one that reuses a consumed settlement proof or receipt, or one whose proof or receipt IDs are not 64 lowercase hex characters; a catalog action for a case variant of a reserved task ID; an enrollment of a GPU UUID that an active enrollment holds in another case; a submit that asks a task other than the built-in resource tasks for a reward. The block sweep also removes free enrollments that earned nothing in 60,480 blocks ([details](#the-rc1112-rules-from-block-1190000)) |
 | Transaction ID uniqueness | 1,160,000 | Scheduled, about 2026-11-21 (the producer's API refuses a taken ID since 2026-11-13 18:41) | none (a code constant, `TxIDUniqueActivationHeight`) | A transaction whose ID is committed in the last 8,640 blocks or earlier in the same block, whatever its contract |
@@ -179,6 +180,24 @@ rc1114 (`[consensus] pulse_*` and `QSDM_PULSE_*` override them; every node
 must use the same values, so leave them unset). Code:
 `QSDM/source/internal/pulse/`, `QSDM/source/pkg/chain/pulse_*.go`. How the
 pool works: [PULSE](PULSE.md).
+
+### Network-funded rewards (from block 1,210,000)
+
+From block 1,210,000 the block reward is 4.56 CELL (456,000,000 dust). It halves when the current
+epoch's allocation has been issued, and the block that completes an allocation pays exactly the
+remainder, so each epoch issues exactly its allocation and the 90,000,000 CELL cap holds. Every mining
+reward paid from that height is split in dust: 8 % to the Operations fund, 5 % to the Play Rewards fund
+and 2 % to the Security fund, each rounded down, and the rest to the miner (for a PULSE pool member, into
+the member's escrow account). While the Security fund holds 100,000 CELL or more, its share goes to the
+miner. A deferred bond fills from the miner's part only, and the producer's per-owner epoch cap counts the
+miner's 85 % only. Blocks below 1,210,000 replay as before.
+
+The height and the three fund addresses are part of the node configuration
+(`[consensus] network_rewards_activation_height`, `network_rewards_ops_fund`, `network_rewards_play_fund`,
+`network_rewards_security_fund`, or `QSDM_NETWORK_REWARDS_*`). Every node must use the same four values: a
+node refuses to start with the height set and an address missing, and logs the fingerprint of the four
+values at boot. Policy: [Genesis Policy v1.2](GENESIS_POLICY_v1.2.md) clause 9. Schedule:
+[CELL tokenomics](CELL_TOKENOMICS.md) §3.
 
 ### The rc1113 rule (from block 1,230,000)
 
