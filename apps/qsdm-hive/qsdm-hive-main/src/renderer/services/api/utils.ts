@@ -164,6 +164,10 @@ export const runQsdmPulsePoolAction = async (
   return window.main.runQsdmPulsePoolAction({ op });
 };
 
+export const getQsdmBountyLedger = async () => {
+  return window.main.getQsdmBountyLedger();
+};
+
 export const getQsdmMotherHiveStatus = async () => {
   return window.main.getQsdmMotherHiveStatus();
 };

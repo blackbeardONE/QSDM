@@ -19,6 +19,7 @@ import { Task } from 'renderer/types';
 
 import { AdvancedOptions } from '../AdvancedOptions/AdvancedOptions';
 import TaskItem from '../AvailableTaskRow/AvailableTaskRow';
+import { BugBountyRow } from '../BugBountyRow';
 
 const tableHeaders = [
   { title: 'Task Info', alignLeft: true },
@@ -119,6 +120,9 @@ export function AvailableTasksTable() {
   };
 
   const filteredWhitelistedTasks = filterAndSortTasks(whitelistedTasks);
+  const showBugBounty =
+    !filterText.trim() ||
+    'qsdm bug bounty'.includes(filterText.trim().toLowerCase());
   const filteredPrivateTasks = filterAndSortTasks(privateTasks);
 
   const thereAreNoTasks =
@@ -206,6 +210,8 @@ export function AvailableTasksTable() {
 
         {!isLoadingBrandingConfig && (
           <>
+            {showBugBounty && <BugBountyRow />}
+
             {thereAreNoTasks && (
               <div className="flex items-center justify-center w-full h-full text-white">
                 <div className="w-[363px] h-[363px] flex flex-col justify-center items-center">

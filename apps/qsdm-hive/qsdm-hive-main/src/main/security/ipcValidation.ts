@@ -666,6 +666,7 @@ export const validateIpcPayload = (
     case Endpoints.DISCONNECT_QSDM_MOTHER_HIVE:
     case Endpoints.GET_QSDM_VIRTUAL_COMPUTE_RESOURCES:
     case Endpoints.GET_QSDM_VIRTUAL_COMPUTE_JOBS:
+    case Endpoints.GET_QSDM_BOUNTY_LEDGER:
     case Endpoints.QUIT_APP:
       ensureNoPayload(endpoint, args);
       break;
