@@ -267,7 +267,7 @@ jobs:
           cat "SHA256SUMS-${{ matrix.os }}-${{ matrix.arch }}"
 
       - name: Upload artefacts (for the aggregator job)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: binaries-${{ matrix.os }}-${{ matrix.arch }}
           path: |
@@ -458,7 +458,7 @@ jobs:
           )
 
       - name: Upload validator package
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: binaries-validator-${{ matrix.os }}-amd64
           path: ${{ runner.temp }}/validator-assets/*
@@ -496,7 +496,7 @@ jobs:
           output-file: /tmp/qsdm-source-sbom.spdx.json
 
       - name: Upload SBOM artefact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qsdm-source-sbom
           path: /tmp/qsdm-source-sbom.spdx.json
